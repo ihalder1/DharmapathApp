@@ -219,15 +219,38 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         return false;
       }
 
+      // Get app directory
+      final directory = await getApplicationDocumentsDirectory();
+      final recordingsDir = Directory('${directory.path}/recordings');
+      if (!await recordingsDir.exists()) {
+        await recordingsDir.create(recursive: true);
+      }
+
+      // Rename file to match the user's name (sanitize name for filename)
+      final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+      final newFilePath = '${recordingsDir.path}/$sanitizedName.m4a';
+      
+      // If file with same name exists, add timestamp
+      final originalFile = File(_currentRecordingPath!);
+      File finalFile = File(newFilePath);
+      if (await finalFile.exists()) {
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.m4a');
+      }
+      
+      // Copy/rename the file
+      await originalFile.copy(finalFile.path);
+      print('Recording file saved to: ${finalFile.path}');
+
       // Generate UUID
       final uuid = _uuid.v4();
       
-      // Create recording object
+      // Create recording object with new file path
       final recording = VoiceRecording(
         id: uuid,
         name: name,
         language: language,
-        filePath: _currentRecordingPath!,
+        filePath: finalFile.path,
         createdAt: DateTime.now(),
       );
 
@@ -326,33 +349,68 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       final directory = await getApplicationDocumentsDirectory();
       final recordingsDir = Directory('${directory.path}/recordings');
       
+      print('Loading recordings from: ${recordingsDir.path}');
+      
       if (!await recordingsDir.exists()) {
-        _recordings = [];
+        print('Recordings directory does not exist, creating it...');
+        await recordingsDir.create(recursive: true);
+        // Don't clear existing recordings if directory doesn't exist
+        // They might be in memory from recent saves
         return;
       }
 
       final files = await recordingsDir.list().toList();
+      print('Found ${files.length} files in recordings directory');
+      
+      // Create a map of existing recordings by file path to preserve names
+      final existingRecordingsMap = <String, VoiceRecording>{};
+      for (final recording in _recordings) {
+        existingRecordingsMap[recording.filePath] = recording;
+      }
+
+      // Clear and rebuild list
       _recordings = [];
 
       for (final file in files) {
         if (file is File && file.path.endsWith('.m4a')) {
-          final stat = await file.stat();
-          final recording = VoiceRecording(
-            id: _uuid.v4(), // Generate new UUID for existing files
-            name: _extractNameFromPath(file.path),
-            language: 'English', // Default language for existing files
-            filePath: file.path,
-            createdAt: stat.modified,
-          );
-          _recordings.add(recording);
+          try {
+            final stat = await file.stat();
+            print('Loading recording file: ${file.path}');
+            
+            // If we already have this recording in memory, preserve its name
+            final existingRecording = existingRecordingsMap[file.path];
+            final name = existingRecording?.name ?? _extractNameFromPath(file.path);
+            final language = existingRecording?.language ?? 'English';
+            final id = existingRecording?.id ?? _uuid.v4();
+            final createdAt = existingRecording?.createdAt ?? stat.modified;
+            
+            final recording = VoiceRecording(
+              id: id,
+              name: name,
+              language: language,
+              filePath: file.path,
+              createdAt: createdAt,
+            );
+            _recordings.add(recording);
+            print('Added recording: $name (${file.path})');
+          } catch (e) {
+            print('Error processing file ${file.path}: $e');
+            // Continue with other files
+          }
         }
       }
 
       // Sort by creation date (newest first)
       _recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } catch (e) {
+      
+      print('Loaded ${_recordings.length} recordings from local storage');
+      for (final recording in _recordings) {
+        print('  - ${recording.name} (${recording.filePath})');
+      }
+    } catch (e, stackTrace) {
       print('Error loading recordings: $e');
-      _recordings = [];
+      print('Stack trace: $stackTrace');
+      // Don't clear recordings on error - keep what we have
     }
   }
 
@@ -500,7 +558,22 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   String _extractNameFromPath(String path) {
     final filename = path.split('/').last;
     final nameWithoutExtension = filename.replaceAll('.m4a', '');
-    return nameWithoutExtension.replaceAll('recording_', 'Recording ');
+    
+    // If it's a timestamp-based name (old format), format it nicely
+    if (nameWithoutExtension.startsWith('recording_')) {
+      return nameWithoutExtension.replaceAll('recording_', 'Recording ');
+    }
+    
+    // If it has timestamp suffix (name_timestamp), remove the timestamp
+    if (nameWithoutExtension.contains('_') && 
+        RegExp(r'_\d+$').hasMatch(nameWithoutExtension)) {
+      final parts = nameWithoutExtension.split('_');
+      parts.removeLast(); // Remove timestamp
+      return parts.join('_').replaceAll('_', ' ');
+    }
+    
+    // Otherwise, just replace underscores with spaces
+    return nameWithoutExtension.replaceAll('_', ' ');
   }
 
   // Delete recording

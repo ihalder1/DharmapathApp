@@ -1,9 +1,18 @@
-# Log Files Summary - Both Apps Running (Restarted with Recording Sync Implementation)
+# Log Files Summary - Both Apps Running (Restarted with Recording Fixes)
 
 ## ✅ Status
-Both Android and iOS apps have been restarted and are running successfully with the complete recording sync implementation.
+Both Android and iOS apps have been restarted and are running successfully with all recording issues fixed.
 
-## 🆕 New Features
+## 🆕 Latest Fixes
+- ✅ Fixed recordings list showing all saved recordings
+- ✅ Fixed preview button playing correct file
+- ✅ Fixed new recording appearing in list after save
+- ✅ Fixed old recording playing issue
+- ✅ File renaming on save to match user-provided names
+- ✅ Playback state tracking for correct file identification
+- ✅ Proper list refresh after save
+
+## 🆕 Previous Features
 - ✅ Real audio recording (using `record` package)
 - ✅ Audio playback working on iOS
 - ✅ Recording save with backend sync
