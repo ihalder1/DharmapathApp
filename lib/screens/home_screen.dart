@@ -316,22 +316,22 @@ class _HomeScreenState extends State<HomeScreen> {
         await _recordingPlayer.stop();
       }
       
-      // Play the actual recording file
-      await _recordingPlayer.play(DeviceFileSource(path));
-      setState(() {
-        _isPlayingRecording = true;
+        // Play the actual recording file
+        await _recordingPlayer.play(DeviceFileSource(path));
+        setState(() {
+          _isPlayingRecording = true;
         _currentlyPlayingPath = path;
-      });
-      
-      // Listen for playback completion
-      _recordingPlayer.onPlayerComplete.listen((_) {
-        if (mounted) {
-          setState(() {
-            _isPlayingRecording = false;
+        });
+        
+        // Listen for playback completion
+        _recordingPlayer.onPlayerComplete.listen((_) {
+          if (mounted) {
+            setState(() {
+              _isPlayingRecording = false;
             _currentlyPlayingPath = null;
-          });
-        }
-      });
+            });
+          }
+        });
     } catch (e) {
       print('Error playing recording: $e');
       print('Path: $path');
@@ -1604,141 +1604,141 @@ class _HomeScreenState extends State<HomeScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              // Instructions
+              const Text(
+                'Read the text clearly in a quiet environment',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Language Selection
+              Row(
                 children: [
-                  // Instructions
                   const Text(
-                    'Read the text clearly in a quiet environment',
+                    'Language:',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Language Selection
-                  Row(
-                    children: [
-                      const Text(
-                        'Language:',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: DropdownButton<String>(
-                            value: _selectedLanguage,
-                            isExpanded: true,
-                            underline: const SizedBox(),
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 14,
-                            ),
-                            dropdownColor: Colors.white,
-                            items: VoiceRecordingService.languageContent.keys.map((String language) {
-                              return DropdownMenuItem<String>(
-                                value: language,
-                                child: Text(
-                                  language,
-                                  style: const TextStyle(color: Colors.black),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (String? newValue) {
-                              if (newValue != null) {
-                                setState(() {
-                                  _selectedLanguage = newValue;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Text Display Box
+                  const SizedBox(width: 12),
                   Expanded(
-                    flex: 1,
                     child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey[300]!,
-                          width: 1,
-                        ),
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!),
                       ),
-                      child: SingleChildScrollView(
-                        child: Text(
-                          VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black,
-                            height: 1.5,
-                          ),
+                      child: DropdownButton<String>(
+                        value: _selectedLanguage,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 14,
                         ),
+                        dropdownColor: Colors.white,
+                        items: VoiceRecordingService.languageContent.keys.map((String language) {
+                          return DropdownMenuItem<String>(
+                            value: language,
+                            child: Text(
+                              language,
+                              style: const TextStyle(color: Colors.black),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              _selectedLanguage = newValue;
+                            });
+                          }
+                        },
                       ),
                     ),
                   ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Recording Controls
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      // Record Button
-                      _buildRecordingButton(
-                        icon: _isRecording ? Icons.stop : Icons.mic,
-                        onPressed: _isRecording ? _stopRecording : _startRecording,
-                        isPrimary: true,
-                        isRecording: _isRecording,
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Text Display Box
+              Expanded(
+                    flex: 1,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.grey[300]!,
+                      width: 1,
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black,
+                        height: 1.5,
                       ),
-                      
-                      // Preview Button (only show if recording exists)
-                      if (_currentRecordingPath != null)
-                        _buildRecordingButton(
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Recording Controls
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Record Button
+                  _buildRecordingButton(
+                    icon: _isRecording ? Icons.stop : Icons.mic,
+                    onPressed: _isRecording ? _stopRecording : _startRecording,
+                    isPrimary: true,
+                    isRecording: _isRecording,
+                  ),
+                  
+                  // Preview Button (only show if recording exists)
+                  if (_currentRecordingPath != null)
+                    _buildRecordingButton(
                           icon: (_isPlayingRecording && _currentlyPlayingPath == _currentRecordingPath) 
                               ? Icons.pause 
                               : Icons.play_arrow,
-                          onPressed: () => _playRecording(_currentRecordingPath!),
-                          isPrimary: false,
-                        ),
-                      
-                      // Save Button (only show if recording exists)
-                      if (_currentRecordingPath != null)
-                        _buildRecordingButton(
-                          icon: Icons.save,
-                          onPressed: _showSaveDialog,
-                          isPrimary: false,
-                        ),
-                    ],
-                  ),
+                      onPressed: () => _playRecording(_currentRecordingPath!),
+                      isPrimary: false,
+                    ),
                   
-                  const SizedBox(height: 20),
-                  
+                  // Save Button (only show if recording exists)
+                  if (_currentRecordingPath != null)
+                    _buildRecordingButton(
+                      icon: Icons.save,
+                      onPressed: _showSaveDialog,
+                      isPrimary: false,
+                    ),
+                ],
+              ),
+              
+              const SizedBox(height: 20),
+              
                   // Existing Recordings Section - Made larger to show at least 2 recordings
-                  Expanded(
+              Expanded(
                     flex: 2,
-                    child: Container(
+                child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -1829,8 +1829,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-                ],
-              ),
+            ],
+          ),
             );
           },
         ),

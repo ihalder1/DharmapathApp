@@ -113,18 +113,43 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         await recordingsDir.create(recursive: true);
       }
 
-      // Generate unique filename
+      // Generate unique filename - use platform-appropriate extension
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final filename = 'recording_$timestamp.m4a';
-      _currentRecordingPath = '${recordingsDir.path}/$filename';
-
-      // Start real audio recording
-      await _audioRecorder.start(
-        const RecordConfig(
+      String extension;
+      RecordConfig config;
+      
+      if (Platform.isAndroid) {
+        // Android configuration - try AAC first (better compression, works on most devices)
+        // If AAC doesn't work, fall back to WAV
+        // Note: Android emulators don't have microphone input, so recordings will be blank
+        extension = 'm4a';
+        config = const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100, // 44.1kHz for good quality
+          numChannels: 1, // Mono for voice recording
+          autoGain: false, // Disable auto gain to prevent noise
+          echoCancel: true, // Enable echo cancellation
+          noiseSuppress: true, // Enable noise suppression
+        );
+        print('Starting Android recording with AAC encoder');
+      } else {
+        // iOS configuration - use AAC
+        extension = 'm4a';
+        config = const RecordConfig(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
           sampleRate: 44100,
-        ),
+          numChannels: 1, // Mono for voice recording
+        );
+        print('Starting iOS recording with AAC encoder');
+      }
+      
+      final filename = 'recording_$timestamp.$extension';
+      _currentRecordingPath = '${recordingsDir.path}/$filename';
+
+      await _audioRecorder.start(
+        config,
         path: _currentRecordingPath!,
       );
 
@@ -228,19 +253,32 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
 
       // Rename file to match the user's name (sanitize name for filename)
       final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-      final newFilePath = '${recordingsDir.path}/$sanitizedName.m4a';
+      // Use platform-appropriate extension (both use m4a now)
+      final extension = Platform.isAndroid ? 'm4a' : 'm4a';
+      final newFilePath = '${recordingsDir.path}/$sanitizedName.$extension';
       
       // If file with same name exists, add timestamp
       final originalFile = File(_currentRecordingPath!);
       File finalFile = File(newFilePath);
       if (await finalFile.exists()) {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.m4a');
+        finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.$extension');
       }
       
       // Copy/rename the file
       await originalFile.copy(finalFile.path);
       print('Recording file saved to: ${finalFile.path}');
+
+      // Delete the original temporary file to avoid duplicates
+      try {
+        if (await originalFile.exists()) {
+          await originalFile.delete();
+          print('Deleted original temporary file: ${originalFile.path}');
+        }
+      } catch (e) {
+        print('Warning: Could not delete original file: $e');
+        // Continue anyway - the new file is saved
+      }
 
       // Generate UUID
       final uuid = _uuid.v4();
@@ -372,7 +410,8 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       _recordings = [];
 
       for (final file in files) {
-        if (file is File && file.path.endsWith('.m4a')) {
+        // Accept .m4a (iOS and Android AAC), .mp4 (Android AAC), .amr (Android AMR), and .wav (Android WAV) files
+        if (file is File && (file.path.endsWith('.m4a') || file.path.endsWith('.mp4') || file.path.endsWith('.amr') || file.path.endsWith('.wav'))) {
           try {
             final stat = await file.stat();
             print('Loading recording file: ${file.path}');
@@ -471,8 +510,9 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
           await recordingsDir.create(recursive: true);
         }
 
-        // Save file
-        final file = File('${recordingsDir.path}/$name.m4a');
+        // Save file with platform-appropriate extension (both use m4a now)
+        final extension = Platform.isAndroid ? 'm4a' : 'm4a';
+        final file = File('${recordingsDir.path}/$name.$extension');
         await file.writeAsBytes(response.bodyBytes);
         
         // Add to local recordings list
@@ -557,7 +597,12 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   // Extract name from file path
   String _extractNameFromPath(String path) {
     final filename = path.split('/').last;
-    final nameWithoutExtension = filename.replaceAll('.m4a', '');
+    // Remove .m4a, .mp4, .amr, and .wav extensions (all supported formats)
+    String nameWithoutExtension = filename
+        .replaceAll('.m4a', '')
+        .replaceAll('.mp4', '')
+        .replaceAll('.amr', '')
+        .replaceAll('.wav', '');
     
     // If it's a timestamp-based name (old format), format it nicely
     if (nameWithoutExtension.startsWith('recording_')) {
