@@ -51,6 +51,17 @@ import AVFoundation
         ]
         result(statusMap)
 
+      case "configureAudioSessionForPlayback":
+        let session = AVAudioSession.sharedInstance()
+        do {
+          // Configure for playback - use playAndRecord but optimize for playback
+          try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+          try session.setActive(true)
+          result(true)
+        } catch {
+          result(FlutterError(code: "AUDIO_SESSION_ERROR", message: "Could not configure audio session for playback: \(error)", details: nil))
+        }
+
       default:
         result(FlutterMethodNotImplemented)
       }

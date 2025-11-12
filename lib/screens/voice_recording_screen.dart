@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/permission_service.dart';
@@ -172,31 +173,69 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   Future<void> _playRecording() async {
     if (_recordingPath != null) {
       try {
+        // Validate file exists
+        final file = File(_recordingPath!);
+        if (!await file.exists()) {
+          _showErrorSnackBar('Recording file not found. Please record again.');
+          return;
+        }
+        
+        // Check file size (should not be empty)
+        final fileSize = await file.length();
+        if (fileSize == 0) {
+          _showErrorSnackBar('Recording file is empty. Please record again.');
+          return;
+        }
+        
+        // Configure audio session for playback on iOS
+        if (Platform.isIOS) {
+          try {
+            const MethodChannel audioChannel = MethodChannel('app.channel.audio');
+            await audioChannel.invokeMethod('configureAudioSessionForPlayback');
+          } catch (e) {
+            print('Warning: Could not configure audio session for playback: $e');
+            // Continue anyway - audioplayers might handle it
+          }
+        }
+        
+        // Stop any current playback first
+        await _audioPlayer.stop();
+        
+        // Play the recording
         await _audioPlayer.play(DeviceFileSource(_recordingPath!));
         setState(() {
           _isPlaying = true;
         });
         
         _audioPlayer.onDurationChanged.listen((duration) {
-          setState(() {
-            _playbackDuration = duration;
-          });
+          if (mounted) {
+            setState(() {
+              _playbackDuration = duration;
+            });
+          }
         });
         
         _audioPlayer.onPositionChanged.listen((position) {
-          setState(() {
-            _playbackPosition = position;
-          });
+          if (mounted) {
+            setState(() {
+              _playbackPosition = position;
+            });
+          }
         });
         
         _audioPlayer.onPlayerComplete.listen((_) {
-          setState(() {
-            _isPlaying = false;
-            _playbackPosition = Duration.zero;
-          });
+          if (mounted) {
+            setState(() {
+              _isPlaying = false;
+              _playbackPosition = Duration.zero;
+            });
+          }
         });
       } catch (e) {
-        _showErrorSnackBar('Failed to play recording: $e');
+        print('Error playing recording: $e');
+        if (mounted) {
+          _showErrorSnackBar('Failed to play recording. The file may be corrupted. Please record again.');
+        }
       }
     }
   }

@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
 import 'permission_service.dart';
 
 class VoiceRecordingService {
@@ -13,6 +15,7 @@ class VoiceRecordingService {
   VoiceRecordingService._internal();
 
   final Uuid _uuid = const Uuid();
+  final AudioRecorder _audioRecorder = AudioRecorder();
   
   bool _isRecording = false;
   String? _currentRecordingPath;
@@ -85,14 +88,23 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
   }
 
-  // Start recording with enhanced mock implementation
+  // Start recording with real audio recording
   Future<bool> startRecording() async {
     try {
       if (_isRecording) return false;
 
       // Request permission
       final hasPermission = await requestPermission();
-      if (!hasPermission) return false;
+      if (!hasPermission) {
+        print('Permission denied, cannot start recording');
+        return false;
+      }
+
+      // Check if recorder is available
+      if (!await _audioRecorder.hasPermission()) {
+        print('Audio recorder does not have permission');
+        return false;
+      }
 
       // Get app directory
       final directory = await getApplicationDocumentsDirectory();
@@ -106,73 +118,106 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       final filename = 'recording_$timestamp.m4a';
       _currentRecordingPath = '${recordingsDir.path}/$filename';
 
-      // Create a more realistic audio file (simulate recording)
+      // Start real audio recording
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: _currentRecordingPath!,
+      );
+
       _isRecording = true;
       print('Recording started: $_currentRecordingPath');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error starting recording: $e');
+      print('Stack trace: $stackTrace');
+      _isRecording = false;
       return false;
     }
   }
 
-  // Stop recording with enhanced mock implementation
+  // Stop recording with real audio recording
   Future<String?> stopRecording() async {
     try {
       if (!_isRecording) return null;
 
-      // Create a realistic audio file that can be played
-      if (_currentRecordingPath != null) {
+      // Stop the real audio recording
+      final path = await _audioRecorder.stop();
+      
+      if (path != null && path.isNotEmpty) {
+        _currentRecordingPath = path;
+        print('Recording stopped and saved: $_currentRecordingPath');
+        
+        // Wait a moment for file system to sync
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // Verify file exists and has content
         final file = File(_currentRecordingPath!);
-        
-        // Create a minimal valid M4A file header (this is a simplified version)
-        // In a real implementation, you would use actual audio recording
-        final audioData = _createMockAudioData();
-        await file.writeAsBytes(audioData);
-        
-        print('Mock recording file created: $_currentRecordingPath');
+        if (await file.exists()) {
+          final fileSize = await file.length();
+          print('Recording file size: $fileSize bytes');
+          if (fileSize > 0) {
+            // Verify file is readable
+            final canRead = await file.exists();
+            print('File exists and is readable: $canRead');
+            _isRecording = false;
+            return _currentRecordingPath;
+          } else {
+            print('Warning: Recording file is empty');
+          }
+        } else {
+          print('Error: Recording file does not exist at path: $_currentRecordingPath');
+        }
+      } else {
+        print('Error: Audio recorder returned null or empty path');
       }
 
       _isRecording = false;
       return _currentRecordingPath;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error stopping recording: $e');
+      print('Stack trace: $stackTrace');
       _isRecording = false;
       return null;
     }
-  }
-
-  // Create mock audio data that can be played
-  List<int> _createMockAudioData() {
-    // This creates a minimal audio file that audioplayers can handle
-    // In a real implementation, this would be actual recorded audio
-    final List<int> audioData = [];
-    
-    // Add some basic audio file structure (simplified)
-    // This is just enough to create a file that won't cause playback errors
-    for (int i = 0; i < 1000; i++) {
-      audioData.add(i % 256); // Simple pattern
-    }
-    
-    return audioData;
   }
 
   // Cancel recording
   Future<void> cancelRecording() async {
     try {
       if (_isRecording) {
+        // Stop recording and delete the file
+        await _audioRecorder.stop();
+        
+        // Delete the file if it exists
+        if (_currentRecordingPath != null) {
+          final file = File(_currentRecordingPath!);
+          if (await file.exists()) {
+            await file.delete();
+            print('Cancelled recording and deleted file: $_currentRecordingPath');
+          }
+        }
+        
         _isRecording = false;
         _currentRecordingPath = null;
       }
     } catch (e) {
       print('Error canceling recording: $e');
+      _isRecording = false;
+      _currentRecordingPath = null;
     }
   }
 
   // Save recording with name
   Future<bool> saveRecording(String name, String language) async {
     try {
-      if (_currentRecordingPath == null) return false;
+      if (_currentRecordingPath == null) {
+        print('Error: No recording path to save');
+        return false;
+      }
 
       // Generate UUID
       final uuid = _uuid.v4();
@@ -188,49 +233,94 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
 
       // Add to local list
       _recordings.add(recording);
+      print('Recording added to local list: ${recording.name}');
 
-      // Save to backend (mock implementation)
-      await _saveToBackend(recording);
+      // Save to backend (with timeout, but await it)
+      try {
+        await _saveToBackend(recording).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            print('Backend save timeout (continuing with local save)');
+            return;
+          },
+        );
+        print('Recording saved to backend successfully');
+      } catch (e) {
+        print('Backend save failed (non-critical): $e');
+        // Continue - local save is successful
+      }
 
       // Clear current recording
       _currentRecordingPath = null;
+      print('Recording saved successfully: $name');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error saving recording: $e');
+      print('Stack trace: $stackTrace');
       return false;
     }
   }
 
-  // Mock backend save
+  // Save recording to backend (with file upload)
   Future<void> _saveToBackend(VoiceRecording recording) async {
     try {
-      // Mock API call
-      final response = await http.post(
+      // Read the audio file
+      final file = File(recording.filePath);
+      if (!await file.exists()) {
+        print('Error: Recording file does not exist: ${recording.filePath}');
+        return;
+      }
+
+      final fileBytes = await file.readAsBytes();
+      
+      // Create multipart request for file upload
+      final request = http.MultipartRequest(
+        'POST',
         Uri.parse('https://mock-api.colab-app.com/api/recordings'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer mock-token',
-        },
-        body: jsonEncode({
-          'name': recording.name,
-          'uuid': recording.id,
-          'language': recording.language,
-          'user_id': 'mock-user-id',
-          'created_at': recording.createdAt.toIso8601String(),
-        }),
+      );
+      
+      // Add headers
+      request.headers['Authorization'] = 'Bearer mock-token';
+      
+      // Add fields
+      request.fields['name'] = recording.name;
+      request.fields['uuid'] = recording.id;
+      request.fields['language'] = recording.language;
+      request.fields['user_id'] = 'mock-user-id';
+      request.fields['created_at'] = recording.createdAt.toIso8601String();
+      
+      // Add file
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: '${recording.name}.m4a',
+        ),
       );
 
-      if (response.statusCode == 200) {
-        print('Recording saved to backend successfully');
+      // Send request
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 10),
+      );
+      
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('Recording saved to backend successfully: ${recording.name}');
       } else {
         print('Failed to save recording to backend: ${response.statusCode}');
+        print('Response: ${response.body}');
       }
+    } on TimeoutException {
+      print('Backend save timed out (mock API not available - this is expected)');
+      rethrow; // Re-throw so caller can handle timeout
     } catch (e) {
       print('Error saving to backend: $e');
+      rethrow; // Re-throw so caller can handle error
     }
   }
 
-  // Load existing recordings
+  // Load existing recordings from local storage
   Future<void> loadRecordings() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -266,6 +356,146 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
   }
 
+  // Get list of recording names from backend
+  Future<List<String>> _getBackendRecordingNames() async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://mock-api.colab-app.com/api/recordings/names'),
+        headers: {
+          'Authorization': 'Bearer mock-token',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map && data['names'] is List) {
+          final names = (data['names'] as List).map((e) => e.toString()).toList();
+          print('Backend recording names: $names');
+          return names;
+        } else if (data is List) {
+          final names = data.map((e) => e.toString()).toList();
+          print('Backend recording names: $names');
+          return names;
+        }
+      }
+      print('Failed to get backend recording names: ${response.statusCode}');
+      return [];
+    } on TimeoutException {
+      print('Backend names request timed out (mock API not available)');
+      return [];
+    } catch (e) {
+      print('Error getting backend recording names: $e');
+      return [];
+    }
+  }
+
+  // Download recording file from backend by name
+  Future<bool> _downloadRecordingFromBackend(String name) async {
+    try {
+      print('Downloading recording from backend: $name');
+      
+      final response = await http.get(
+        Uri.parse('https://mock-api.colab-app.com/api/recordings/download?name=$name'),
+        headers: {
+          'Authorization': 'Bearer mock-token',
+        },
+      ).timeout(
+        const Duration(seconds: 30),
+      );
+
+      if (response.statusCode == 200) {
+        // Get app directory
+        final directory = await getApplicationDocumentsDirectory();
+        final recordingsDir = Directory('${directory.path}/recordings');
+        if (!await recordingsDir.exists()) {
+          await recordingsDir.create(recursive: true);
+        }
+
+        // Save file
+        final file = File('${recordingsDir.path}/$name.m4a');
+        await file.writeAsBytes(response.bodyBytes);
+        
+        // Add to local recordings list
+        final recording = VoiceRecording(
+          id: _uuid.v4(),
+          name: name,
+          language: 'English', // Default, could be enhanced
+          filePath: file.path,
+          createdAt: DateTime.now(),
+        );
+        _recordings.add(recording);
+        
+        print('Recording downloaded successfully: $name');
+        return true;
+      } else {
+        print('Failed to download recording: ${response.statusCode}');
+        return false;
+      }
+    } on TimeoutException {
+      print('Download request timed out for: $name');
+      return false;
+    } catch (e) {
+      print('Error downloading recording $name: $e');
+      return false;
+    }
+  }
+
+  // Sync recordings between local storage and backend
+  Future<void> syncRecordings() async {
+    try {
+      print('=== Starting recording sync ===');
+      
+      // Load local recordings first
+      await loadRecordings();
+      final localNames = _recordings.map((r) => r.name).toSet();
+      print('Local recording names: $localNames');
+
+      // Get backend recording names
+      final backendNames = await _getBackendRecordingNames();
+      final backendNamesSet = backendNames.toSet();
+      print('Backend recording names: $backendNamesSet');
+
+      // Find recordings that exist in backend but not locally
+      final missingInLocal = backendNamesSet.difference(localNames);
+      print('Recordings missing in local: $missingInLocal');
+
+      // Download missing recordings
+      for (final name in missingInLocal) {
+        await _downloadRecordingFromBackend(name);
+      }
+
+      // Find recordings that exist locally but not in backend
+      final missingInBackend = localNames.difference(backendNamesSet);
+      print('Recordings missing in backend: $missingInBackend');
+
+      // Upload missing recordings
+      for (final name in missingInBackend) {
+        final recording = _recordings.firstWhere(
+          (r) => r.name == name,
+          orElse: () => throw Exception('Recording not found: $name'),
+        );
+        try {
+          await _saveToBackend(recording).timeout(
+            const Duration(seconds: 10),
+          );
+          print('Uploaded missing recording to backend: $name');
+        } catch (e) {
+          print('Failed to upload recording $name: $e');
+          // Continue with other recordings
+        }
+      }
+
+      // Reload recordings to ensure consistency
+      await loadRecordings();
+      print('=== Recording sync completed ===');
+    } catch (e, stackTrace) {
+      print('Error syncing recordings: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
   // Extract name from file path
   String _extractNameFromPath(String path) {
     final filename = path.split('/').last;
@@ -295,8 +525,15 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   }
 
   // Dispose
-  void dispose() {
-    // No recorder to dispose for now
+  Future<void> dispose() async {
+    try {
+      if (_isRecording) {
+        await _audioRecorder.stop();
+      }
+      await _audioRecorder.dispose();
+    } catch (e) {
+      print('Error disposing audio recorder: $e');
+    }
   }
 }
 

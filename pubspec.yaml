@@ -15,7 +15,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   
   # Audio Recording & Playback
-  # record: ^5.0.4  # Temporarily disabled due to compatibility issues
+  record: ^6.1.2
   audioplayers: ^5.2.1
   permission_handler: ^12.0.1
   

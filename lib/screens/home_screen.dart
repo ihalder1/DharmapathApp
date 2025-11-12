@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isPlayingRecording = false;
   String? _currentRecordingPath;
   final AudioPlayer _recordingPlayer = AudioPlayer();
+  bool _hasSyncedRecordings = false;
   
   // Personal Info Data
   Map<String, dynamic> _personalInfo = {
@@ -184,10 +185,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Load recordings from local storage
+  // Load recordings from local storage and sync with backend
   Future<void> _loadRecordings() async {
     await _voiceService.loadRecordings();
     setState(() {});
+  }
+
+  // Sync recordings when voice recording step is loaded
+  Future<void> _syncRecordings() async {
+    try {
+      await _voiceService.syncRecordings();
+      setState(() {});
+    } catch (e) {
+      print('Error syncing recordings: $e');
+      // Don't show error to user - sync is background operation
+    }
   }
 
   // Voice recording methods
@@ -1528,6 +1540,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildVoiceRecordingStep() {
+    // Sync recordings when this step is first loaded (only once)
+    if (!_hasSyncedRecordings) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _hasSyncedRecordings = true;
+        _syncRecordings();
+      });
+    }
+    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -1538,6 +1558,10 @@ class _HomeScreenState extends State<HomeScreen> {
           onPressed: () {
             setState(() {
               _currentStep--;
+              // Reset sync flag when leaving this step
+              if (_currentStep != 1) {
+                _hasSyncedRecordings = false;
+              }
             });
           },
         ),

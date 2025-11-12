@@ -265,96 +265,95 @@ class _PermissionTestScreenState extends State<PermissionTestScreen> {
     }
   }
   
-  Future<void> _checkPermission() async {
+Future<void> _checkPermission() async {
+  setState(() {
+    _isLoading = true;
+  });
+
+  try {
+    // Use authoritative wrapper
+    final granted = await PermissionService.isMicrophoneGranted();
+
     setState(() {
-      _isLoading = true;
+      _permissionStatus = granted ? PermissionStatus.granted : PermissionStatus.denied;
+      _status = granted ? 'Status: Granted ✓' : 'Status: Denied';
+      _isLoading = false;
     });
 
-    try {
-      // Authoritative check
-      final granted = await PermissionService.isMicrophoneGranted();
-
-      setState(() {
-        _permissionStatus = granted ? PermissionStatus.granted : PermissionStatus.denied;
-        _status = granted ? 'Status: Granted ✓' : 'Status: Denied';
-        _isLoading = false;
-      });
-
-      if (!granted) {
-        // Only consult permission_handler for permanentlyDenied on non-iOS or as fallback
-        bool permanentlyDenied = false;
-        try {
-          if (!Platform.isIOS) {
-            final phStatus = await Permission.microphone.status;
-            permanentlyDenied = phStatus == PermissionStatus.permanentlyDenied;
-          } else {
-            // On iOS we trust native; treat as not permanentlyDenied to avoid the plugin mismatch.
-            permanentlyDenied = false;
-          }
-        } catch (e) {
+    if (!granted) {
+      // Only consult permission_handler for permanentlyDenied on non-iOS
+      bool permanentlyDenied = false;
+      try {
+        if (!Platform.isIOS) {
+          final phStatus = await Permission.microphone.status;
+          permanentlyDenied = phStatus == PermissionStatus.permanentlyDenied;
+        } else {
           permanentlyDenied = false;
         }
-
-        if (permanentlyDenied) _showPermanentlyDeniedDialog();
+      } catch (e) {
+        permanentlyDenied = false;
       }
-    } catch (e) {
-      setState(() {
-        _status = 'Error: $e';
-        _isLoading = false;
-      });
+
+      if (permanentlyDenied) _showPermanentlyDeniedDialog();
     }
+  } catch (e) {
+    setState(() {
+      _status = 'Error: $e';
+      _isLoading = false;
+    });
   }
+}
   
-  Future<void> _requestPermission() async {
+Future<void> _requestPermission() async {
+  setState(() {
+    _isLoading = true;
+  });
+
+  print('=== REQUESTING MICROPHONE PERMISSION (PermissionService) ===');
+
+  try {
+    // Use PermissionService for authoritative request
+    final requested = await PermissionService.requestMicrophonePermission();
+    final nowGranted = await PermissionService.isMicrophoneGranted();
+
+    print('Permission request result: $requested');
+    print('Permission check after request: $nowGranted');
+
     setState(() {
-      _isLoading = true;
+      _permissionStatus = nowGranted ? PermissionStatus.granted : PermissionStatus.denied;
+      _status = nowGranted ? 'Granted ✓' : 'Denied';
+      _isLoading = false;
     });
-    
-    print('=== REQUESTING MICROPHONE PERMISSION (PermissionService) ===');
-    
-    try {
-      // Use PermissionService for authoritative request
-      final requested = await PermissionService.requestMicrophonePermission();
-      final nowGranted = await PermissionService.isMicrophoneGranted();
-      
-      print('Permission request result: $requested');
-      print('Permission check after request: $nowGranted');
-      
-      setState(() {
-        _permissionStatus = nowGranted ? PermissionStatus.granted : PermissionStatus.denied;
-        _status = nowGranted ? 'Granted ✓' : 'Denied';
-        _isLoading = false;
-      });
-      
-      if (nowGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Permission granted! ✓'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        // Check permanentlyDenied only on non-iOS; on iOS avoid plugin check unless explicitly required
-        bool permanentlyDenied = false;
-        try {
-          if (!Platform.isIOS) {
-            final phStatus = await Permission.microphone.status;
-            permanentlyDenied = phStatus == PermissionStatus.permanentlyDenied;
-          } else {
-            permanentlyDenied = false;
-          }
-        } catch (e) {
+
+    if (nowGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permission granted! ✓'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      // Only consult permission_handler for permanentlyDenied on non-iOS
+      bool permanentlyDenied = false;
+      try {
+        if (!Platform.isIOS) {
+          final phStatus = await Permission.microphone.status;
+          permanentlyDenied = phStatus == PermissionStatus.permanentlyDenied;
+        } else {
           permanentlyDenied = false;
         }
-        if (permanentlyDenied) _showPermanentlyDeniedDialog();
+      } catch (e) {
+        permanentlyDenied = false;
       }
-    } catch (e) {
-      setState(() {
-        _status = 'Error requesting permission: $e';
-        _isLoading = false;
-      });
+      if (permanentlyDenied) _showPermanentlyDeniedDialog();
     }
+  } catch (e) {
+    setState(() {
+      _status = 'Error requesting permission: $e';
+      _isLoading = false;
+    });
   }
+}
   
   // Debug permissions (ChatGPT's diagnostic function)
   Future<void> _debugPermissions() async {
