@@ -9,8 +9,10 @@ import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import '../services/mantra_service.dart';
 import '../services/voice_recording_service.dart';
+import '../services/notification_service.dart';
 import '../models/mantra.dart';
 import 'permission_test_screen.dart';
+import 'notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +27,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = false;
   bool _isMantraSelectionExpanded = false;
   bool _isRecordingsExpanded = false;
+  
+  // Notifications
+  int _unreadNotificationCount = 0;
   
   // Profile Image
   File? _profileImage;
@@ -89,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadMantras();
     _searchController.addListener(_filterMantras);
     _loadRecordings();
+    _loadUnreadNotificationCount();
     // Don't request permission on startup - request when user actually tries to record
   }
 
@@ -192,6 +198,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadRecordings() async {
     await _voiceService.loadRecordings();
     setState(() {});
+  }
+
+  // Load unread notification count
+  Future<void> _loadUnreadNotificationCount() async {
+    try {
+      final count = await NotificationService.getUnreadCount();
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = count;
+        });
+      }
+    } catch (e) {
+      print('Error loading unread notification count: $e');
+    }
   }
 
   // Sync recordings when voice recording step is loaded
@@ -559,20 +579,63 @@ class _HomeScreenState extends State<HomeScreen> {
               final user = authService.currentUser;
               return Row(
                 children: [
-                  // User Avatar
-                  CircleAvatar(
-                    radius: 25,
-                    backgroundColor: AppColors.primarySaffron,
-                    backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
-                        ? NetworkImage(user!.photoUrl!) 
-                        : null,
-                    child: user?.photoUrl == null || user!.photoUrl!.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            color: AppColors.white,
-                            size: 30,
-                          )
-                        : null,
+                  // User Avatar with Notification Badge
+                  GestureDetector(
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationScreen(),
+                        ),
+                      );
+                      // Reload unread count when returning from notification screen
+                      _loadUnreadNotificationCount();
+                    },
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 25,
+                          backgroundColor: AppColors.primarySaffron,
+                          backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
+                              ? NetworkImage(user!.photoUrl!) 
+                              : null,
+                          child: user?.photoUrl == null || user!.photoUrl!.isEmpty
+                              ? const Icon(
+                                  Icons.person,
+                                  color: AppColors.white,
+                                  size: 30,
+                                )
+                              : null,
+                        ),
+                        // Notification Badge
+                        if (_unreadNotificationCount > 0)
+                          Positioned(
+                            right: -2,
+                            top: -2,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   
                   const SizedBox(width: 12),
