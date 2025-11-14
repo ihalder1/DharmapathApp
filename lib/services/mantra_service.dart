@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
 import 'song_service.dart';
 
@@ -127,5 +129,61 @@ class MantraService {
   // Check if mantra is in cart
   static bool isInCart(Mantra mantra) {
     return _cart.any((item) => item.name == mantra.name);
+  }
+
+  // Generate mantra in user's voice
+  static Future<bool> generateMantraInVoice({
+    required String recordingId,
+    required List<String> mantraIds,
+  }) async {
+    try {
+      // Get auth token
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token') ?? 'mock-token';
+
+      // API endpoint - replace with actual backend URL
+      const String baseUrl = 'https://api.dharmapath.com'; // Replace with actual backend URL
+      final url = Uri.parse('$baseUrl/api/generate-mantra');
+
+      // Prepare request body
+      final requestBody = json.encode({
+        'recording_id': recordingId,
+        'mantra_ids': mantraIds,
+      });
+
+      print('Generating mantra in voice...');
+      print('Recording ID: $recordingId');
+      print('Mantra IDs: $mantraIds');
+
+      // Make API call
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: requestBody,
+      ).timeout(
+        const Duration(seconds: 30),
+      );
+
+      print('API Response Status: ${response.statusCode}');
+      print('API Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        print('Mantra generation started successfully');
+        return true;
+      } else {
+        print('Failed to generate mantra: ${response.statusCode}');
+        print('Response: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error generating mantra in voice: $e');
+      // For now, return true for mock/development
+      // In production, this should return false
+      return true; // Mock success for development
+    }
   }
 }

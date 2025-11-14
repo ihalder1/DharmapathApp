@@ -23,6 +23,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentStep = 0;
   bool _isEditingPersonalInfo = false;
   bool _isLoading = false;
+  bool _isMantraSelectionExpanded = false;
+  bool _isRecordingsExpanded = false;
   
   // Profile Image
   File? _profileImage;
@@ -468,6 +470,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // If recordings is expanded, show it as full screen (check first, regardless of step)
+    if (_isRecordingsExpanded) {
+      return _buildExpandedRecordingsStep();
+    }
+    
+    // If mantra selection is expanded, show it as full screen
+    if (_currentStep == 0 && _isMantraSelectionExpanded) {
+      return _buildExpandedMantraSelectionStep();
+    }
+    
     // If we're on the voice recording step, return it as a full screen
     if (_currentStep == 1) {
       return _buildVoiceRecordingStep();
@@ -1245,13 +1257,32 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Choose Your Mantras',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Text(
+                  'Choose Your Mantras',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    _isMantraSelectionExpanded = true;
+                  });
+                },
+                icon: const Icon(
+                  Icons.fullscreen,
+                  color: AppColors.primarySaffron,
+                ),
+                tooltip: 'Expand to full screen',
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           
@@ -1415,6 +1446,232 @@ class _HomeScreenState extends State<HomeScreen> {
           
           const SizedBox(height: 20),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedMantraSelectionStep() {
+    if (_isLoadingMantras) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.background,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () {
+              setState(() {
+                _isMantraSelectionExpanded = false;
+              });
+            },
+          ),
+          title: const Text(
+            'Choose Your Mantras',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () {
+            setState(() {
+              _isMantraSelectionExpanded = false;
+            });
+          },
+        ),
+        title: const Text(
+          'Choose Your Mantras',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Search Bar
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Search mantras...',
+                    prefixIcon: Icon(Icons.search, size: 20),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    isDense: true,
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // Debug info
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // Mantras List
+              ..._filteredMantras.map((mantra) => Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    // Icon
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: AppColors.primarySaffron.withOpacity(0.1),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/Media/${mantra.icon}',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            print('Image loading error for ${mantra.icon}: $error');
+                            return Icon(
+                              Icons.music_note,
+                              size: 30,
+                              color: AppColors.primarySaffron,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    
+                    // Details
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            mantra.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            mantra.formattedPlaytime,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            mantra.formattedPrice,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primarySaffron,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Play Button
+                    IconButton(
+                      onPressed: () => _playMantra(mantra),
+                      icon: Icon(
+                        _currentlyPlaying == mantra && _isPlaying 
+                            ? Icons.pause_circle_filled 
+                            : Icons.play_circle_filled,
+                        color: AppColors.primarySaffron,
+                        size: 32,
+                      ),
+                    ),
+                    
+                    // Add to Cart Button (only show if not bought)
+                    if (!mantra.isBought)
+                      ElevatedButton(
+                        onPressed: () => mantra.isInCart 
+                            ? _removeFromCart(mantra) 
+                            : _addToCart(mantra),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        child: Text(
+                          mantra.isInCart ? 'Remove' : 'Add',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    
+                    // Show "Purchased" indicator if bought
+                    if (mantra.isBought)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.green, width: 1),
+                        ),
+                        child: const Text(
+                          'Purchased',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              )).toList(),
+              
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1752,13 +2009,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Your Recordings',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Your Recordings',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _isRecordingsExpanded = true;
+                              });
+                            },
+                            icon: const Icon(
+                              Icons.fullscreen,
+                              color: AppColors.primarySaffron,
+                            ),
+                            tooltip: 'Expand to full screen',
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       Expanded(
@@ -1819,6 +2095,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                             color: Colors.black,
                                           ),
                                         ),
+                                        Tooltip(
+                                          message: 'Create your Mantra',
+                                          child: IconButton(
+                                            onPressed: () {
+                                              _showCreateMantraDialog(recording);
+                                            },
+                                            icon: const Text(
+                                              'ॐ',
+                                              style: TextStyle(
+                                                fontSize: 24,
+                                                color: AppColors.primarySaffron,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   );
@@ -1833,6 +2124,122 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedRecordingsStep() {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () {
+            setState(() {
+              _isRecordingsExpanded = false;
+            });
+          },
+        ),
+        title: const Text(
+          'Your Recordings',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: _voiceService.recordings.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No recordings yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _voiceService.recordings.length,
+                  itemBuilder: (context, index) {
+                    final recording = _voiceService.recordings[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  recording.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${recording.language} • ${_formatDate(recording.createdAt)}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _playRecording(recording.filePath),
+                            icon: Icon(
+                              (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
+                                  ? Icons.pause 
+                                  : Icons.play_arrow,
+                              color: AppColors.primarySaffron,
+                              size: 32,
+                            ),
+                          ),
+                          Tooltip(
+                            message: 'Create your Mantra',
+                            child: IconButton(
+                              onPressed: () {
+                                _showCreateMantraDialog(recording);
+                              },
+                              icon: const Text(
+                                'ॐ',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  color: AppColors.primarySaffron,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
         ),
       ),
     );
@@ -2399,5 +2806,226 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  void _showCreateMantraDialog(VoiceRecording recording) {
+    // Get purchased mantras
+    final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
+    
+    if (purchasedMantras.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No purchased mantras available. Please purchase a mantra first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Track selected mantras
+    final Set<String> selectedMantraIds = <String>{};
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final allSelected = selectedMantraIds.length == purchasedMantras.length;
+
+            return AlertDialog(
+              title: const Text(
+                'Create Mantra in Your Voice',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 400),
+                child: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Select All checkbox
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: allSelected,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              if (value == true) {
+                                selectedMantraIds.addAll(
+                                  purchasedMantras.map((m) => m.mantraFile),
+                                );
+                              } else {
+                                selectedMantraIds.clear();
+                              }
+                            });
+                          },
+                        ),
+                        const Text(
+                          'Select All',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    
+                    // Mantras list
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: false,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        itemCount: purchasedMantras.length,
+                        itemBuilder: (context, index) {
+                          final mantra = purchasedMantras[index];
+                          final isSelected = selectedMantraIds.contains(mantra.mantraFile);
+                          
+                          return CheckboxListTile(
+                            value: isSelected,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  selectedMantraIds.add(mantra.mantraFile);
+                                } else {
+                                  selectedMantraIds.remove(mantra.mantraFile);
+                                }
+                              });
+                            },
+                            title: Text(
+                              mantra.name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            subtitle: Text(
+                              mantra.formattedPlaytime,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            secondary: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                color: AppColors.primarySaffron.withOpacity(0.1),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: Image.asset(
+                                  'assets/Media/${mantra.icon}',
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Icon(
+                                      Icons.music_note,
+                                      size: 20,
+                                      color: AppColors.primarySaffron,
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedMantraIds.isEmpty
+                      ? null
+                      : () async {
+                          Navigator.of(dialogContext).pop();
+                          await _generateMantraInVoice(
+                            recordingId: recording.id,
+                            mantraIds: selectedMantraIds.toList(),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primarySaffron,
+                    foregroundColor: AppColors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  child: const SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      'Generate Mantra in Your Voice',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _generateMantraInVoice({
+    required String recordingId,
+    required List<String> mantraIds,
+  }) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Call API
+      final success = await MantraService.generateMantraInVoice(
+        recordingId: recordingId,
+        mantraIds: mantraIds,
+      );
+
+      Navigator.of(context).pop(); // Close loading dialog
+
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Mantra generation started successfully!'),
+              backgroundColor: AppColors.successGreen,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to generate mantra. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      Navigator.of(context).pop(); // Close loading dialog
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
