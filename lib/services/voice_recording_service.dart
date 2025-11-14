@@ -210,23 +210,22 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
   }
 
-  // Cancel recording
+  // Cancel recording (also handles cleanup of unsaved recordings)
   Future<void> cancelRecording() async {
     try {
       if (_isRecording) {
-        // Stop recording and delete the file
+        // Stop recording first
         await _audioRecorder.stop();
-        
-        // Delete the file if it exists
-        if (_currentRecordingPath != null) {
-          final file = File(_currentRecordingPath!);
-          if (await file.exists()) {
-            await file.delete();
-            print('Cancelled recording and deleted file: $_currentRecordingPath');
-          }
-        }
-        
         _isRecording = false;
+      }
+      
+      // Delete the file if it exists (whether currently recording or just unsaved)
+      if (_currentRecordingPath != null) {
+        final file = File(_currentRecordingPath!);
+        if (await file.exists()) {
+          await file.delete();
+          print('Cancelled recording and deleted file: $_currentRecordingPath');
+        }
         _currentRecordingPath = null;
       }
     } catch (e) {
@@ -413,6 +412,23 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         // Accept .m4a (iOS and Android AAC), .mp4 (Android AAC), .amr (Android AMR), and .wav (Android WAV) files
         if (file is File && (file.path.endsWith('.m4a') || file.path.endsWith('.mp4') || file.path.endsWith('.amr') || file.path.endsWith('.wav'))) {
           try {
+            final filename = file.path.split('/').last;
+            final nameWithoutExt = filename.split('.').first;
+            
+            // Skip temporary files (files that match timestamp pattern: recording_1234567890 or just numbers)
+            // These are unsaved recordings that should not be loaded
+            if (_isTemporaryFile(nameWithoutExt)) {
+              print('Skipping temporary/unsaved recording file: ${file.path}');
+              // Optionally delete temporary files
+              try {
+                await file.delete();
+                print('Deleted temporary file: ${file.path}');
+              } catch (e) {
+                print('Could not delete temporary file: $e');
+              }
+              continue;
+            }
+            
             final stat = await file.stat();
             print('Loading recording file: ${file.path}');
             
@@ -594,6 +610,19 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
   }
 
+  // Check if file is a temporary/unsaved recording
+  bool _isTemporaryFile(String nameWithoutExt) {
+    // Check if it matches timestamp pattern (recording_1234567890 or just numbers)
+    if (RegExp(r'^recording_\d+$').hasMatch(nameWithoutExt)) {
+      return true;
+    }
+    // Check if it's just numbers (timestamp only)
+    if (RegExp(r'^\d+$').hasMatch(nameWithoutExt)) {
+      return true;
+    }
+    return false;
+  }
+
   // Extract name from file path
   String _extractNameFromPath(String path) {
     final filename = path.split('/').last;
@@ -624,16 +653,62 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   // Delete recording
   Future<bool> deleteRecording(VoiceRecording recording) async {
     try {
+      // Delete local file first
       final file = File(recording.filePath);
       if (await file.exists()) {
         await file.delete();
+        print('Deleted local recording file: ${recording.filePath}');
       }
       
+      // Remove from local list
       _recordings.remove(recording);
+      
+      // Call backend API to mark as deleted
+      try {
+        await _deleteFromBackend(recording);
+        print('Recording marked as deleted in backend');
+      } catch (e) {
+        print('Backend delete failed (non-critical): $e');
+        // Continue - local delete is successful
+      }
+      
       return true;
     } catch (e) {
       print('Error deleting recording: $e');
       return false;
+    }
+  }
+
+  // Delete recording from backend
+  Future<void> _deleteFromBackend(VoiceRecording recording) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('https://mock-api.colab-app.com/api/recordings'),
+        headers: {
+          'Authorization': 'Bearer mock-token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'name': recording.name,
+          'id': recording.id,
+          'uuid': recording.id,
+        }),
+      ).timeout(
+        const Duration(seconds: 10),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        print('Recording deleted from backend successfully: ${recording.name}');
+      } else {
+        print('Failed to delete recording from backend: ${response.statusCode}');
+        print('Response: ${response.body}');
+      }
+    } on TimeoutException {
+      print('Backend delete timed out (mock API not available - this is expected)');
+      // Don't rethrow - this is non-critical
+    } catch (e) {
+      print('Error deleting from backend: $e');
+      // Don't rethrow - this is non-critical
     }
   }
 

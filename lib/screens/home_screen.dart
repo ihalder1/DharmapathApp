@@ -27,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = false;
   bool _isMantraSelectionExpanded = false;
   bool _isRecordingsExpanded = false;
+  bool _isMyMantrasExpanded = false;
   
   // Notifications
   int _unreadNotificationCount = 0;
@@ -321,6 +322,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Cleanup unsaved recording when leaving the step
+  Future<void> _cleanupUnsavedRecording() async {
+    if (_currentRecordingPath != null) {
+      // Cancel the recording (this will delete the temporary file)
+      await _voiceService.cancelRecording();
+      setState(() {
+        _currentRecordingPath = null;
+      });
+    }
+  }
+
   Future<void> _playRecording(String path) async {
     try {
       // If already playing this file, stop it
@@ -365,6 +377,69 @@ class _HomeScreenState extends State<HomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to play recording: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteRecording(VoiceRecording recording) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Recording'),
+        content: Text('Are you sure you want to delete "${recording.name}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Stop playback if this recording is playing
+    if (_isPlayingRecording && _currentlyPlayingPath == recording.filePath) {
+      await _recordingPlayer.stop();
+      setState(() {
+        _isPlayingRecording = false;
+        _currentlyPlayingPath = null;
+      });
+    }
+
+    // Delete the recording
+    final success = await _voiceService.deleteRecording(recording);
+    
+    if (success) {
+      setState(() {
+        // Reload recordings to update the list
+        _loadRecordings();
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording deleted successfully'),
+            backgroundColor: AppColors.successGreen,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete recording'),
             backgroundColor: Colors.red,
           ),
         );
@@ -495,6 +570,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return _buildExpandedRecordingsStep();
     }
     
+    // If My Mantras is expanded, show it as full screen
+    if (_isMyMantrasExpanded) {
+      return _buildExpandedMyMantrasStep();
+    }
+    
     // If mantra selection is expanded, show it as full screen
     if (_currentStep == 0 && _isMantraSelectionExpanded) {
       return _buildExpandedMantraSelectionStep();
@@ -507,16 +587,6 @@ class _HomeScreenState extends State<HomeScreen> {
     
     return Scaffold(
       backgroundColor: AppColors.background,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => PermissionTestScreen()),
-          );
-        },
-        child: Icon(Icons.bug_report),
-        backgroundColor: Colors.red,
-      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -1900,7 +1970,9 @@ class _HomeScreenState extends State<HomeScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () {
+          onPressed: () async {
+            // Cleanup unsaved recording before leaving
+            await _cleanupUnsavedRecording();
             setState(() {
               _currentStep--;
               // Reset sync flag when leaving this step
@@ -2173,6 +2245,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                             ),
                                           ),
                                         ),
+                                        IconButton(
+                                          onPressed: () => _deleteRecording(recording),
+                                          icon: const Icon(
+                                            Icons.delete,
+                                            color: Colors.red,
+                                          ),
+                                          tooltip: 'Delete recording',
+                                        ),
                                       ],
                                     ),
                                   );
@@ -2298,6 +2378,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
+                          IconButton(
+                            onPressed: () => _deleteRecording(recording),
+                            icon: const Icon(
+                              Icons.delete,
+                              color: Colors.red,
+                              size: 28,
+                            ),
+                            tooltip: 'Delete recording',
+                          ),
                         ],
                       ),
                     );
@@ -2382,13 +2471,32 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            const Text(
-              'My Mantras',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.white,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Expanded(
+                  child: Text(
+                    'My Mantras',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _isMyMantrasExpanded = true;
+                    });
+                  },
+                  icon: const Icon(
+                    Icons.fullscreen,
+                    color: AppColors.white,
+                  ),
+                  tooltip: 'Expand to full screen',
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -2524,41 +2632,195 @@ class _HomeScreenState extends State<HomeScreen> {
             
             const SizedBox(height: 20),
             
-            // Navigation Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      setState(() {
-                        _currentStep--;
-                      });
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.white),
-                      foregroundColor: AppColors.white,
-                    ),
-                    child: const Text('Back'),
-                  ),
+            // Back Button (goes to home screen)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () {
+                  setState(() {
+                    _currentStep = 0; // Go to home screen
+                  });
+                },
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.white),
+                  foregroundColor: AppColors.white,
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _currentStep++;
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.white,
-                      foregroundColor: AppColors.primarySaffron,
-                    ),
-                    child: const Text('Next'),
-                  ),
-                ),
-              ],
+                child: const Text('Back'),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedMyMantrasStep() {
+    // Get purchased mantras
+    final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
+    
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () {
+            setState(() {
+              _isMyMantrasExpanded = false;
+            });
+          },
+        ),
+        title: const Text(
+          'My Mantras',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppColors.voiceGradient,
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Your purchased mantras collection',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: AppColors.white.withOpacity(0.9),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: purchasedMantras.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.music_note_outlined,
+                              size: 64,
+                              color: AppColors.white.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No mantras purchased yet',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: AppColors.white.withOpacity(0.7),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Purchase mantras to see them here',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.white.withOpacity(0.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: purchasedMantras.length,
+                        itemBuilder: (context, index) {
+                          final mantra = purchasedMantras[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                // Icon
+                                Container(
+                                  width: 50,
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: AppColors.white.withOpacity(0.2),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.asset(
+                                      'assets/Media/${mantra.icon}',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        print('Image loading error for ${mantra.icon}: $error');
+                                        return Icon(
+                                          Icons.music_note,
+                                          size: 30,
+                                          color: AppColors.white,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                
+                                // Details
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        mantra.name,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        mantra.formattedPlaytime,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.white.withOpacity(0.7),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Purchased',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green.withOpacity(0.8),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Play Button
+                                IconButton(
+                                  onPressed: () => _playMantra(mantra),
+                                  icon: Icon(
+                                    _currentlyPlaying == mantra && _isPlaying 
+                                        ? Icons.pause_circle_filled 
+                                        : Icons.play_circle_filled,
+                                    color: AppColors.white,
+                                    size: 32,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2791,13 +3053,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         
                         const SizedBox(height: 0),
                         
-                        // Back Button
+                        // Back Button (goes to home screen)
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton(
                             onPressed: () {
                               setState(() {
-                                _currentStep--;
+                                _currentStep = 0; // Go to home screen
                               });
                             },
                             style: OutlinedButton.styleFrom(
@@ -2813,7 +3075,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
             
-            // Back Button (only show when cart is empty)
+            // Back Button (only show when cart is empty, goes to home screen)
             if (cartItems.isEmpty) ...[
               const SizedBox(height: 16),
               SizedBox(
@@ -2821,7 +3083,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: OutlinedButton(
                   onPressed: () {
                     setState(() {
-                      _currentStep--;
+                      _currentStep = 0; // Go to home screen
                     });
                   },
                   style: OutlinedButton.styleFrom(
