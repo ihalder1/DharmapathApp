@@ -94,3 +94,6 @@ pubspec.lock
 # IDE
 .vscode/
 *.iml
+
+# OAuth client secrets
+client_secret_*.json

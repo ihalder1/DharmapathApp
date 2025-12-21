@@ -1,0 +1,66 @@
+═══════════════════════════════════════════════════════════
+  ANDROID EMULATOR SETUP - STEP BY STEP
+═══════════════════════════════════════════════════════════
+
+STEP 1: Open Device Manager in Android Studio
+───────────────────────────────────────────────
+Method A: 
+  - Look at the RIGHT side of Android Studio window
+  - Find tab labeled "Device Manager" (has a phone icon)
+  - Click it
+
+Method B:
+  - Top menu: Tools > Device Manager
+
+STEP 2: Create a New Virtual Device
+─────────────────────────────────────
+1. Click the green "+ Create Device" button (top left)
+2. In "Select Hardware" window:
+   - Choose "Phone" category (left side)
+   - Select "Pixel 5" (or Pixel 6, Pixel 7)
+   - Click "Next"
+
+3. In "System Image" window:
+   - Look for "API 34" or "API 35" 
+   - If you see a "Download" link next to it, click it first
+   - Wait for download to complete
+   - Select the API level (34 or 35)
+   - Click "Next"
+
+4. In "Android Virtual Device" window:
+   - Name: "Test_Device" (or any name)
+   - Click "Finish"
+
+STEP 3: Start the Emulator
+───────────────────────────
+1. In Device Manager, find your new device
+2. Click the green PLAY button (▶) next to it
+3. Wait 30-60 seconds for emulator window to appear
+4. Wait for Android home screen to load completely
+
+STEP 4: Start the App
+──────────────────────
+Once emulator is running, in terminal run:
+  cd /Volumes/Secondary/Projects/Colab/colab_app_ui
+  flutter run -d android
+
+OR the script will auto-detect and start it:
+  ./auto_start_android.sh
+
+═══════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════
+
+If "Create Device" button is grayed out:
+  - Go to Tools > SDK Manager
+  - Install "Android SDK Platform-Tools"
+  - Install "Android Emulator"
+
+If no system images available:
+  - In SDK Manager > SDK Platforms tab
+  - Check "Show Package Details" (bottom right)
+  - Expand "Android 14.0 (API 34)"
+  - Check "Google APIs" or "Google Play"
+  - Click Apply
+
+═══════════════════════════════════════════════════════════

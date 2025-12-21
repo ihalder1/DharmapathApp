@@ -53,14 +53,24 @@
 	<string>This app needs access to photo library to save and share recordings.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>REVERSED_CLIENT_ID</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
-			</array>
-		</dict>
+	    <dict>
+	        <key>CFBundleURLName</key>
+	        <string>REVERSED_CLIENT_ID</string>
+	        <key>CFBundleURLSchemes</key>
+	        <array>
+	            <string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
+	        </array>
+	    </dict>
+	</array>
+
+	<key>GIDClientID</key>
+	<string>333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf.apps.googleusercontent.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<!-- Allow Google Sign-In to query the Google app -->
+		<string>comgooglemaps</string>
+		<string>comgoogle</string>
+		<string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
 	</array>
 </dict>
 </plist>

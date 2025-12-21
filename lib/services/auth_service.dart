@@ -1,6 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import '../constants/api_config.dart';
+import '../utils/device_info.dart';
 
 class AuthService extends ChangeNotifier {
   static final AuthService _instance = AuthService._internal();
@@ -8,7 +13,14 @@ class AuthService extends ChangeNotifier {
   AuthService._internal();
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
+    scopes: ['email', 'profile', 'openid'],
+    // Use the web client ID only when running on web; mobile platforms should
+    // rely on their native client IDs from GoogleService-Info.plist /
+    // google-services.json to avoid "WEB client type" errors.
+    clientId: kIsWeb ? ApiConfig.googleClientId : null,
+    // Always provide serverClientId (your Web client ID) so idTokens are issued
+    // for backend verification on both Android and iOS.
+    serverClientId: ApiConfig.googleClientId,
   );
 
   User? _currentUser;
@@ -35,35 +47,75 @@ class AuthService extends ChangeNotifier {
   // Google Sign In
   Future<bool> signInWithGoogle() async {
     try {
-      // For now, use mock authentication to prevent crashes
-      // TODO: Implement real Google Sign-In when configuration is ready
+      debugPrint('Starting Google Sign-In...');
       
-      // Simulate a successful login
-      await Future.delayed(const Duration(seconds: 1));
+      // Sign out first to ensure a fresh sign-in
+      await _googleSignIn.signOut();
       
-      _currentUser = User(
-        id: 'google_user_123',
-        name: 'Google User',
-        email: 'user@gmail.com',
-        photoUrl: null,
-        provider: 'google',
-      );
+      // Trigger the authentication flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        debugPrint('Google Sign-In cancelled by user');
+        return false;
+      }
 
-      // Mock backend call
+      debugPrint('Google Sign-In successful: ${googleUser.email}');
+      
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      
+      if (googleAuth.idToken == null) {
+        debugPrint('Google ID token is null');
+        return false;
+      }
+
+      // Log the ID token for backend debugging (user requested)
+      debugPrint('=== GOOGLE ID TOKEN START ===');
+      debugPrint(googleAuth.idToken);
+      debugPrint('=== GOOGLE ID TOKEN END ===');
+      
+      debugPrint('Google ID token obtained, sending to backend...');
+      
+      // Send ID token to backend
       final success = await _sendTokenToBackend(
-        'mock_google_access_token',
-        'mock_google_id_token',
+        googleAuth.accessToken ?? '',
+        googleAuth.idToken!,
         'google',
       );
 
       if (success) {
+        // Verify that access token was set by backend
+        if (_accessToken == null || _accessToken!.isEmpty) {
+          debugPrint('ERROR: Backend returned success but access token is null/empty');
+          _currentUser = null;
+          return false;
+        }
+        
+        // Update user info from Google account (if not already set by backend)
+        if (_currentUser == null) {
+          _currentUser = User(
+            id: googleUser.id,
+            name: googleUser.displayName ?? '',
+            email: googleUser.email,
+            photoUrl: googleUser.photoUrl,
+            provider: 'google',
+          );
+        }
+        
         await _saveSession();
-        // Small delay to ensure state is properly saved
-        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // Verify final state before notifying
+        final finalIsLoggedIn = _currentUser != null && _accessToken != null;
+        debugPrint('Final auth state - User: ${_currentUser?.email}, Token: ${_accessToken != null ? "SET (${_accessToken!.length} chars)" : "NULL"}, isLoggedIn: $finalIsLoggedIn');
+        
         notifyListeners();
+        debugPrint('Google Sign-In completed successfully, notifying listeners');
         return true;
       } else {
         _currentUser = null;
+        _accessToken = null;
+        debugPrint('Backend authentication failed');
         return false;
       }
     } catch (e) {
@@ -150,17 +202,108 @@ class AuthService extends ChangeNotifier {
   // Send token to backend
   Future<bool> _sendTokenToBackend(String accessToken, String idToken, String provider) async {
     try {
-      // For now, simulate successful backend response without actual network call
-      // TODO: Replace with real backend when ready
+      // Get device info
+      final deviceInfo = await DeviceInfo.getDeviceInfoMap();
       
-      await Future.delayed(const Duration(milliseconds: 500)); // Simulate network delay
+      // Prepare request body
+      final requestBody = json.encode({
+        'deviceInfo': {
+          'platform': deviceInfo['platform'],
+          'deviceId': deviceInfo['deviceId'],
+          'appVersion': deviceInfo['appVersion'],
+        },
+      });
+
+      debugPrint('Sending Google ID token to backend...');
+      debugPrint('Device Info: $deviceInfo');
       
-      _accessToken = 'mock_access_token_${DateTime.now().millisecondsSinceEpoch}';
-      _refreshToken = 'mock_refresh_token_${DateTime.now().millisecondsSinceEpoch}';
-      _tokenExpiry = DateTime.now().add(const Duration(days: 30)); // 1 month expiry
-      
-      debugPrint('Mock backend authentication successful for $provider');
-      return true;
+      // Make API call to backend
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.googleSignInEndpoint}'),
+        headers: ApiConfig.getHeaders(accessToken: idToken),
+        body: requestBody,
+      ).timeout(
+        const Duration(seconds: 30),
+      );
+
+      debugPrint('Backend response status: ${response.statusCode}');
+      debugPrint('Backend response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+        
+        debugPrint('Backend response data keys: ${responseData.keys.toList()}');
+        
+        // Extract tokens from response
+        // Backend returns tokens nested in a "tokens" object
+        final tokens = responseData['tokens'];
+        if (tokens != null && tokens is Map) {
+          _accessToken = tokens['accessToken'] ?? tokens['access_token'] ?? tokens['token'];
+          _refreshToken = tokens['refreshToken'] ?? tokens['refresh_token'];
+          
+          // Extract token expiry from tokens object
+          if (tokens['expiresIn'] != null) {
+            final expiresIn = tokens['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (tokens['expires_in'] != null) {
+            final expiresIn = tokens['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (tokens['expiry'] != null) {
+            _tokenExpiry = DateTime.parse(tokens['expiry']);
+          } else {
+            // Default to 30 days if not specified
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+        } else {
+          // Fallback: try root level (for backward compatibility)
+          _accessToken = responseData['accessToken'] ?? responseData['access_token'] ?? responseData['token'] ?? responseData['authToken'];
+          _refreshToken = responseData['refreshToken'] ?? responseData['refresh_token'];
+          
+          // Extract token expiry (adjust based on your API response)
+          if (responseData['expiresIn'] != null) {
+            final expiresIn = responseData['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (responseData['expires_in'] != null) {
+            final expiresIn = responseData['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (responseData['expiry'] != null) {
+            _tokenExpiry = DateTime.parse(responseData['expiry']);
+          } else {
+            // Default to 30 days if not specified
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+        }
+        
+        // CRITICAL: Verify that access token was actually set
+        if (_accessToken == null || _accessToken!.isEmpty) {
+          debugPrint('ERROR: Backend returned success but no access token found in response');
+          debugPrint('Response data: $responseData');
+          debugPrint('Tokens object: $tokens');
+          return false;
+        }
+        
+        debugPrint('Access token extracted successfully (length: ${_accessToken!.length})');
+        
+        // Update user info if provided in response
+        if (responseData['user'] != null) {
+          final userData = responseData['user'];
+          _currentUser = User(
+            id: userData['userId'] ?? userData['user_id'] ?? userData['id'] ?? _currentUser?.id ?? '',
+            name: userData['name'] ?? _currentUser?.name ?? '',
+            email: userData['email'] ?? _currentUser?.email ?? '',
+            photoUrl: userData['photoUrl'] ?? userData['photo_url'] ?? _currentUser?.photoUrl,
+            provider: provider,
+          );
+        }
+        
+        debugPrint('Backend authentication successful');
+        debugPrint('isLoggedIn will be: ${_currentUser != null && _accessToken != null}');
+        return true;
+      } else {
+        debugPrint('Backend authentication failed: ${response.statusCode}');
+        debugPrint('Response: ${response.body}');
+        return false;
+      }
     } catch (e) {
       debugPrint('Backend communication error: $e');
       return false;
@@ -173,17 +316,74 @@ class AuthService extends ChangeNotifier {
     
     if (DateTime.now().isAfter(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
       try {
-        // Mock token refresh - no actual network call
-        await Future.delayed(const Duration(milliseconds: 200));
+        debugPrint('Refreshing access token...');
         
-        _accessToken = 'mock_refreshed_access_token_${DateTime.now().millisecondsSinceEpoch}';
-        _tokenExpiry = DateTime.now().add(const Duration(days: 30));
-        await _saveSession();
-        
-        debugPrint('Mock token refresh successful');
+        final response = await http.post(
+          Uri.parse('${ApiConfig.baseUrl}${ApiConfig.refreshTokenEndpoint}'),
+          headers: ApiConfig.getHeaders(accessToken: _accessToken),
+          body: json.encode({'test': 'data'}),
+        ).timeout(
+          const Duration(seconds: 30),
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final responseData = json.decode(response.body);
+          
+          _accessToken = responseData['accessToken'] ?? responseData['access_token'] ?? responseData['token'];
+          
+          if (responseData['expiresIn'] != null) {
+            final expiresIn = responseData['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (responseData['expires_in'] != null) {
+            final expiresIn = responseData['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else {
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+          
+          await _saveSession();
+          debugPrint('Token refresh successful');
+        } else {
+          debugPrint('Token refresh failed: ${response.statusCode}');
+          // If refresh fails, clear session
+          await logout();
+        }
       } catch (e) {
         debugPrint('Token refresh error: $e');
+        // If refresh fails, clear session
+        await logout();
       }
+    }
+  }
+  
+  // Get user profile from backend
+  Future<Map<String, dynamic>?> getUserProfile() async {
+    if (_accessToken == null) {
+      debugPrint('No access token available for profile request');
+      return null;
+    }
+    
+    try {
+      debugPrint('Fetching user profile...');
+      
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}'),
+        headers: ApiConfig.getHeaders(accessToken: _accessToken),
+      ).timeout(
+        const Duration(seconds: 30),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        debugPrint('Profile fetched successfully');
+        return responseData;
+      } else {
+        debugPrint('Failed to fetch profile: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Error fetching profile: $e');
+      return null;
     }
   }
 
@@ -196,6 +396,8 @@ class AuthService extends ChangeNotifier {
     await prefs.setString('user_photo_url', _currentUser?.photoUrl ?? '');
     await prefs.setString('user_provider', _currentUser?.provider ?? '');
     await prefs.setString('access_token', _accessToken ?? '');
+    // Also save as 'auth_token' for compatibility with other services
+    await prefs.setString('auth_token', _accessToken ?? '');
     await prefs.setString('refresh_token', _refreshToken ?? '');
     await prefs.setString('token_expiry', _tokenExpiry?.toIso8601String() ?? '');
   }
@@ -232,6 +434,22 @@ class AuthService extends ChangeNotifier {
   // Logout
   Future<void> logout() async {
     try {
+      // Call backend logout endpoint if we have an access token
+      if (_accessToken != null) {
+        try {
+          await http.post(
+            Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logoutEndpoint}'),
+            headers: ApiConfig.getHeaders(accessToken: _accessToken),
+            body: json.encode({'test': 'data'}),
+          ).timeout(
+            const Duration(seconds: 10),
+          );
+          debugPrint('Backend logout successful');
+        } catch (e) {
+          debugPrint('Backend logout error (continuing with local logout): $e');
+        }
+      }
+      
       // Sign out from Google
       await _googleSignIn.signOut();
       
@@ -246,8 +464,17 @@ class AuthService extends ChangeNotifier {
       _tokenExpiry = null;
       
       notifyListeners();
+      debugPrint('Logout completed');
     } catch (e) {
       debugPrint('Logout error: $e');
+      // Even if logout fails, clear local state
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      _currentUser = null;
+      _accessToken = null;
+      _refreshToken = null;
+      _tokenExpiry = null;
+      notifyListeners();
     }
   }
 

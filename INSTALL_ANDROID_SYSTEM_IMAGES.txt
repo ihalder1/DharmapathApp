@@ -1,0 +1,49 @@
+═══════════════════════════════════════════════════════════
+  INSTALL ANDROID SYSTEM IMAGES - STEP BY STEP
+═══════════════════════════════════════════════════════════
+
+STEP 1: Open SDK Manager
+─────────────────────────
+In Android Studio:
+  Tools > SDK Manager
+  (or press Cmd+Shift+S)
+
+STEP 2: Install SDK Platform
+─────────────────────────────
+1. Click "SDK Platforms" tab (top)
+2. Check the box for "Android 14.0 (UpsideDownCake)" - API Level 34
+   (or Android 13.0 - API Level 33)
+3. Make sure "Google APIs" or "Google Play" is checked under it
+
+STEP 3: Install SDK Tools
+──────────────────────────
+1. Click "SDK Tools" tab (top)
+2. Check these boxes:
+   ✓ Android SDK Build-Tools
+   ✓ Android Emulator
+   ✓ Android SDK Platform-Tools
+   ✓ Google Play services
+
+STEP 4: Apply Changes
+──────────────────────
+1. Click "Apply" button (bottom right)
+2. Click "OK" to confirm
+3. Wait for download and installation (5-10 minutes)
+
+STEP 5: Create New Emulator
+───────────────────────────
+1. Go to: Tools > Device Manager
+2. Click "+ Create Device" (green + button)
+3. Select: Phone > Pixel 5
+4. Click "Next"
+5. Select: "Android 14.0 (API 34)" or "Android 13.0 (API 33)"
+6. Click "Next" > "Finish"
+7. Click the green Play button (▶) to start
+
+STEP 6: Start the App
+─────────────────────
+Once emulator is running:
+  cd /Volumes/Secondary/Projects/Colab/colab_app_ui
+  flutter run -d android
+
+═══════════════════════════════════════════════════════════

@@ -50,17 +50,25 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     return Consumer<AuthService>(
       builder: (context, authService, child) {
+        debugPrint('AuthWrapper rebuild - isLoggedIn: ${authService.isLoggedIn}, user: ${authService.currentUser?.email}, token: ${authService.accessToken != null ? "SET" : "NULL"}');
+        
         // Show login screen if not logged in
         if (!authService.isLoggedIn) {
+          debugPrint('AuthWrapper: Showing LoginScreen');
           return const LoginScreen();
         }
         
         // Show home screen if logged in
+        debugPrint('AuthWrapper: Showing HomeScreen');
         return const HomeScreen();
       },
     );
   }
 }
+
+
+
+
 
 
 

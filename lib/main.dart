@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'screens/home_screen.dart';
+import 'constants/app_colors.dart';
 import 'constants/app_theme.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
@@ -10,8 +12,9 @@ import 'services/voice_recording_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Don't request microphone permission at startup - request when user actually tries to record
-  // This prevents iOS from silently denying the permission
+  // Request microphone permission at startup
+  await Permission.microphone.request();
+  print('Microphone permission requested on iOS startup');
   
   runApp(const ColabApp());
 }
