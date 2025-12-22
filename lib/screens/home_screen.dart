@@ -381,27 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Voice recording methods
   Future<void> _startRecording() async {
-    // Request microphone permission first
-    final hasPermission = await _voiceService.requestPermission();
-    if (!hasPermission) {
-      if (mounted) {
-        // Check if permission is permanently denied
-        final isPermanentlyDenied = await _voiceService.isPermissionPermanentlyDenied();
-        if (isPermanentlyDenied) {
-          _showPermissionDialog();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Microphone permission is required to record audio. Please grant permission.'),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-      }
-      return;
-    }
-
+    // startRecording() handles permission checking internally, so we don't need to check here
     final success = await _voiceService.startRecording();
     if (success) {
       setState(() {

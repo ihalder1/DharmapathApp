@@ -15,11 +15,17 @@ class VoiceRecordingService {
   VoiceRecordingService._internal();
 
   final Uuid _uuid = const Uuid();
-  final AudioRecorder _audioRecorder = AudioRecorder();
+  AudioRecorder? _audioRecorder;
   
   bool _isRecording = false;
   String? _currentRecordingPath;
   List<VoiceRecording> _recordings = [];
+
+  // Get or create audio recorder instance
+  AudioRecorder get _recorder {
+    _audioRecorder ??= AudioRecorder();
+    return _audioRecorder!;
+  }
 
   bool get isRecording => _isRecording;
   String? get currentRecordingPath => _currentRecordingPath;
@@ -91,20 +97,27 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   // Start recording with real audio recording
   Future<bool> startRecording() async {
     try {
-      if (_isRecording) return false;
+      if (_isRecording) {
+        print('Already recording, cannot start again');
+        return false;
+      }
 
-      // Request permission
+      // Request permission (only once)
       final hasPermission = await requestPermission();
       if (!hasPermission) {
         print('Permission denied, cannot start recording');
+        // Check if permission is permanently denied for better error handling
+        final isPermanentlyDenied = await isPermissionPermanentlyDenied();
+        if (isPermanentlyDenied) {
+          print('Permission is permanently denied - user needs to enable in Settings');
+        }
         return false;
       }
 
-      // Check if recorder is available
-      if (!await _audioRecorder.hasPermission()) {
-        print('Audio recorder does not have permission');
-        return false;
-      }
+      // Note: We don't call _audioRecorder.hasPermission() here because:
+      // 1. We already checked permission via PermissionService (native iOS check)
+      // 2. On iOS, calling hasPermission() before the recorder is initialized can cause errors
+      // 3. The start() method will handle initialization and permission validation
 
       // Get app directory
       final directory = await getApplicationDocumentsDirectory();
@@ -148,10 +161,22 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       final filename = 'recording_$timestamp.$extension';
       _currentRecordingPath = '${recordingsDir.path}/$filename';
 
-      await _audioRecorder.start(
-        config,
-        path: _currentRecordingPath!,
-      );
+      // Ensure recorder is initialized (recreate if needed)
+      try {
+        await _recorder.start(
+          config,
+          path: _currentRecordingPath!,
+        );
+      } catch (e) {
+        // If recorder is disposed or not initialized, recreate it
+        print('Recorder error, recreating: $e');
+        _audioRecorder?.dispose();
+        _audioRecorder = AudioRecorder();
+        await _recorder.start(
+          config,
+          path: _currentRecordingPath!,
+        );
+      }
 
       _isRecording = true;
       print('Recording started: $_currentRecordingPath');
@@ -170,7 +195,7 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       if (!_isRecording) return null;
 
       // Stop the real audio recording
-      final path = await _audioRecorder.stop();
+      final path = await _recorder.stop();
       
       if (path != null && path.isNotEmpty) {
         _currentRecordingPath = path;
@@ -215,7 +240,11 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     try {
       if (_isRecording) {
         // Stop recording first
-        await _audioRecorder.stop();
+        try {
+          await _recorder.stop();
+        } catch (e) {
+          print('Error stopping recorder during cancel: $e');
+        }
         _isRecording = false;
       }
       
@@ -720,10 +749,13 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   // Dispose
   Future<void> dispose() async {
     try {
-      if (_isRecording) {
-        await _audioRecorder.stop();
+      if (_isRecording && _audioRecorder != null) {
+        await _recorder.stop();
       }
-      await _audioRecorder.dispose();
+      if (_audioRecorder != null) {
+        await _audioRecorder!.dispose();
+        _audioRecorder = null;
+      }
     } catch (e) {
       print('Error disposing audio recorder: $e');
     }
