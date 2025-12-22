@@ -2613,20 +2613,35 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Expanded(
-                  child: Text(
-                    'My Mantras',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.white,
-                    ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'My Mantras',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Your purchased mantras collection',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.white.withOpacity(0.9),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -2638,42 +2653,38 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(
                     Icons.fullscreen,
                     color: AppColors.white,
+                    size: 18,
                   ),
                   tooltip: 'Expand to full screen',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Your purchased mantras collection',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.white.withOpacity(0.9),
-              ),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 6),
             
-            // Mantras List
+            // Mantras List - Use Expanded to fill available space
             Expanded(
               child: purchasedMantras.isEmpty
                   ? Center(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
                             Icons.music_note_outlined,
-                            size: 64,
+                            size: 56,
                             color: AppColors.white.withOpacity(0.5),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Text(
                             'No mantras purchased yet',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               color: AppColors.white.withOpacity(0.7),
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             'Purchase mantras to see them here',
                             style: TextStyle(
@@ -2689,8 +2700,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemBuilder: (context, index) {
                         final mantra = purchasedMantras[index];
                         return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.white.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
@@ -2699,8 +2710,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               // Icon
                               Container(
-                                width: 50,
-                                height: 50,
+                                width: 44,
+                                height: 44,
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
                                   color: AppColors.white.withOpacity(0.2),
@@ -2709,41 +2720,34 @@ class _HomeScreenState extends State<HomeScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                   child: _buildMantraIcon(
                                     iconName: mantra.icon,
-                                    size: 30,
+                                    size: 28,
                                     iconColor: AppColors.white,
                                     fit: BoxFit.cover,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               
                               // Details
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
                                       mantra.name,
                                       style: const TextStyle(
-                                        fontSize: 16,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                         color: AppColors.white,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    // Text(
-                                    //   mantra.formattedPlaytime, // COMMENTED OUT
-                                    //   style: TextStyle(
-                                    //     fontSize: 12,
-                                    //     color: AppColors.white.withOpacity(0.7),
-                                    //   ),
-                                    // ),
-                                    // const SizedBox(height: 4),
+                                    const SizedBox(height: 2),
                                     Text(
                                       'Purchased',
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         color: Colors.green.withOpacity(0.8),
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -2760,8 +2764,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ? Icons.pause_circle_filled 
                                       : Icons.play_circle_filled,
                                   color: AppColors.white,
-                                  size: 32,
+                                  size: 28,
                                 ),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
                             ],
                           ),
@@ -2770,9 +2776,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
             ),
             
-            const SizedBox(height: 20),
+            const SizedBox(height: 6),
             
-            // Back Button (goes to home screen)
+            // Back Button (goes to home screen) - Use smaller button to save space
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
@@ -2784,8 +2790,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppColors.white),
                   foregroundColor: AppColors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  minimumSize: const Size(0, 36),
                 ),
-                child: const Text('Back'),
+                child: const Text('Back', style: TextStyle(fontSize: 13)),
               ),
             ),
           ],
