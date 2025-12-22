@@ -65,14 +65,14 @@ class MantraService {
           name: 'Test Mantra 1',
           mantraFile: 'test1.mp3',
           icon: 'test1.jpg',
-          playtime: 300,
+          // playtime: 300, // COMMENTED OUT
           price: 299,
         ),
         Mantra(
           name: 'Test Mantra 2',
           mantraFile: 'test2.mp3',
           icon: 'test2.jpg',
-          playtime: 240,
+          // playtime: 240, // COMMENTED OUT
           price: 249,
         ),
       ];

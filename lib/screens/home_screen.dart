@@ -1624,14 +1624,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        mantra.formattedPlaytime,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
+                      // Text(
+                      //   mantra.formattedPlaytime, // COMMENTED OUT
+                      //   style: const TextStyle(
+                      //     fontSize: 12,
+                      //     color: AppColors.textSecondary,
+                      //   ),
+                      // ),
+                      // const SizedBox(height: 4),
                       Text(
                         mantra.formattedPrice,
                         style: const TextStyle(
@@ -1848,14 +1848,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            mantra.formattedPlaytime,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
+                          // Text(
+                          //   mantra.formattedPlaytime, // COMMENTED OUT
+                          //   style: const TextStyle(
+                          //     fontSize: 12,
+                          //     color: AppColors.textSecondary,
+                          //   ),
+                          // ),
+                          // const SizedBox(height: 4),
                           Text(
                             mantra.formattedPrice,
                             style: const TextStyle(
@@ -1987,14 +1987,14 @@ class _HomeScreenState extends State<HomeScreen> {
               
               const SizedBox(height: 4),
               
-              // Playtime
-              Text(
-                mantra.formattedPlaytime,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: AppColors.textSecondary,
-                ),
-              ),
+              // Playtime - COMMENTED OUT
+              // Text(
+              //   mantra.formattedPlaytime, // COMMENTED OUT
+              //   style: const TextStyle(
+              //     fontSize: 9,
+              //     color: AppColors.textSecondary,
+              //   ),
+              // ),
               
               const SizedBox(height: 4),
               
@@ -2709,14 +2709,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                     ),
                                     const SizedBox(height: 4),
-                                    Text(
-                                      mantra.formattedPlaytime,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.white.withOpacity(0.7),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
+                                    // Text(
+                                    //   mantra.formattedPlaytime, // COMMENTED OUT
+                                    //   style: TextStyle(
+                                    //     fontSize: 12,
+                                    //     color: AppColors.white.withOpacity(0.7),
+                                    //   ),
+                                    // ),
+                                    // const SizedBox(height: 4),
                                     Text(
                                       'Purchased',
                                       style: TextStyle(
@@ -2899,14 +2899,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(
-                                        mantra.formattedPlaytime,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.white.withOpacity(0.7),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
+                                      // Text(
+                                      //   mantra.formattedPlaytime, // COMMENTED OUT
+                                      //   style: TextStyle(
+                                      //     fontSize: 12,
+                                      //     color: AppColors.white.withOpacity(0.7),
+                                      //   ),
+                                      // ),
+                                      // const SizedBox(height: 4),
                                       Text(
                                         'Purchased',
                                         style: TextStyle(
@@ -3070,13 +3070,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                               color: AppColors.white,
                                             ),
                                           ),
-                                          Text(
-                                            mantra.formattedPlaytime,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.white.withOpacity(0.7),
-                                            ),
-                                          ),
+                                          // Text(
+                                          //   mantra.formattedPlaytime, // COMMENTED OUT
+                                          //   style: TextStyle(
+                                          //     fontSize: 12,
+                                          //     color: AppColors.white.withOpacity(0.7),
+                                          //   ),
+                                          // ),
                                         ],
                                       ),
                                     ),
@@ -3368,10 +3368,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                            subtitle: Text(
-                              mantra.formattedPlaytime,
-                              style: const TextStyle(fontSize: 12),
-                            ),
+                            // subtitle: Text(
+                            //   mantra.formattedPlaytime, // COMMENTED OUT
+                            //   style: const TextStyle(fontSize: 12),
+                            // ),
                             secondary: Container(
                               width: 40,
                               height: 40,

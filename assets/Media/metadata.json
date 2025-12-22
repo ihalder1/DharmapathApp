@@ -4,50 +4,50 @@
             "name": "Maa Durga Mantra",
             "mantra_file": "M-DURGA-001.mp3",
             "icon": "M-DURGA-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 201,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Ganesh Mantra",
             "mantra_file": "M-GANESH-001.mp3",
             "icon": "M-GANESH-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 99,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Maa MahaKali Mantra",
             "mantra_file": "M-MAHAKALI-001.mp3",
             "icon": "M-MAHAKALI-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 151,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Shri Rama Mantra",
             "mantra_file": "M-RAM-001.mp3",
             "icon": "M-RAM-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 100,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Maa Saraswati Mantra",
             "mantra_file": "M-SARASWATI-001.mp3",
             "icon": "M-SARASWATI-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 110,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Shani Dev Mantra",
             "mantra_file": "M-SHANI-001.mp3",
             "icon": "M-SHANI-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 161,
+            "last_modified": "2025-12-01 12:05:00"
         },
         {
             "name": "Surya Dev Mantra",
             "mantra_file": "M-SURYA-001.mp3",
             "icon": "M-SURYA-001.jpg",
-            "playtime": 300,
-            "price": 299
+            "price": 55,
+            "last_modified": "2025-12-01 12:05:00"
         }
     ]
 }
