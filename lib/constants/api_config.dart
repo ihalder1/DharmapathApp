@@ -17,6 +17,9 @@ class ApiConfig {
   static const String profileEndpoint = '/auth/profile';
   static const String logoutEndpoint = '/auth/logout';
   
+  // Songs endpoint
+  static const String songsEndpoint = '/songs';
+  
   // Payment endpoints
   static const String createPaymentIntentEndpoint = '/payments/create-intent';
   static const String confirmPaymentEndpoint = '/payments/confirm';

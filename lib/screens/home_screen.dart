@@ -283,6 +283,69 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  // Helper widget to load mantra icon with failsafe (tries .png, then .jpg)
+  Widget _buildMantraIcon({
+    required String iconName,
+    required double size,
+    required Color iconColor,
+    BoxFit fit = BoxFit.cover,
+    BorderRadius? borderRadius,
+  }) {
+    // Try to get base name without extension
+    String baseName = iconName;
+    if (iconName.contains('.')) {
+      baseName = iconName.substring(0, iconName.lastIndexOf('.'));
+    }
+
+    return Image.asset(
+      'assets/Media/$iconName',
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) {
+        // If original failed and it's .png, try .jpg
+        if (iconName.endsWith('.png')) {
+          final jpgName = '$baseName.jpg';
+          print('Image loading error for $iconName, trying $jpgName');
+          return Image.asset(
+            'assets/Media/$jpgName',
+            fit: fit,
+            errorBuilder: (context, error2, stackTrace2) {
+              print('Image loading error for both $iconName and $jpgName: $error2');
+              return Icon(
+                Icons.music_note,
+                size: size,
+                color: iconColor,
+              );
+            },
+          );
+        }
+        // If original failed and it's .jpg, try .png
+        else if (iconName.endsWith('.jpg')) {
+          final pngName = '$baseName.png';
+          print('Image loading error for $iconName, trying $pngName');
+          return Image.asset(
+            'assets/Media/$pngName',
+            fit: fit,
+            errorBuilder: (context, error2, stackTrace2) {
+              print('Image loading error for both $iconName and $pngName: $error2');
+              return Icon(
+                Icons.music_note,
+                size: size,
+                color: iconColor,
+              );
+            },
+          );
+        }
+        // If no extension or other extension, just show icon
+        print('Image loading error for $iconName: $error');
+        return Icon(
+          Icons.music_note,
+          size: size,
+          color: iconColor,
+        );
+      },
+    );
+  }
+
   // Load recordings from local storage and sync with backend
   Future<void> _loadRecordings() async {
     await _voiceService.loadRecordings();
@@ -1595,17 +1658,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/Media/${mantra.icon}',
+                    child: _buildMantraIcon(
+                      iconName: mantra.icon,
+                      size: 30,
+                      iconColor: AppColors.primarySaffron,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        print('Image loading error for ${mantra.icon}: $error');
-                        return Icon(
-                          Icons.music_note,
-                          size: 30,
-                          color: AppColors.primarySaffron,
-                        );
-                      },
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
@@ -1819,17 +1877,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          'assets/Media/${mantra.icon}',
+                        child: _buildMantraIcon(
+                          iconName: mantra.icon,
+                          size: 30,
+                          iconColor: AppColors.primarySaffron,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            print('Image loading error for ${mantra.icon}: $error');
-                            return Icon(
-                              Icons.music_note,
-                              size: 30,
-                              color: AppColors.primarySaffron,
-                            );
-                          },
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                     ),
@@ -1957,18 +2010,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                    child: Image.asset(
-                      'assets/Media/${mantra.icon}',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        print('Image loading error for ${mantra.icon}: $error');
-                        return Icon(
-                          Icons.music_note,
-                          size: 24,
-                          color: AppColors.primarySaffron,
-                        );
-                      },
-                    ),
+                  child: _buildMantraIcon(
+                    iconName: mantra.icon,
+                    size: 24,
+                    iconColor: AppColors.primarySaffron,
+                    fit: BoxFit.cover,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
@@ -2679,17 +2727,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.asset(
-                                    'assets/Media/${mantra.icon}',
+                                  child: _buildMantraIcon(
+                                    iconName: mantra.icon,
+                                    size: 30,
+                                    iconColor: AppColors.white,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      print('Image loading error for ${mantra.icon}: $error');
-                                      return Icon(
-                                        Icons.music_note,
-                                        size: 30,
-                                        color: AppColors.white,
-                                      );
-                                    },
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
                               ),
@@ -2869,17 +2912,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.asset(
-                                      'assets/Media/${mantra.icon}',
+                                    child: _buildMantraIcon(
+                                      iconName: mantra.icon,
+                                      size: 30,
+                                      iconColor: AppColors.white,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        print('Image loading error for ${mantra.icon}: $error');
-                                        return Icon(
-                                          Icons.music_note,
-                                          size: 30,
-                                          color: AppColors.white,
-                                        );
-                                      },
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
                                   ),
                                 ),
@@ -3041,17 +3079,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(6),
-                                        child: Image.asset(
-                                          'assets/Media/${mantra.icon}',
+                                        child: _buildMantraIcon(
+                                          iconName: mantra.icon,
+                                          size: 20,
+                                          iconColor: AppColors.white,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) {
-                                            print('Image loading error for ${mantra.icon}: $error');
-                                            return Icon(
-                                              Icons.music_note,
-                                              size: 20,
-                                              color: AppColors.white,
-                                            );
-                                          },
+                                          borderRadius: BorderRadius.circular(6),
                                         ),
                                       ),
                                     ),
@@ -3381,16 +3414,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(6),
-                                child: Image.asset(
-                                  'assets/Media/${mantra.icon}',
+                                child: _buildMantraIcon(
+                                  iconName: mantra.icon,
+                                  size: 20,
+                                  iconColor: AppColors.primarySaffron,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(
-                                      Icons.music_note,
-                                      size: 20,
-                                      color: AppColors.primarySaffron,
-                                    );
-                                  },
+                                  borderRadius: BorderRadius.circular(6),
                                 ),
                               ),
                             ),
