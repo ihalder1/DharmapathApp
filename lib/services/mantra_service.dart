@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
+import '../constants/api_config.dart';
+import 'auth_service.dart';
 import 'song_service.dart';
 import 'mantra_sync_service.dart';
 
@@ -233,13 +235,17 @@ class MantraService {
     required List<String> mantraIds,
   }) async {
     try {
-      // Get auth token
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token') ?? 'mock-token';
+      // Get auth token from AuthService
+      final authService = AuthService();
+      final accessToken = authService.accessToken;
 
-      // API endpoint - replace with actual backend URL
-      const String baseUrl = 'https://api.dharmapath.com'; // Replace with actual backend URL
-      final url = Uri.parse('$baseUrl/api/generate-mantra');
+      if (accessToken == null || accessToken.isEmpty) {
+        print('❌ ERROR: No access token available for generate mantra API');
+        return false;
+      }
+
+      // API endpoint
+      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.generateMantraEndpoint}');
 
       // Prepare request body
       final requestBody = json.encode({
@@ -247,39 +253,44 @@ class MantraService {
         'mantra_ids': mantraIds,
       });
 
-      print('Generating mantra in voice...');
-      print('Recording ID: $recordingId');
-      print('Mantra IDs: $mantraIds');
+      print('═══════════════════════════════════════════════════════════');
+      print('🎤 GENERATE MANTRA IN VOICE API CALL');
+      print('═══════════════════════════════════════════════════════════');
+      print('📤 REQUEST:');
+      print('   URL: $url');
+      print('   Method: PUT');
+      print('   Recording ID: $recordingId');
+      print('   Mantra IDs: $mantraIds');
+      print('   FULL TOKEN: $accessToken');
+      print('   Request Body: $requestBody');
 
-      // Make API call
-      final response = await http.post(
+      // Make API call (PUT method as per API spec)
+      final response = await http.put(
         url,
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: ApiConfig.getHeaders(accessToken: accessToken),
         body: requestBody,
       ).timeout(
         const Duration(seconds: 30),
       );
 
-      print('API Response Status: ${response.statusCode}');
-      print('API Response Body: ${response.body}');
+      print('═══════════════════════════════════════════════════════════');
+      print('📥 RESPONSE:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Body: ${response.body}');
+      print('═══════════════════════════════════════════════════════════');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = json.decode(response.body);
-        print('Mantra generation started successfully');
+      if (response.statusCode == 200) {
+        print('✅ Mantra generation started successfully');
         return true;
       } else {
-        print('Failed to generate mantra: ${response.statusCode}');
-        print('Response: ${response.body}');
+        print('❌ Failed to generate mantra: ${response.statusCode}');
+        print('   Response: ${response.body}');
         return false;
       }
-    } catch (e) {
-      print('Error generating mantra in voice: $e');
-      // For now, return true for mock/development
-      // In production, this should return false
-      return true; // Mock success for development
+    } catch (e, stackTrace) {
+      print('❌ ERROR generating mantra in voice: $e');
+      print('   StackTrace: $stackTrace');
+      return false;
     }
   }
 }

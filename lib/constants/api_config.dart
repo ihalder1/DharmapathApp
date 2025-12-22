@@ -20,6 +20,9 @@ class ApiConfig {
   // Songs endpoint
   static const String songsEndpoint = '/songs';
   
+  // Generate Mantra endpoint
+  static const String generateMantraEndpoint = '/auth/profile/generate-mantra';
+  
   // Payment endpoints
   static const String createPaymentIntentEndpoint = '/payments/create-intent';
   static const String confirmPaymentEndpoint = '/payments/confirm';

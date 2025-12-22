@@ -3460,30 +3460,36 @@ class _HomeScreenState extends State<HomeScreen> {
     required String recordingId,
     required List<String> mantraIds,
   }) async {
-    try {
-      // Show loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+    if (!mounted) return;
+    
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
 
+    try {
       // Call API
       final success = await MantraService.generateMantraInVoice(
         recordingId: recordingId,
         mantraIds: mantraIds,
       );
 
-      Navigator.of(context).pop(); // Close loading dialog
+      // Close loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
 
       if (success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Mantra generation started successfully!'),
+              content: Text('The Mantra is getting generated and you will be notified shortly'),
               backgroundColor: AppColors.successGreen,
+              duration: Duration(seconds: 4),
             ),
           );
         }
@@ -3498,7 +3504,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      Navigator.of(context).pop(); // Close loading dialog
+      // Close loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
