@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../constants/app_colors.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -320,12 +321,15 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       final success = await signInFunction();
       
       if (success) {
-        // Navigation will be handled by AuthWrapper automatically
-        // No need to show success message as user will see home screen
+        // Navigate to home screen after successful login
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
+          // Navigate to home screen
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+          );
         }
       } else {
         setState(() {

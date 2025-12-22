@@ -359,29 +359,59 @@ class AuthService extends ChangeNotifier {
   // Get user profile from backend
   Future<Map<String, dynamic>?> getUserProfile() async {
     if (_accessToken == null) {
+      print('❌ ERROR: No access token available for profile request');
       debugPrint('No access token available for profile request');
       return null;
     }
     
     try {
+      print('═══════════════════════════════════════════════════════════');
+      print('📥 GET USER PROFILE API CALL START');
+      print('═══════════════════════════════════════════════════════════');
+      
+      final url = '${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}';
+      final headers = ApiConfig.getHeaders(accessToken: _accessToken);
+      
+      print('📤 REQUEST DETAILS:');
+      print('   Method: GET');
+      print('   URL: $url');
+      print('   Headers: ${json.encode(headers)}');
+      print('   FULL TOKEN: $_accessToken');
+      
       debugPrint('Fetching user profile...');
       
       final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}'),
-        headers: ApiConfig.getHeaders(accessToken: _accessToken),
+        Uri.parse(url),
+        headers: headers,
       ).timeout(
         const Duration(seconds: 30),
       );
 
+      print('📥 RESPONSE DETAILS:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Headers: ${response.headers}');
+      print('   Response Body: ${response.body}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
+        print('✅ GET USER PROFILE SUCCESS');
+        print('   Data: ${json.encode(responseData)}');
+        print('═══════════════════════════════════════════════════════════');
         debugPrint('Profile fetched successfully');
         return responseData;
       } else {
+        print('❌ GET USER PROFILE FAILED');
+        print('   Status: ${response.statusCode}');
+        print('   Body: ${response.body}');
+        print('═══════════════════════════════════════════════════════════');
         debugPrint('Failed to fetch profile: ${response.statusCode}');
         return null;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ GET USER PROFILE ERROR:');
+      print('   Error: $e');
+      print('   StackTrace: $stackTrace');
+      print('═══════════════════════════════════════════════════════════');
       debugPrint('Error fetching profile: $e');
       return null;
     }

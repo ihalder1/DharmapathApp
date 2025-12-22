@@ -13,6 +13,7 @@ import '../services/notification_service.dart';
 import '../models/mantra.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -56,13 +57,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final AudioPlayer _recordingPlayer = AudioPlayer();
   bool _hasSyncedRecordings = false;
   
-  // Personal Info Data
+  // Personal Info Data - Initialize with default values
   Map<String, dynamic> _personalInfo = {
-    'fullName': 'John Doe',
-    'email': 'john.doe@example.com',
-    'location': 'New Delhi, India',
-    'mobile': '+91 9876543210',
-    'gender': 'Male',
+    'fullName': '',
+    'email': '',
+    'location': 'Add Location',
+    'mobile': 'Add Phone Number',
+    'gender': 'Prefer not to say',
   };
   
   final List<Map<String, dynamic>> _steps = [
@@ -91,6 +92,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize with authenticated user data immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializePersonalInfo();
+    });
     _loadProfileData();
     _loadMantras();
     _searchController.addListener(_filterMantras);
@@ -108,6 +113,25 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // Initialize personal info with authenticated user data
+  void _initializePersonalInfo() {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final user = authService.currentUser;
+    
+    if (user != null) {
+      setState(() {
+        _personalInfo = {
+          'fullName': user.name,
+          'email': user.email,
+          'location': _personalInfo['location'] ?? 'Add Location',
+          'mobile': _personalInfo['mobile'] ?? 'Add Phone Number',
+          'gender': _personalInfo['gender'] ?? 'Prefer not to say',
+        };
+        _photoUrl = user.photoUrl ?? _photoUrl;
+      });
+    }
+  }
+
   // Load profile data from API
   Future<void> _loadProfileData() async {
     setState(() {
@@ -115,29 +139,92 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
+      // First, initialize with authenticated user data
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUser = authService.currentUser;
+      
+      if (currentUser != null) {
+        setState(() {
+          _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
+              ? _personalInfo['fullName'] 
+              : currentUser.name;
+          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
+              ? _personalInfo['email'] 
+              : currentUser.email;
+          _photoUrl = _photoUrl ?? currentUser.photoUrl;
+        });
+      }
+      
+      // Then try to get full profile from API
       final profileData = await ProfileService.getProfile();
       if (profileData != null) {
         setState(() {
           _personalInfo = {
-            'fullName': profileData['fullName'] ?? 'John Doe',
-            'email': profileData['email'] ?? 'john.doe@example.com',
-            'location': profileData['location'] ?? 'New Delhi, India',
-            'mobile': profileData['mobile'] ?? '+91 9876543210',
-            'gender': profileData['gender'] ?? 'Male',
+            'fullName': (profileData['fullName']?.toString().isNotEmpty == true) 
+                ? profileData['fullName'] 
+                : (_personalInfo['fullName']?.toString().isNotEmpty == true ? _personalInfo['fullName'] : ''),
+            'email': (profileData['email']?.toString().isNotEmpty == true) 
+                ? profileData['email'] 
+                : (_personalInfo['email']?.toString().isNotEmpty == true ? _personalInfo['email'] : ''),
+            'location': (profileData['location'] != null && profileData['location'].toString().trim().isNotEmpty) 
+                ? profileData['location'] 
+                : 'Add Location',
+            'mobile': (profileData['mobile'] != null && profileData['mobile'].toString().trim().isNotEmpty) 
+                ? profileData['mobile'] 
+                : 'Add Phone Number',
+            'gender': (profileData['gender'] != null && profileData['gender'].toString().trim().isNotEmpty) 
+                ? profileData['gender'] 
+                : 'Prefer not to say',
           };
-          _photoUrl = profileData['photoUrl'];
+          _photoUrl = profileData['photoUrl'] ?? _photoUrl;
         });
+      } else {
+        // If profile API fails, ensure we at least have authenticated user data and default values
+        if (currentUser != null) {
+          setState(() {
+            _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
+                ? _personalInfo['fullName'] 
+                : currentUser.name;
+            _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
+                ? _personalInfo['email'] 
+                : currentUser.email;
+            _personalInfo['location'] = _personalInfo['location']?.isNotEmpty == true 
+                ? _personalInfo['location'] 
+                : 'Add Location';
+            _personalInfo['mobile'] = _personalInfo['mobile']?.isNotEmpty == true 
+                ? _personalInfo['mobile'] 
+                : 'Add Phone Number';
+            _personalInfo['gender'] = _personalInfo['gender']?.isNotEmpty == true 
+                ? _personalInfo['gender'] 
+                : 'Prefer not to say';
+            _photoUrl = _photoUrl ?? currentUser.photoUrl;
+          });
+        }
       }
     } catch (e) {
-      print('Error loading profile: $e');
-      // Show error message to user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load profile: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      debugPrint('Error loading profile: $e');
+      // Fallback to authenticated user data with default values
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUser = authService.currentUser;
+      if (currentUser != null) {
+        setState(() {
+          _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
+              ? _personalInfo['fullName'] 
+              : currentUser.name;
+          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
+              ? _personalInfo['email'] 
+              : currentUser.email;
+          _personalInfo['location'] = _personalInfo['location']?.isNotEmpty == true 
+              ? _personalInfo['location'] 
+              : 'Add Location';
+          _personalInfo['mobile'] = _personalInfo['mobile']?.isNotEmpty == true 
+              ? _personalInfo['mobile'] 
+              : 'Add Phone Number';
+          _personalInfo['gender'] = _personalInfo['gender']?.isNotEmpty == true 
+              ? _personalInfo['gender'] 
+              : 'Prefer not to say';
+          _photoUrl = _photoUrl ?? currentUser.photoUrl;
+        });
       }
     } finally {
       if (mounted) {
@@ -1070,105 +1157,132 @@ class _HomeScreenState extends State<HomeScreen> {
     final nameController = TextEditingController(text: _personalInfo['fullName']);
     final locationController = TextEditingController(text: _personalInfo['location']);
     final mobileController = TextEditingController(text: _personalInfo['mobile']);
-    final genderController = TextEditingController(text: _personalInfo['gender']);
+    String initialGender = _personalInfo['gender'] ?? 'Prefer not to say';
+    // Normalize gender value to match dropdown options
+    if (initialGender != 'Male' && initialGender != 'Female' && initialGender != 'Prefer not to say') {
+      initialGender = 'Prefer not to say';
+    }
     
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Personal Information'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  border: OutlineInputBorder(),
-                ),
+      builder: (context) {
+        String selectedGender = initialGender;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Edit Personal Information'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: locationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Location',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: mobileController,
+                    decoration: const InputDecoration(
+                      labelText: 'Mobile',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedGender,
+                    decoration: const InputDecoration(
+                      labelText: 'Gender',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const ['Male', 'Female', 'Prefer not to say'].map((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setDialogState(() {
+                          selectedGender = newValue;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: locationController,
-                decoration: const InputDecoration(
-                  labelText: 'Location',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: mobileController,
-                decoration: const InputDecoration(
-                  labelText: 'Mobile',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: genderController,
-                decoration: const InputDecoration(
-                  labelText: 'Gender',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              // Show loading
-              Navigator.pop(context);
-              
-              setState(() {
-                _isLoading = true;
-              });
-
-              try {
-                // Update profile via API
-                final success = await ProfileService.updateProfile(
-                  fullName: nameController.text,
-                  location: locationController.text,
-                  mobile: mobileController.text,
-                  gender: genderController.text,
-                );
-
-                if (success) {
-                  // Update local state
-                  setState(() {
-                    _personalInfo['fullName'] = nameController.text;
-                    _personalInfo['location'] = locationController.text;
-                    _personalInfo['mobile'] = mobileController.text;
-                    _personalInfo['gender'] = genderController.text;
-                  });
+              TextButton(
+                onPressed: () async {
+                  // Store the selected gender before closing dialog
+                  final finalGender = selectedGender;
+                  Navigator.pop(context);
                   
-                  // Show success message
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Personal information updated successfully'),
-                        backgroundColor: Colors.green,
-                      ),
+                  setState(() {
+                    _isLoading = true;
+                  });
+
+                  try {
+                    // Update profile via API
+                    final success = await ProfileService.updateProfile(
+                      fullName: nameController.text,
+                      location: locationController.text,
+                      mobile: mobileController.text,
+                      gender: finalGender,
                     );
-                  }
-                } else {
-                  // Show error message
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Failed to update profile'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
+
+                    if (success) {
+                      // Update local state with the values we just saved
+                      final updatedLocation = locationController.text.trim();
+                      final updatedMobile = mobileController.text.trim();
+                      
+                      setState(() {
+                        _personalInfo['fullName'] = nameController.text.trim();
+                        _personalInfo['location'] = updatedLocation.isEmpty ? 'Add Location' : updatedLocation;
+                        _personalInfo['mobile'] = updatedMobile.isEmpty ? 'Add Phone Number' : updatedMobile;
+                        _personalInfo['gender'] = finalGender;
+                      });
+                      
+                      // Don't reload from API immediately - preserve the values we just saved
+                      // The API might not return them immediately, so we keep our updated values
+                  
+                      // Show success message
+                      if (mounted && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Personal information updated successfully'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } else {
+                      // Show error message
+                      if (mounted && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to update profile. Please check your connection and try again.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
               } catch (e) {
                 print('Error updating profile: $e');
-                if (mounted) {
+                if (mounted && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Error updating profile: $e'),
@@ -1186,6 +1300,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+        );
+      },
     );
   }
 
@@ -3117,6 +3233,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.of(context).pop();
                 await context.read<AuthService>().logout();
                 if (mounted) {
+                  // Navigate to login screen after logout
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    (route) => false,
+                  );
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Successfully logged out'),
