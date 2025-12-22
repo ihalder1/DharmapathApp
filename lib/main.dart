@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'screens/home_screen.dart';
 import 'constants/app_colors.dart';
 import 'constants/app_theme.dart';
+import 'constants/api_config.dart';
 import 'services/auth_service.dart';
 import 'services/profile_service.dart';
 import 'services/mantra_service.dart';
@@ -11,6 +13,12 @@ import 'services/voice_recording_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Stripe
+  Stripe.publishableKey = ApiConfig.stripePublishableKey;
+  Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
+  await Stripe.instance.applySettings();
+  print('Stripe initialized with publishable key: ${ApiConfig.stripePublishableKey}');
   
   // Request microphone permission at startup
   await Permission.microphone.request();

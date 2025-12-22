@@ -14,6 +14,7 @@ import '../models/mantra.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
 import 'login_screen.dart';
+import 'payment_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -3143,14 +3144,31 @@ class _HomeScreenState extends State<HomeScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () {
-                              // Handle checkout
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Proceeding to checkout...'),
-                                  backgroundColor: AppColors.successGreen,
+                            onPressed: () async {
+                              // Navigate to payment screen
+                              final paymentSuccess = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PaymentScreen(
+                                    totalAmount: total,
+                                    cartItems: cartItems,
+                                  ),
                                 ),
                               );
+                              
+                              // If payment was successful, update mantras and go to Select Mantra screen
+                              if (paymentSuccess == true && mounted) {
+                                // Get updated mantras from MantraService (already marked as purchased)
+                                // DO NOT reload from API/JSON as it will overwrite the purchased status
+                                final updatedMantras = MantraService.getMantras();
+                                print('Updating UI with ${updatedMantras.length} mantras after payment');
+                                print('Purchased mantras: ${updatedMantras.where((m) => m.isBought).map((m) => '${m.name} (${m.mantraFile})').join(', ')}');
+                                setState(() {
+                                  _mantras = updatedMantras;
+                                  _filteredMantras = updatedMantras;
+                                  _currentStep = 0; // Go to Select Mantra screen
+                                });
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.white,

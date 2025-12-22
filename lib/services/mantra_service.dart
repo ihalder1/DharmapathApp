@@ -126,6 +126,59 @@ class MantraService {
     }
   }
 
+  // Mark mantra as purchased
+  static void markAsPurchased(Mantra mantra) {
+    print('═══════════════════════════════════════════════════════════');
+    print('🛒 MARKING MANTRA AS PURCHASED');
+    print('═══════════════════════════════════════════════════════════');
+    print('Mantra to mark: ${mantra.name}');
+    print('Mantra file: ${mantra.mantraFile}');
+    print('Current isBought: ${mantra.isBought}');
+    print('Total mantras in list: ${_mantras.length}');
+    
+    // First try exact match by mantraFile (case-insensitive)
+    int index = _mantras.indexWhere((m) => 
+      m.mantraFile.toLowerCase().trim() == mantra.mantraFile.toLowerCase().trim()
+    );
+    
+    // If not found, try matching by name
+    if (index == -1) {
+      print('Not found by mantraFile, trying name match...');
+      index = _mantras.indexWhere((m) => 
+        m.name.toLowerCase().trim() == mantra.name.toLowerCase().trim()
+      );
+    }
+    
+    // If still not found, try partial match on mantraFile
+    if (index == -1) {
+      print('Not found by name, trying partial mantraFile match...');
+      final searchFile = mantra.mantraFile.toLowerCase().trim();
+      index = _mantras.indexWhere((m) => 
+        m.mantraFile.toLowerCase().trim().contains(searchFile) ||
+        searchFile.contains(m.mantraFile.toLowerCase().trim())
+      );
+    }
+    
+    if (index != -1) {
+      print('✅ Found mantra at index $index');
+      print('   Before: ${_mantras[index].name} - isBought: ${_mantras[index].isBought}');
+      _mantras[index] = _mantras[index].copyWith(
+        isBought: true,
+        isInCart: false,
+      );
+      print('   After: ${_mantras[index].name} - isBought: ${_mantras[index].isBought}');
+      print('═══════════════════════════════════════════════════════════');
+    } else {
+      print('❌ WARNING: Could not find mantra to mark as purchased!');
+      print('   Searching for: ${mantra.name} (${mantra.mantraFile})');
+      print('   Available mantras:');
+      for (int i = 0; i < _mantras.length; i++) {
+        print('     [$i] ${_mantras[i].name} (${_mantras[i].mantraFile}) - isBought: ${_mantras[i].isBought}');
+      }
+      print('═══════════════════════════════════════════════════════════');
+    }
+  }
+
   // Check if mantra is in cart
   static bool isInCart(Mantra mantra) {
     return _cart.any((item) => item.name == mantra.name);
