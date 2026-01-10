@@ -8,6 +8,8 @@ import 'dart:convert';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'permission_service.dart';
+import '../constants/api_config.dart';
+import 'auth_service.dart';
 
 class VoiceRecordingService {
   static final VoiceRecordingService _instance = VoiceRecordingService._internal();
@@ -265,11 +267,16 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
   }
 
   // Save recording with name
-  Future<bool> saveRecording(String name, String language) async {
+  // Returns a map with 'success' (bool) and 'errorMessage' (String?) keys
+  Future<Map<String, dynamic>> saveRecording(String name, String language) async {
     try {
       if (_currentRecordingPath == null) {
         print('Error: No recording path to save');
-        return false;
+        return {
+          'success': false,
+          'backendSuccess': false,
+          'errorMessage': 'No recording path to save',
+        };
       }
 
       // Get app directory
@@ -293,20 +300,9 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.$extension');
       }
       
-      // Copy/rename the file
+      // Copy/rename the file (temporarily, will delete if backend fails)
       await originalFile.copy(finalFile.path);
-      print('Recording file saved to: ${finalFile.path}');
-
-      // Delete the original temporary file to avoid duplicates
-      try {
-        if (await originalFile.exists()) {
-          await originalFile.delete();
-          print('Deleted original temporary file: ${originalFile.path}');
-        }
-      } catch (e) {
-        print('Warning: Could not delete original file: $e');
-        // Continue anyway - the new file is saved
-      }
+      print('Recording file copied to: ${finalFile.path}');
 
       // Generate UUID
       final uuid = _uuid.v4();
@@ -320,91 +316,257 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         createdAt: DateTime.now(),
       );
 
-      // Add to local list
+      // Try to save to backend FIRST - if this fails, we won't save locally
+      String? backendErrorMessage;
+      bool backendSuccess = false;
+      try {
+        await _saveToBackend(recording).timeout(
+          const Duration(seconds: 35), // Increased to allow for file upload
+        );
+        print('Recording saved to backend successfully');
+        backendSuccess = true;
+      } on TimeoutException {
+        print('Backend save timeout - will not save locally');
+        backendErrorMessage = 'Backend save timed out';
+      } catch (e) {
+        print('Backend save failed: $e');
+        // Simple error message extraction - just get the message part
+        backendErrorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+
+      // If backend save failed, delete the local file and return error
+      if (!backendSuccess) {
+        try {
+          if (await finalFile.exists()) {
+            await finalFile.delete();
+            print('Deleted local file because backend save failed: ${finalFile.path}');
+          }
+        } catch (e) {
+          print('Warning: Could not delete local file: $e');
+        }
+        
+        // Delete the original temporary file
+        try {
+          if (await originalFile.exists()) {
+            await originalFile.delete();
+            print('Deleted original temporary file: ${originalFile.path}');
+          }
+        } catch (e) {
+          print('Warning: Could not delete original file: $e');
+        }
+        
+        // Clear current recording
+        _currentRecordingPath = null;
+        
+        return {
+          'success': false,
+          'backendSuccess': false,
+          'errorMessage': backendErrorMessage ?? 'Failed to save recording to backend',
+        };
+      }
+
+      // Backend save succeeded - now finalize local save
+      // Delete the original temporary file
+      try {
+        if (await originalFile.exists()) {
+          await originalFile.delete();
+          print('Deleted original temporary file: ${originalFile.path}');
+        }
+      } catch (e) {
+        print('Warning: Could not delete original file: $e');
+        // Continue anyway - the new file is saved
+      }
+
+      // Add to local list only after backend success
       _recordings.add(recording);
       print('Recording added to local list: ${recording.name}');
 
-      // Save to backend (with timeout, but await it)
-      try {
-        await _saveToBackend(recording).timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            print('Backend save timeout (continuing with local save)');
-            return;
-          },
-        );
-        print('Recording saved to backend successfully');
-      } catch (e) {
-        print('Backend save failed (non-critical): $e');
-        // Continue - local save is successful
-      }
-
       // Clear current recording
       _currentRecordingPath = null;
-      print('Recording saved successfully: $name');
-      return true;
+      print('Recording saved successfully (both local and backend): $name');
+      
+      // Return success
+      return {
+        'success': true,
+        'backendSuccess': true,
+        'errorMessage': null,
+      };
     } catch (e, stackTrace) {
       print('Error saving recording: $e');
       print('Stack trace: $stackTrace');
-      return false;
+      return {
+        'success': false,
+        'backendSuccess': false,
+        'errorMessage': 'Failed to save recording: ${e.toString()}',
+      };
     }
   }
 
-  // Save recording to backend (with file upload)
+  // Map language name to language code
+  String _mapLanguageToCode(String language) {
+    switch (language.toLowerCase()) {
+      case 'english':
+        return 'en-US';
+      case 'bengali':
+        return 'bn-IN'; // Bengali (India)
+      case 'hindi':
+        return 'hi-IN'; // Hindi (India)
+      default:
+        return 'en-US'; // Default to English
+    }
+  }
+
+  // Save recording to backend (with base64 JSON body)
   Future<void> _saveToBackend(VoiceRecording recording) async {
     try {
+      // Get auth token from AuthService
+      final authService = AuthService();
+      final accessToken = authService.accessToken;
+
+      if (accessToken == null || accessToken.isEmpty) {
+        print('❌ ERROR: No access token available for recording upload API');
+        throw Exception('No authentication token found');
+      }
+
       // Read the audio file
       final file = File(recording.filePath);
       if (!await file.exists()) {
         print('Error: Recording file does not exist: ${recording.filePath}');
-        return;
+        throw Exception('Recording file does not exist');
       }
 
+      // Get file size and details
+      final fileSize = await file.length();
+      final filename = recording.filePath.split('/').last;
+      print('✅ File verified: $fileSize bytes');
+      print('📝 Filename: $filename');
+
+      // Determine file extension and MIME type
+      String fileExtension = '';
+      String mimeType = 'audio/mp4'; // Default for m4a files
+      
+      if (filename.contains('.')) {
+        fileExtension = filename.substring(filename.lastIndexOf('.'));
+      } else {
+        // Default to .m4a if no extension found
+        fileExtension = '.m4a';
+      }
+      
+      // Map extension to MIME type
+      switch (fileExtension.toLowerCase()) {
+        case '.m4a':
+          mimeType = 'audio/mp4';
+          break;
+        case '.mp4':
+          mimeType = 'audio/mp4';
+          break;
+        case '.mp3':
+          mimeType = 'audio/mpeg';
+          break;
+        case '.wav':
+          mimeType = 'audio/wav';
+          break;
+        case '.amr':
+          mimeType = 'audio/amr';
+          break;
+        default:
+          mimeType = 'audio/mp4'; // Default
+      }
+
+      // Read file as bytes and encode to base64
       final fileBytes = await file.readAsBytes();
+      final base64Encoded = base64Encode(fileBytes);
+      print('📦 Base64 encoded size: ${base64Encoded.length} characters');
+
+      // Map language to code (e.g., "English" -> "en-US")
+      final languageCode = _mapLanguageToCode(recording.language);
       
-      // Create multipart request for file upload
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('https://mock-api.colab-app.com/api/recordings'),
-      );
-      
-      // Add headers
-      request.headers['Authorization'] = 'Bearer mock-token';
-      
-      // Add fields
-      request.fields['name'] = recording.name;
-      request.fields['uuid'] = recording.id;
-      request.fields['language'] = recording.language;
-      request.fields['user_id'] = 'mock-user-id';
-      request.fields['created_at'] = recording.createdAt.toIso8601String();
-      
-      // Add file
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          fileBytes,
-          filename: '${recording.name}.m4a',
-        ),
+      // Create JSON body
+      // fileName and recordingName are the same for now (as per user request)
+      final requestBody = json.encode({
+        'fileName': recording.name,
+        'recordingName': recording.name,
+        'fileExtension': fileExtension,
+        'mimeType': mimeType,
+        'language': languageCode,
+        'recordingBase64': base64Encoded,
+      });
+
+      // Create PUT request with JSON body
+      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
+      final headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': ApiConfig.apiKey,
+        'Authorization': 'Bearer $accessToken',
+      };
+
+      // Log detailed request information
+      print('═══════════════════════════════════════════════════════════');
+      print('🎤 UPLOAD RECORDING TO BACKEND API CALL (Base64 JSON)');
+      print('═══════════════════════════════════════════════════════════');
+      print('📤 REQUEST:');
+      print('   URL: $url');
+      print('   Method: PUT');
+      print('   Recording Name: ${recording.name}');
+      print('   Language: ${recording.language} -> $languageCode');
+      print('   File: $filename ($fileSize bytes)');
+      print('   File Extension: $fileExtension');
+      print('   MIME Type: $mimeType');
+      print('   Base64 Length: ${base64Encoded.length} characters');
+      print('   File Path: ${recording.filePath}');
+      print('   Headers: ${json.encode(headers)}');
+      print('   Request Body (first 200 chars): ${requestBody.substring(0, requestBody.length > 200 ? 200 : requestBody.length)}...');
+      print('   FULL TOKEN: $accessToken');
+      print('═══════════════════════════════════════════════════════════');
+
+      // Send PUT request
+      final response = await http.put(
+        url,
+        headers: headers,
+        body: requestBody,
+      ).timeout(
+        const Duration(seconds: 30),
       );
 
-      // Send request
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 10),
-      );
-      
-      final response = await http.Response.fromStream(streamedResponse);
+      print('📥 RESPONSE:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Body: ${response.body}');
+      print('═══════════════════════════════════════════════════════════');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('Recording saved to backend successfully: ${recording.name}');
+        print('✅ Recording saved to backend successfully: ${recording.name}');
       } else {
-        print('Failed to save recording to backend: ${response.statusCode}');
-        print('Response: ${response.body}');
+        print('❌ Failed to save recording to backend: ${response.statusCode}');
+        print('   Response: ${response.body}');
+        
+        // Try to extract error message from response body
+        String errorMessage = 'Failed to save recording to backend';
+        try {
+          final responseData = json.decode(response.body);
+          if (responseData is Map && responseData.containsKey('error')) {
+            errorMessage = responseData['error'].toString();
+          } else if (responseData is Map && responseData.containsKey('message')) {
+            errorMessage = responseData['message'].toString();
+          } else {
+            errorMessage = 'Failed to save recording (Status: ${response.statusCode})';
+          }
+        } catch (e) {
+          // If JSON parsing fails, use the raw response or default message
+          if (response.body.isNotEmpty) {
+            errorMessage = 'Failed to save recording: ${response.body}';
+          } else {
+            errorMessage = 'Failed to save recording (Status: ${response.statusCode})';
+          }
+        }
+        
+        throw Exception(errorMessage);
       }
     } on TimeoutException {
-      print('Backend save timed out (mock API not available - this is expected)');
+      print('❌ Backend save timed out');
       rethrow; // Re-throw so caller can handle timeout
-    } catch (e) {
-      print('Error saving to backend: $e');
+    } catch (e, stackTrace) {
+      print('❌ ERROR saving to backend: $e');
+      print('   StackTrace: $stackTrace');
       rethrow; // Re-throw so caller can handle error
     }
   }

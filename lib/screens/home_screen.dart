@@ -586,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Save Recording'),
           content: Column(
@@ -621,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 _currentRecordingPath = null;
               },
               child: const Text('Cancel'),
@@ -643,32 +643,56 @@ class _HomeScreenState extends State<HomeScreen> {
                   return;
                 }
 
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 
-                // Show loading
+                // Show loading - use the main context, not dialog context
+                if (!mounted) return;
+                
+                // Store ScaffoldMessenger BEFORE async operation
+                final scaffoldMessenger = ScaffoldMessenger.of(context);
+                
+                BuildContext? loadingContext;
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (context) => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  builder: (dialogCtx) {
+                    loadingContext = dialogCtx;
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  },
                 );
 
-                final success = await _voiceService.saveRecording(name, _selectedLanguage);
+                final result = await _voiceService.saveRecording(name, _selectedLanguage);
+                final success = result['success'] as bool? ?? false;
+                final backendSuccess = result['backendSuccess'] as bool? ?? false;
+                final errorMessage = result['errorMessage'] as String?;
                 
-                Navigator.pop(context); // Close loading dialog
+                // Close loading dialog safely
+                if (mounted && loadingContext != null) {
+                  try {
+                    Navigator.of(loadingContext!, rootNavigator: true).pop();
+                  } catch (e) {
+                    print('Error closing loading dialog: $e');
+                  }
+                }
                 
-                if (success) {
+                // Only show messages if widget is still mounted
+                if (!mounted) return;
+                
+                if (success && backendSuccess) {
+                  // Both local and backend save succeeded
                   // Reload recordings to ensure list is up to date
                   await _voiceService.loadRecordings();
                   
-                  setState(() {
-                    _currentRecordingPath = null;
-                    _isPlayingRecording = false; // Reset playback state
-                  });
-                  
                   if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    setState(() {
+                      _currentRecordingPath = null;
+                      _isPlayingRecording = false; // Reset playback state
+                    });
+                    
+                    // Show success message
+                    scaffoldMessenger.showSnackBar(
                       const SnackBar(
                         content: Text('Recording saved successfully!'),
                         backgroundColor: Colors.green,
@@ -676,14 +700,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   }
                 } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Failed to save recording'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                  // Save failed (either local or backend)
+                  // Don't clear the recording path - user can try again
+                  // Don't reload recordings since nothing was saved
+                  
+                  // Show error message
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text(errorMessage ?? 'Failed to save recording'),
+                      backgroundColor: Colors.red,
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
                 }
               },
               child: const Text('Save'),
