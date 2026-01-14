@@ -10,6 +10,7 @@ import '../services/profile_service.dart';
 import '../services/mantra_service.dart';
 import '../services/voice_recording_service.dart';
 import '../services/notification_service.dart';
+import '../services/song_service.dart';
 import '../models/mantra.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
@@ -246,10 +247,73 @@ class _HomeScreenState extends State<HomeScreen> {
       print('Loading mantras...');
       final mantras = await MantraService.loadMantras();
       print('Loaded ${mantras.length} mantras');
-      setState(() {
-        _mantras = mantras;
-        _filteredMantras = mantras;
-      });
+      
+      // Fetch purchased songs and mark mantras as bought
+      try {
+        print('Fetching purchased songs...');
+        final purchasedSongIds = await SongService.getPurchasedSongs();
+        print('Found ${purchasedSongIds.length} purchased songs');
+        
+        // Update mantras to mark purchased ones
+        final updatedMantras = mantras.map((mantra) {
+          // Check if this mantra is in the purchased list
+          // Match by mantraFile (which could be song_id, file_name, or mantra_file)
+          // API returns mantra_ids like "M-RAM-001.mp3"
+          final isPurchased = purchasedSongIds.any((purchasedId) {
+            // Normalize both for comparison (case-insensitive, trim whitespace, remove .mp3 extension)
+            String normalizeId(String id) {
+              return id.toLowerCase().trim().replaceAll('.mp3', '').replaceAll('.MP3', '');
+            }
+            
+            final mantraFileNormalized = normalizeId(mantra.mantraFile);
+            final purchasedIdNormalized = normalizeId(purchasedId);
+            
+            // Exact match (after normalization)
+            if (mantraFileNormalized == purchasedIdNormalized) {
+              print('   ✓ Exact match: ${mantra.mantraFile} == $purchasedId');
+              return true;
+            }
+            
+            // Check if mantraFile contains purchasedId or vice versa (for partial matches)
+            if (mantraFileNormalized.contains(purchasedIdNormalized) || 
+                purchasedIdNormalized.contains(mantraFileNormalized)) {
+              print('   ✓ Partial match: ${mantra.mantraFile} <-> $purchasedId');
+              return true;
+            }
+            
+            // Also check if the name matches (in case the API returns names instead of IDs)
+            final mantraName = mantra.name.toLowerCase().trim();
+            final purchasedIdLower = purchasedId.toLowerCase().trim();
+            if (mantraName == purchasedIdLower || 
+                mantraName.contains(purchasedIdLower) ||
+                purchasedIdLower.contains(mantraName)) {
+              print('   ✓ Name match: ${mantra.name} <-> $purchasedId');
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (isPurchased) {
+            print('✅ Marking as purchased: ${mantra.name} (${mantra.mantraFile})');
+            return mantra.copyWith(isBought: true);
+          }
+          
+          return mantra;
+        }).toList();
+        
+        setState(() {
+          _mantras = updatedMantras;
+          _filteredMantras = updatedMantras;
+        });
+      } catch (e) {
+        print('⚠️  Error fetching purchased songs: $e');
+        // Continue with mantras even if purchased songs fetch fails
+        setState(() {
+          _mantras = mantras;
+          _filteredMantras = mantras;
+        });
+      }
     } catch (e) {
       print('Error loading mantras: $e');
       if (mounted) {

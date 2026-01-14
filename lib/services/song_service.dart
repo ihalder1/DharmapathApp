@@ -94,4 +94,87 @@ class SongService {
     
     return nameMap[id] ?? id.replaceAll('M-', '').replaceAll('-001', ' Mantra');
   }
+
+  // Fetch purchased songs from API
+  static Future<List<String>> getPurchasedSongs() async {
+    try {
+      print('═══════════════════════════════════════════════════════════');
+      print('🛒 FETCHING PURCHASED SONGS FROM API');
+      print('═══════════════════════════════════════════════════════════');
+      
+      final authService = AuthService();
+      final token = authService.accessToken;
+      
+      if (token == null) {
+        print('❌ ERROR: No authentication token found');
+        print('═══════════════════════════════════════════════════════════');
+        return [];
+      }
+
+      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
+      final headers = {
+        'x-api-key': ApiConfig.apiKey,
+        'Authorization': 'Bearer $token',
+      };
+
+      print('📤 REQUEST DETAILS:');
+      print('   Method: GET');
+      print('   URL: $url');
+      print('   Headers: ${json.encode(headers)}');
+      print('═══════════════════════════════════════════════════════════');
+
+      final response = await http.get(
+        url,
+        headers: headers,
+      ).timeout(
+        const Duration(seconds: 30),
+      );
+
+      print('📥 RESPONSE DETAILS:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Body: ${response.body}');
+      print('═══════════════════════════════════════════════════════════');
+
+      if (response.statusCode == 200) {
+        final List<dynamic> purchasedSongsData = json.decode(response.body);
+        
+        print('✅ FETCH PURCHASED SONGS SUCCESS');
+        print('   Purchased songs records count: ${purchasedSongsData.length}');
+        
+        // Extract mantra_ids from each object in the response
+        // Response structure: [{ "recording_id": "...", "mantra_ids": ["M-RAM-001.mp3"], ... }]
+        final List<String> purchasedIdentifiers = [];
+        for (var record in purchasedSongsData) {
+          // Get mantra_ids array from each record
+          final mantraIds = record['mantra_ids'] as List<dynamic>? ?? [];
+          print('   - Record: recording_id=${record['recording_id']}, mantra_ids count=${mantraIds.length}');
+          
+          // Add each mantra_id to the list
+          for (var mantraId in mantraIds) {
+            final mantraIdString = mantraId.toString().trim();
+            if (mantraIdString.isNotEmpty) {
+              purchasedIdentifiers.add(mantraIdString);
+              print('     → Purchased mantra: $mantraIdString');
+            }
+          }
+        }
+        
+        print('   Total purchased mantra IDs: ${purchasedIdentifiers.length}');
+        print('═══════════════════════════════════════════════════════════');
+        return purchasedIdentifiers;
+      } else {
+        print('❌ FETCH PURCHASED SONGS FAILED');
+        print('   Status: ${response.statusCode}');
+        print('   Body: ${response.body}');
+        print('═══════════════════════════════════════════════════════════');
+        return [];
+      }
+    } catch (e, stackTrace) {
+      print('❌ FETCH PURCHASED SONGS ERROR:');
+      print('   Error: $e');
+      print('   StackTrace: $stackTrace');
+      print('═══════════════════════════════════════════════════════════');
+      return [];
+    }
+  }
 }

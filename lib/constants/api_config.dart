@@ -26,6 +26,9 @@ class ApiConfig {
   // Voice Recording endpoint
   static const String voiceRecordingsEndpoint = '/auth/profile/voice/recordings';
   
+  // Purchased Songs endpoint
+  static const String purchasedSongsEndpoint = '/auth/profile/purchase/songs';
+  
   // Payment endpoints
   static const String createPaymentIntentEndpoint = '/payments/create-intent';
   static const String confirmPaymentEndpoint = '/payments/confirm';
