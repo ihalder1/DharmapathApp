@@ -7,6 +7,7 @@ import '../constants/app_colors.dart';
 import '../services/payment_service.dart';
 import '../services/auth_service.dart';
 import '../services/mantra_service.dart';
+import '../services/song_service.dart';
 import '../models/mantra.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -217,6 +218,50 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if (backendConfirmed) {
           print('✅ BACKEND PAYMENT CONFIRMED');
           print('═══════════════════════════════════════════════════════════');
+
+          // Send purchase data to backend
+          try {
+            // Extract song IDs from cart items (remove .mp3 extension)
+            final songIds = widget.cartItems.map((mantra) {
+              return SongService.extractSongId(mantra.mantraFile);
+            }).toList();
+
+            // Generate transaction ID (use paymentIntentId or create one)
+            final transactionId = _paymentIntentId ?? 'trxn_${DateTime.now().millisecondsSinceEpoch}';
+            
+            // Get current time in HH:mm:ss format
+            final now = DateTime.now();
+            final transactionTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+            
+            // Use totalAmount and INR currency (use dummy values if not available)
+            final amount = widget.totalAmount.toString();
+            final currency = 'INR';
+
+            print('📤 Sending purchase data to backend...');
+            print('   Transaction ID: $transactionId');
+            print('   Transaction Time: $transactionTime');
+            print('   Amount: $amount');
+            print('   Currency: $currency');
+            print('   Song IDs: $songIds');
+
+            final purchaseDataSent = await SongService.sendPurchaseData(
+              transactionId: transactionId,
+              transactionTime: transactionTime,
+              amount: amount,
+              currency: currency,
+              songIds: songIds,
+            );
+
+            if (purchaseDataSent) {
+              print('✅ Purchase data sent to backend successfully');
+            } else {
+              print('⚠️  Warning: Failed to send purchase data to backend, but payment was successful');
+              // Continue anyway - payment was successful
+            }
+          } catch (e) {
+            print('⚠️  Warning: Error sending purchase data to backend: $e');
+            // Continue anyway - payment was successful
+          }
 
           // Mark mantras as purchased
           print('📦 Marking ${widget.cartItems.length} mantras as purchased...');

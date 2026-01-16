@@ -253,6 +253,13 @@ class MantraService {
         'mantra_ids': mantraIds,
       });
 
+      // Construct headers manually (same as voice recording service)
+      final headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': ApiConfig.apiKey,
+        'Authorization': 'Bearer $accessToken',
+      };
+
       print('═══════════════════════════════════════════════════════════');
       print('🎤 GENERATE MANTRA IN VOICE API CALL');
       print('═══════════════════════════════════════════════════════════');
@@ -261,13 +268,15 @@ class MantraService {
       print('   Method: PUT');
       print('   Recording ID: $recordingId');
       print('   Mantra IDs: $mantraIds');
+      print('   Headers: ${json.encode(headers)}');
       print('   FULL TOKEN: $accessToken');
       print('   Request Body: $requestBody');
+      print('═══════════════════════════════════════════════════════════');
 
       // Make API call (PUT method as per API spec)
       final response = await http.put(
         url,
-        headers: ApiConfig.getHeaders(accessToken: accessToken),
+        headers: headers,
         body: requestBody,
       ).timeout(
         const Duration(seconds: 30),

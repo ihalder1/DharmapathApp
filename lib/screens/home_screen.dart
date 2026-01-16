@@ -3521,8 +3521,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? null
                       : () async {
                           Navigator.of(dialogContext).pop();
+                          // Use backend recording_id if available, otherwise fall back to local id
+                          final recordingIdToUse = recording.recordingId ?? recording.id;
                           await _generateMantraInVoice(
-                            recordingId: recording.id,
+                            recordingId: recordingIdToUse,
                             mantraIds: selectedMantraIds.toList(),
                           );
                         },
