@@ -1614,6 +1614,44 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _addAllNonPurchasedToCart() {
+    // Get all non-purchased mantras that are not already in cart
+    final nonPurchasedMantras = _filteredMantras
+        .where((mantra) => !mantra.isBought && !mantra.isInCart)
+        .toList();
+    
+    if (nonPurchasedMantras.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All non-purchased mantras are already in cart'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Add all non-purchased mantras to cart
+    int addedCount = 0;
+    for (var mantra in nonPurchasedMantras) {
+      MantraService.addToCart(mantra);
+      // Update the mantra in our local list
+      final index = _mantras.indexWhere((m) => m.name == mantra.name);
+      if (index != -1) {
+        _mantras[index] = _mantras[index].copyWith(isInCart: true);
+      }
+      addedCount++;
+    }
+    
+    setState(() {});
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$addedCount mantra(s) added to cart'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
   Widget _buildStepContent() {
     switch (_currentStep) {
       case 0:
@@ -1669,36 +1707,59 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           
           // Search Bar
           Container(
+            height: 32,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(6),
               border: Border.all(color: Colors.grey.shade300),
             ),
             child: TextField(
               controller: _searchController,
               decoration: const InputDecoration(
                 hintText: 'Search mantras...',
-                prefixIcon: Icon(Icons.search, size: 20),
+                prefixIcon: Icon(Icons.search, size: 16),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                 isDense: true,
               ),
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: 13),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           
-          // Debug info
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
+          // Purchase All Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _addAllNonPurchasedToCart,
+              icon: const Icon(Icons.shopping_cart, size: 16),
+              label: const Text(
+                'Purchase All',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primarySaffron,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                minimumSize: const Size(0, 36),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
+          ),
+          const SizedBox(height: 6),
+          
+          // Mantra count info
+          Align(
+            alignment: Alignment.centerRight,
             child: Text(
               'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
               style: const TextStyle(
@@ -1892,32 +1953,55 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // Search Bar
               Container(
+                height: 32,
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: TextField(
                   controller: _searchController,
                   decoration: const InputDecoration(
                     hintText: 'Search mantras...',
-                    prefixIcon: Icon(Icons.search, size: 20),
+                    prefixIcon: Icon(Icons.search, size: 16),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                     isDense: true,
                   ),
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: 13),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 6),
               
-              // Debug info
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
+              // Purchase All Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _addAllNonPurchasedToCart,
+                  icon: const Icon(Icons.shopping_cart, size: 16),
+                  label: const Text(
+                    'Purchase All',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primarySaffron,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    minimumSize: const Size(0, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
+              ),
+              const SizedBox(height: 6),
+              
+              // Mantra count info
+              Align(
+                alignment: Alignment.centerRight,
                 child: Text(
                   'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
                   style: const TextStyle(
