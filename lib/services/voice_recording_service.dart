@@ -585,47 +585,59 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
   }
 
-  // Download recording file from backend URL (dummy implementation for now)
+  // Download recording file from backend URL (pre-signed URL)
   Future<bool> _downloadRecordingFromUrl({
     required String recordingUrl,
     required String localFilePath,
   }) async {
     try {
       print('═══════════════════════════════════════════════════════════');
-      print('📥 DOWNLOAD RECORDING FROM BACKEND');
+      print('📥 DOWNLOAD RECORDING FROM BACKEND (PRE-SIGNED URL)');
       print('═══════════════════════════════════════════════════════════');
       print('   URL: $recordingUrl');
       print('   Local Path: $localFilePath');
-      print('   ⚠️  NOTE: Download not implemented yet (URL not pre-signed)');
       print('═══════════════════════════════════════════════════════════');
       
-      // TODO: Implement actual download when URLs are pre-signed
-      // For now, just create a placeholder
-      /*
+      // Ensure the directory exists
+      final file = File(localFilePath);
+      final directory = file.parent;
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+        print('   📁 Created directory: ${directory.path}');
+      }
+
+      // Download from pre-signed URL (no auth headers needed for pre-signed URLs)
       final response = await http.get(
         Uri.parse(recordingUrl),
-        headers: {
-          'x-api-key': ApiConfig.apiKey,
-        },
       ).timeout(
         const Duration(seconds: 60),
       );
 
+      print('📥 DOWNLOAD RESPONSE:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Content Length: ${response.bodyBytes.length} bytes');
+
       if (response.statusCode == 200) {
-        final file = File(localFilePath);
+        // Write the file
         await file.writeAsBytes(response.bodyBytes);
         print('✅ Recording downloaded successfully: $localFilePath');
+        print('   File size: ${await file.length()} bytes');
+        print('═══════════════════════════════════════════════════════════');
         return true;
       } else {
         print('❌ Failed to download recording: ${response.statusCode}');
+        print('   Response: ${response.body}');
+        print('═══════════════════════════════════════════════════════════');
         return false;
       }
-      */
-      
-      return false; // Return false for now since download is not implemented
+    } on TimeoutException {
+      print('❌ Download request timed out');
+      print('═══════════════════════════════════════════════════════════');
+      return false;
     } catch (e, stackTrace) {
       print('❌ ERROR downloading recording: $e');
       print('   StackTrace: $stackTrace');
+      print('═══════════════════════════════════════════════════════════');
       return false;
     }
   }
