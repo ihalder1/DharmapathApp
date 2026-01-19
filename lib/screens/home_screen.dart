@@ -444,7 +444,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // Voice recording methods
+  // Check if user has purchased at least one mantra
+  bool _hasPurchasedMantras() {
+    return _mantras.any((mantra) => mantra.isBought);
+  }
+
   Future<void> _startRecording() async {
+    // Check if user has purchased at least one mantra
+    if (!_hasPurchasedMantras()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have to purchase at least one song first to start recording your voice'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    
     // startRecording() handles permission checking internally, so we don't need to check here
     final success = await _voiceService.startRecording();
     if (success) {
@@ -2317,7 +2336,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
           child: Column(
             children: [
               // Instructions
@@ -2330,7 +2349,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 textAlign: TextAlign.center,
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               
               // Language Selection
               Row(
@@ -2338,7 +2357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Text(
                     'Language:',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: Colors.black,
                     ),
@@ -2346,10 +2365,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: Colors.grey[300]!),
                       ),
                       child: DropdownButton<String>(
@@ -2358,7 +2378,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         underline: const SizedBox(),
                         style: const TextStyle(
                           color: Colors.black,
-                          fontSize: 14,
+                          fontSize: 13,
                         ),
                         dropdownColor: Colors.white,
                         items: VoiceRecordingService.languageContent.keys.map((String language) {
@@ -2366,7 +2386,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             value: language,
                             child: Text(
                               language,
-                              style: const TextStyle(color: Colors.black),
+                              style: const TextStyle(color: Colors.black, fontSize: 13),
                             ),
                           );
                         }).toList(),
@@ -2383,11 +2403,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               
               // Text Display Box
               Expanded(
-                    flex: 1,
+                    flex: 4,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -2403,7 +2423,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 12.5,
                         color: Colors.black,
                         height: 1.5,
                       ),
@@ -2412,7 +2432,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               
               // Recording Controls
               Row(
@@ -2421,9 +2441,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Record Button
                   _buildRecordingButton(
                     icon: _isRecording ? Icons.stop : Icons.mic,
-                    onPressed: _isRecording ? _stopRecording : _startRecording,
+                    onPressed: () {
+                      if (!_hasPurchasedMantras() && !_isRecording) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('You have to purchase at least one song first to start recording your voice'),
+                            backgroundColor: Colors.orange,
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      } else {
+                        if (_isRecording) {
+                          _stopRecording();
+                        } else {
+                          _startRecording();
+                        }
+                      }
+                    },
                     isPrimary: true,
                     isRecording: _isRecording,
+                    enabled: _isRecording || _hasPurchasedMantras(),
                   ),
                   
                   // Preview Button (only show if recording exists)
@@ -2446,14 +2483,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               
                   // Existing Recordings Section - Made larger to show at least 2 recordings
               Expanded(
-                    flex: 2,
+                    flex: 1,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                   decoration: BoxDecoration(
                     color: Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
@@ -2472,7 +2509,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Text(
                               'Your Recordings',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.black,
                               ),
@@ -2487,12 +2524,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             icon: const Icon(
                               Icons.fullscreen,
                               color: AppColors.primarySaffron,
+                              size: 18,
                             ),
                             tooltip: 'Expand to full screen',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 6),
                       Expanded(
                         child: _voiceService.recordings.isEmpty
                             ? const Center(
@@ -2511,8 +2551,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 itemBuilder: (context, index) {
                                   final recording = _voiceService.recordings[index];
                                   return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(8),
@@ -2527,7 +2567,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               Text(
                                                 recording.name,
                                                 style: const TextStyle(
-                                                  fontSize: 14,
+                                                  fontSize: 13,
                                                   fontWeight: FontWeight.w600,
                                                   color: Colors.black,
                                                 ),
@@ -2535,7 +2575,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               Text(
                                                 '${recording.language} • ${_formatDate(recording.createdAt)}',
                                                 style: const TextStyle(
-                                                  fontSize: 12,
+                                                  fontSize: 11,
                                                   color: Colors.black54,
                                                 ),
                                               ),
@@ -2549,7 +2589,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 ? Icons.pause 
                                                 : Icons.play_arrow,
                                             color: Colors.black,
+                                            size: 20,
                                           ),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
                                         ),
                                         Tooltip(
                                           message: 'Create your Mantra',
@@ -2560,10 +2603,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                             icon: const Text(
                                               'ॐ',
                                               style: TextStyle(
-                                                fontSize: 24,
+                                                fontSize: 18,
                                                 color: AppColors.primarySaffron,
                                               ),
                                             ),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
                                           ),
                                         ),
                                         IconButton(
@@ -2571,8 +2616,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                           icon: const Icon(
                                             Icons.delete,
                                             color: Colors.red,
+                                            size: 20,
                                           ),
                                           tooltip: 'Delete recording',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
                                         ),
                                       ],
                                     ),
@@ -2723,26 +2771,29 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback onPressed,
     required bool isPrimary,
     bool isRecording = false,
+    bool enabled = true,
   }) {
     return Container(
       width: isPrimary ? 60 : 40,
       height: isPrimary ? 60 : 40,
       decoration: BoxDecoration(
-        color: isRecording ? Colors.red : AppColors.white,
+        color: isRecording ? Colors.red : (enabled ? AppColors.white : Colors.grey[300]),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withOpacity(enabled ? 0.2 : 0.1),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: IconButton(
-        onPressed: onPressed,
+        onPressed: onPressed, // Always allow click to show message
         icon: Icon(
           icon,
-          color: isRecording ? AppColors.white : AppColors.primarySaffron,
+          color: isRecording 
+              ? AppColors.white 
+              : (enabled ? AppColors.primarySaffron : Colors.grey[600]),
           size: isPrimary ? 24 : 20,
         ),
       ),
