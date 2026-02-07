@@ -1210,98 +1210,101 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNestedPersonalInfoCard() {
+    return Column(
+      children: [
+        // Row 1: Steps 1 and 2
+        Row(
+          children: [
+            Expanded(
+              child: _buildStepBox(1, 'Select & Add', 'Pick your mantra and add it to the cart.'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildStepBox(2, 'Checkout', 'Complete your payment in the Cart tab.'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Row 2: Steps 3 and 4
+        Row(
+          children: [
+            Expanded(
+              child: _buildStepBox(3, 'Record Voice', 'Submit your voice sample in the Record Voice tab.'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildStepBox(4, 'Download', 'Access your file from the \'My Mantras\' section.'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepBox(int number, String title, String description) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: AppColors.primarySaffron,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Personal Info Content - Center aligned
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // User Name - Larger
-              Text(
-                _personalInfo['fullName'],
+          // Number badge
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.3),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withOpacity(0.5),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                '$number',
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
                 ),
-                textAlign: TextAlign.center,
               ),
-              
-              const SizedBox(height: 3),
-              
-              // Location - Larger
-              Text(
-                _personalInfo['location'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.black,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 2),
-              
-              // Mobile - Larger
-              Text(
-                _personalInfo['mobile'],
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Colors.black,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 2),
-              
-              // Gender - Larger
-              Text(
-                _personalInfo['gender'],
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Colors.black,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+            ),
           ),
-          
-          const SizedBox(height: 8),
-          
-          // Edit Button Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              GestureDetector(
-                onTap: _showEditPersonalInfoDialog,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppColors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(
-                    Icons.edit,
-                    color: AppColors.white,
-                    size: 10,
-                  ),
-                ),
-              ),
-            ],
+          const SizedBox(height: 6),
+          // Title
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Description
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.black.withOpacity(0.8),
+              height: 1.3,
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
