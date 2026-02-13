@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
-import 'screens/home_screen.dart';
+import 'widgets/auth_wrapper.dart';
 import 'constants/app_colors.dart';
 import 'constants/app_theme.dart';
 import 'constants/api_config.dart';
@@ -50,7 +50,7 @@ class ColabApp extends StatelessWidget {
         title: 'Colab Voice Conversion',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        home: const HomeScreen(),
+        home: const AuthWrapper(),
       ),
     );
   }

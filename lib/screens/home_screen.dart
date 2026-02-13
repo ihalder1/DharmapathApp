@@ -94,6 +94,19 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // Check if user is authenticated before loading data
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn || authService.accessToken == null) {
+      // If not authenticated, redirect to login
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      });
+      return;
+    }
+    
     // Initialize with authenticated user data immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializePersonalInfo();
