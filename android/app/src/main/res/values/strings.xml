@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Facebook SDK: App ID from https://developers.facebook.com/apps -->
+    <string name="facebook_app_id">25154563447566829</string>
+    <!-- Get Client Token from Facebook App Dashboard: Settings > Advanced > Client token -->
+    <string name="facebook_client_token">b7cf129e5688c3e8b3b5f746f74ace28</string>
+</resources>

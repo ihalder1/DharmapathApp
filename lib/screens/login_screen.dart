@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
@@ -200,17 +201,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           () => _handleFacebookSignIn(),
         ),
         
-        const SizedBox(height: 16),
-        
-        // Apple Sign In Button (iOS only)
-        if (Theme.of(context).platform == TargetPlatform.iOS)
-          _buildSocialButton(
-            'Continue with Apple',
-            Icons.apple,
-            AppColors.black,
-            AppColors.white,
-            () => _handleAppleSignIn(),
-          ),
       ],
     );
   }
@@ -307,45 +297,60 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     await _performSignIn(() => context.read<AuthService>().signInWithFacebook());
   }
 
-  Future<void> _handleAppleSignIn() async {
-    await _performSignIn(() => context.read<AuthService>().signInWithApple());
-  }
-
   Future<void> _performSignIn(Future<bool> Function() signInFunction) async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    try {
-      final success = await signInFunction();
-      
-      if (success) {
-        // Navigate to home screen after successful login
-        if (mounted) {
+    void clearLoading() {
+      if (mounted) {
+        try {
           setState(() {
             _isLoading = false;
           });
-          // Navigate to home screen
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
-        }
-      } else {
-        setState(() {
-          _errorMessage = 'Sign in failed. Please try again.';
-        });
+        } catch (_) {}
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'An error occurred: ${e.toString()}';
-      });
-    } finally {
+    }
+
+    try {
+      final success = await signInFunction().timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          debugPrint('Sign-in timed out (backend or network took too long)');
+          return false;
+        },
+      );
+
+      if (success) {
+        // AuthWrapper will rebuild and show HomeScreen; clear spinner if still mounted.
+        clearLoading();
+      } else {
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'Sign in failed. Please try again.';
+            _isLoading = false;
+          });
+        }
+      }
+    } on TimeoutException {
       if (mounted) {
         setState(() {
+          _errorMessage = 'Request timed out. Check your connection and try again.';
           _isLoading = false;
         });
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'An error occurred: ${e.toString()}';
+          _isLoading = false;
+        });
+      }
+    } finally {
+      // Ensure spinner is always cleared
+      WidgetsBinding.instance.addPostFrameCallback((_) => clearLoading());
     }
   }
 }

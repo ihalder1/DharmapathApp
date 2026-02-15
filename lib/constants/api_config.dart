@@ -13,6 +13,7 @@ class ApiConfig {
   
   // Auth endpoints
   static const String googleSignInEndpoint = '/auth/google-signin';
+  static const String facebookSignInEndpoint = '/auth/facebook-signin';
   static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndpoint = '/auth/profile';
   static const String logoutEndpoint = '/auth/logout';
@@ -36,6 +37,9 @@ class ApiConfig {
   
   // Google OAuth Configuration
   static const String googleClientId = '333289829093-pg9e6o14ulmqflanirvosu9qgpjdbt3p.apps.googleusercontent.com';
+
+  // Facebook App Configuration (for native SDK)
+  static const String facebookAppId = '25154563447566829';
   
   // Stripe Configuration
   static const String stripePublishableKey = 'pk_test_51SYdd7RAucXK6Yre6JYajbvLMAN1XDV0CPZeg6mhHbc1T8ho0xRGabKUmj03NqEypK0anKga8puVJb8nWePzrVN600NJ7Tv81s';

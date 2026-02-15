@@ -46,6 +46,27 @@
 	<string>This app needs access to camera for profile pictures and media sharing.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app needs access to photo library to save and share recordings.</string>
+	<key>GIDClientID</key>
+	<string>333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf.apps.googleusercontent.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<!-- Allow Google Sign-In to query the Google app -->
+		<string>comgooglemaps</string>
+		<string>comgoogle</string>
+		<string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
+		<!-- Facebook -->
+		<string>fbapi</string>
+		<string>fb-messenger-share-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
+	</array>
+	<!-- Facebook SDK -->
+	<key>FacebookAppID</key>
+	<string>25154563447566829</string>
+	<key>FacebookDisplayName</key>
+	<string>Colab App UI</string>
+	<key>FacebookClientToken</key>
+	<string>b7cf129e5688c3e8b3b5f746f74ace28</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 	    <dict>
@@ -56,16 +77,15 @@
 	            <string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
 	        </array>
 	    </dict>
-	</array>
-
-	<key>GIDClientID</key>
-	<string>333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf.apps.googleusercontent.com</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<!-- Allow Google Sign-In to query the Google app -->
-		<string>comgooglemaps</string>
-		<string>comgoogle</string>
-		<string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
+	    <dict>
+	        <key>CFBundleURLSchemes</key>
+	        <array>
+	            <string>fb25154563447566829</string>
+	        </array>
+	        <key>CFBundleURLName</key>
+	        <string>Facebook</string>
+	    </dict>
 	</array>
 </dict>
 </plist>
+

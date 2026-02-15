@@ -24,8 +24,8 @@ dependencies:
   
   # Authentication & Social Login
   google_sign_in: ^6.2.1
+  flutter_facebook_auth: ^7.0.0
   # sign_in_with_apple: ^5.0.0
-  # flutter_facebook_auth: ^6.0.4
   # crypto: ^3.0.3
   # jwt_decoder: ^2.0.1
   

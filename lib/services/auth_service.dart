@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
@@ -125,39 +126,205 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // Facebook Sign In (placeholder - will be implemented when Facebook SDK is added)
+  // Facebook Sign In
   Future<bool> signInWithFacebook() async {
     try {
-      // TODO: Implement Facebook Sign In
-      // This is a placeholder for now
-      await Future.delayed(const Duration(seconds: 1));
-      
-      _currentUser = User(
-        id: 'facebook_user_123',
-        name: 'Facebook User',
-        email: 'user@facebook.com',
-        photoUrl: null,
-        provider: 'facebook',
+      debugPrint('Starting Facebook Sign-In...');
+
+      final LoginResult result = await FacebookAuth.instance.login(
+        permissions: ['email', 'public_profile'],
       );
 
-      // Mock backend call
-      final success = await _sendTokenToBackend(
-        'facebook_access_token',
-        'facebook_id_token',
-        'facebook',
-      );
+      if (result.status == LoginStatus.success && result.accessToken != null) {
+        final String? facebookAccessToken = result.accessToken!.tokenString;
+        if (facebookAccessToken == null || facebookAccessToken.isEmpty) {
+          debugPrint('Facebook access token is null or empty');
+          return false;
+        }
 
-      if (success) {
-        await _saveSession();
-        notifyListeners();
-        return true;
+        debugPrint('Facebook Sign-In successful, got access token');
+        debugPrint('=== FACEBOOK ACCESS TOKEN (full) ===');
+        debugPrint(facebookAccessToken);
+        debugPrint('=== END FACEBOOK ACCESS TOKEN ===');
+
+        // Get user data from Graph API (fallback if backend does not return user)
+        Map<String, dynamic>? userData;
+        try {
+          userData = await FacebookAuth.instance.getUserData(
+            fields: 'name,email,picture.width(200)',
+          );
+        } catch (e) {
+          debugPrint('Could not get Facebook user data: $e');
+        }
+
+        final String userId = userData != null
+            ? (userData['id']?.toString() ?? 'facebook_${DateTime.now().millisecondsSinceEpoch}')
+            : 'facebook_${DateTime.now().millisecondsSinceEpoch}';
+
+        if (userData != null) {
+          final String? name = userData['name'] as String?;
+          final String? email = userData['email'] as String?;
+          String? photoUrl;
+          if (userData['picture'] != null &&
+              userData['picture'] is Map &&
+              (userData['picture'] as Map)['data'] != null) {
+            final data = (userData['picture'] as Map)['data'] as Map?;
+            photoUrl = data?['url'] as String?;
+          }
+          _currentUser = User(
+            id: userId,
+            name: name ?? 'Facebook User',
+            email: email ?? '',
+            photoUrl: photoUrl,
+            provider: 'facebook',
+          );
+        } else {
+          _currentUser = User(
+            id: userId,
+            name: 'Facebook User',
+            email: '',
+            photoUrl: null,
+            provider: 'facebook',
+          );
+        }
+
+        final success = await _sendFacebookTokenToBackend(facebookAccessToken);
+
+        if (success) {
+          if (_accessToken == null || _accessToken!.isEmpty) {
+            debugPrint('ERROR: Backend returned success but access token is null/empty');
+            _currentUser = null;
+            return false;
+          }
+          await _saveSession();
+          debugPrint('Facebook Sign-In completed successfully');
+          notifyListeners();
+          return true;
+        } else {
+          _currentUser = null;
+          _accessToken = null;
+          debugPrint('Backend Facebook authentication failed');
+          return false;
+        }
+      } else if (result.status == LoginStatus.cancelled) {
+        debugPrint('Facebook Sign-In cancelled by user');
+        return false;
       } else {
-        _currentUser = null;
+        debugPrint('Facebook Sign-In failed: ${result.status}');
         return false;
       }
     } catch (e) {
       debugPrint('Facebook Sign In Error: $e');
       _currentUser = null;
+      return false;
+    }
+  }
+
+  /// Sends Facebook access token to backend /auth/facebook-signin as Bearer token.
+  /// Backend returns JWT; we store it and follow the same flow as Google login.
+  Future<bool> _sendFacebookTokenToBackend(String facebookAccessToken) async {
+    try {
+      final deviceInfo = await DeviceInfo.getDeviceInfoMap();
+      final requestBody = json.encode({
+        'deviceInfo': {
+          'platform': deviceInfo['platform'],
+          'deviceId': deviceInfo['deviceId'],
+          'appVersion': deviceInfo['appVersion'],
+        },
+      });
+
+      debugPrint('Sending Facebook access token to backend...');
+      debugPrint('Device Info: $deviceInfo');
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.facebookSignInEndpoint}'),
+        headers: ApiConfig.getHeaders(accessToken: facebookAccessToken),
+        body: requestBody,
+      ).timeout(
+        const Duration(seconds: 60),
+      );
+
+      debugPrint('Backend Facebook signin response status: ${response.statusCode}');
+      debugPrint('Backend response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final Map<String, dynamic> responseData;
+        try {
+          final decoded = json.decode(response.body);
+          responseData = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+        } catch (e) {
+          debugPrint('Backend Facebook signin JSON parse error: $e');
+          return false;
+        }
+        final tokens = responseData['tokens'];
+        final Map<String, dynamic>? dataMap = responseData['data'] is Map ? responseData['data'] as Map<String, dynamic>? : null;
+        if (tokens != null && tokens is Map) {
+          _accessToken = tokens['accessToken'] ?? tokens['access_token'] ?? tokens['token'];
+          _refreshToken = tokens['refreshToken'] ?? tokens['refresh_token'];
+          if (tokens['expiresIn'] != null) {
+            final expiresIn = tokens['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (tokens['expires_in'] != null) {
+            final expiresIn = tokens['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (tokens['expiry'] != null) {
+            _tokenExpiry = DateTime.parse(tokens['expiry'].toString());
+          } else {
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+        } else if (dataMap != null) {
+          _accessToken = dataMap['accessToken'] ?? dataMap['access_token'] ?? dataMap['token'];
+          _refreshToken = dataMap['refreshToken'] ?? dataMap['refresh_token'];
+          if (dataMap['expiresIn'] != null) {
+            final expiresIn = dataMap['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (dataMap['expires_in'] != null) {
+            final expiresIn = dataMap['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else {
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+        } else {
+          _accessToken = responseData['accessToken'] ?? responseData['access_token'] ?? responseData['token'] ?? responseData['authToken'];
+          _refreshToken = responseData['refreshToken'] ?? responseData['refresh_token'];
+          if (responseData['expiresIn'] != null) {
+            final expiresIn = responseData['expiresIn'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (responseData['expires_in'] != null) {
+            final expiresIn = responseData['expires_in'] as int;
+            _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+          } else if (responseData['expiry'] != null) {
+            _tokenExpiry = DateTime.parse(responseData['expiry'].toString());
+          } else {
+            _tokenExpiry = DateTime.now().add(const Duration(days: 30));
+          }
+        }
+
+        if (_accessToken == null || _accessToken!.isEmpty) {
+          debugPrint('ERROR: Backend returned success but no access token in response. Keys: ${responseData.keys.toList()}');
+          return false;
+        }
+
+        if (responseData['user'] != null) {
+          final userData = responseData['user'];
+          _currentUser = User(
+            id: userData['userId']?.toString() ?? userData['user_id']?.toString() ?? userData['id']?.toString() ?? _currentUser?.id ?? '',
+            name: userData['name']?.toString() ?? _currentUser?.name ?? '',
+            email: userData['email']?.toString() ?? _currentUser?.email ?? '',
+            photoUrl: userData['photoUrl']?.toString() ?? userData['photo_url']?.toString() ?? _currentUser?.photoUrl,
+            provider: 'facebook',
+          );
+        }
+
+        debugPrint('Backend Facebook authentication successful');
+        return true;
+      } else {
+        debugPrint('Backend Facebook signin failed: ${response.statusCode}');
+        debugPrint('Response: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      debugPrint('Backend Facebook communication error: $e');
       return false;
     }
   }
