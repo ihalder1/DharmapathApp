@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -58,6 +59,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentRecordingPath;
   final AudioPlayer _recordingPlayer = AudioPlayer();
   bool _hasSyncedRecordings = false;
+  Timer? _recordingTimer;
+  int _recordingSeconds = 0;
+  static const int _maxRecordingSeconds = 60;
   
   // Personal Info Data - Initialize with default values
   Map<String, dynamic> _personalInfo = {
@@ -121,6 +125,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
     _audioPlayer.dispose();
     _recordingPlayer.dispose();
     _searchController.dispose();
@@ -483,6 +489,19 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isRecording = true;
         _currentRecordingPath = null; // Clear previous recording
+        _recordingSeconds = 0;
+      });
+      _recordingTimer?.cancel();
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        setState(() {
+          _recordingSeconds += 1;
+        });
+        if (_recordingSeconds >= _maxRecordingSeconds) {
+          _recordingTimer?.cancel();
+          _recordingTimer = null;
+          _stopRecording();
+        }
       });
     } else {
       if (mounted) {
@@ -540,13 +559,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _stopRecording() async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
     final path = await _voiceService.stopRecording();
     if (path != null) {
       setState(() {
         _isRecording = false;
         _currentRecordingPath = path;
+        _recordingSeconds = 0;
+      });
+    } else {
+      setState(() {
+        _isRecording = false;
+        _recordingSeconds = 0;
       });
     }
+  }
+
+  String _formatRecordingTime(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(1)}:${s.toString().padLeft(2, '0')}';
   }
 
   // Cleanup unsaved recording when leaving the step
@@ -2454,30 +2487,58 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Record Button
-                  _buildRecordingButton(
-                    icon: _isRecording ? Icons.stop : Icons.mic,
-                    onPressed: () {
-                      if (!_hasPurchasedMantras() && !_isRecording) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('You have to purchase at least one song first to start recording your voice'),
-                            backgroundColor: Colors.orange,
-                            duration: Duration(seconds: 3),
+                  // When recording: show timer + stop button. When not: show record button
+                  if (_isRecording)
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _formatRecordingTime(_recordingSeconds),
+                          style: const TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primarySaffron,
+                            fontFeatures: [FontFeature.tabularFigures()],
                           ),
-                        );
-                      } else {
-                        if (_isRecording) {
-                          _stopRecording();
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_recordingSeconds >= _maxRecordingSeconds ? "Stopping..." : "Tap stop or wait 1 min"}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildRecordingButton(
+                          icon: Icons.stop,
+                          onPressed: _stopRecording,
+                          isPrimary: true,
+                          isRecording: true,
+                          enabled: true,
+                        ),
+                      ],
+                    )
+                  else
+                    _buildRecordingButton(
+                      icon: Icons.mic,
+                      onPressed: () {
+                        if (!_hasPurchasedMantras()) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('You have to purchase at least one song first to start recording your voice'),
+                              backgroundColor: Colors.orange,
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
                         } else {
                           _startRecording();
                         }
-                      }
-                    },
-                    isPrimary: true,
-                    isRecording: _isRecording,
-                    enabled: _isRecording || _hasPurchasedMantras(),
-                  ),
+                      },
+                      isPrimary: true,
+                      isRecording: false,
+                      enabled: _hasPurchasedMantras(),
+                    ),
                   
                   // Preview Button (only show if recording exists)
                   if (_currentRecordingPath != null)
