@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -17,6 +18,7 @@ import 'permission_test_screen.dart';
 import 'notification_screen.dart';
 import 'login_screen.dart';
 import 'payment_screen.dart';
+import 'contact_us_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -610,22 +612,69 @@ class _HomeScreenState extends State<HomeScreen> {
         await _recordingPlayer.stop();
       }
       
-        // Play the actual recording file
-        await _recordingPlayer.play(DeviceFileSource(path));
-        setState(() {
-          _isPlayingRecording = true;
+      // Validate file exists
+      final file = File(path);
+      if (!await file.exists()) {
+        print('❌ Error: Recording file does not exist at path: $path');
+        print('   File path: $path');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Recording file not found at:\n${path.split('/').last}\n\nFile may need to be re-downloaded from backend.'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Check file size (should not be empty)
+      final fileSize = await file.length();
+      if (fileSize == 0) {
+        print('❌ Error: Recording file is empty: $path');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recording file is empty (0 bytes). Please record again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      
+      print('✅ Playing recording: ${path.split('/').last} (${fileSize} bytes)');
+      print('   Full path: $path');
+      
+      // Configure audio session for playback on iOS
+      if (Platform.isIOS) {
+        try {
+          const MethodChannel audioChannel = MethodChannel('app.channel.audio');
+          await audioChannel.invokeMethod('configureAudioSessionForPlayback');
+          print('iOS audio session configured for playback');
+        } catch (e) {
+          print('Warning: Could not configure audio session for playback: $e');
+          // Continue anyway - audioplayers might handle it
+        }
+      }
+      
+      // Play the actual recording file
+      await _recordingPlayer.play(DeviceFileSource(path));
+      setState(() {
+        _isPlayingRecording = true;
         _currentlyPlayingPath = path;
-        });
-        
-        // Listen for playback completion
-        _recordingPlayer.onPlayerComplete.listen((_) {
-          if (mounted) {
-            setState(() {
-              _isPlayingRecording = false;
+      });
+      
+      // Listen for playback completion
+      _recordingPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlayingRecording = false;
             _currentlyPlayingPath = null;
-            });
-          }
-        });
+          });
+        }
+      });
     } catch (e) {
       print('Error playing recording: $e');
       print('Path: $path');
@@ -1053,6 +1102,25 @@ class _HomeScreenState extends State<HomeScreen> {
               fontSize: 18,
               color: AppColors.textSecondary,
               fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ContactUsScreen(),
+                ),
+              );
+            },
+            child: Text(
+              'Contact Us',
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.primarySaffron,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

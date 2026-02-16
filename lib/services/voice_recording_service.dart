@@ -134,8 +134,7 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
       RecordConfig config;
       
       if (Platform.isAndroid) {
-        // Android configuration - try AAC first (better compression, works on most devices)
-        // If AAC doesn't work, fall back to WAV
+        // Android configuration - use AAC with optimized settings
         // Note: Android emulators don't have microphone input, so recordings will be blank
         extension = 'm4a';
         config = const RecordConfig(
@@ -143,11 +142,11 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
           bitRate: 128000,
           sampleRate: 44100, // 44.1kHz for good quality
           numChannels: 1, // Mono for voice recording
-          autoGain: false, // Disable auto gain to prevent noise
+          autoGain: true, // Enable auto gain for better volume consistency
           echoCancel: true, // Enable echo cancellation
           noiseSuppress: true, // Enable noise suppression
         );
-        print('Starting Android recording with AAC encoder');
+        print('Starting Android recording with AAC encoder (autoGain enabled)');
       } else {
         // iOS configuration - use AAC
         extension = 'm4a';
@@ -204,27 +203,46 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         print('Recording stopped and saved: $_currentRecordingPath');
         
         // Wait a moment for file system to sync
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 200));
         
         // Verify file exists and has content
         final file = File(_currentRecordingPath!);
         if (await file.exists()) {
           final fileSize = await file.length();
           print('Recording file size: $fileSize bytes');
-          if (fileSize > 0) {
-            // Verify file is readable
-            final canRead = await file.exists();
-            print('File exists and is readable: $canRead');
+          
+          // Minimum file size check (very small files are likely empty/noise)
+          // For a 1-second recording at 44.1kHz mono AAC, expect at least ~5KB
+          const minFileSize = 5000; // 5KB minimum
+          
+          if (fileSize == 0) {
+            print('❌ Error: Recording file is empty (0 bytes)');
+            // Delete the empty file
+            try {
+              await file.delete();
+            } catch (e) {
+              print('Warning: Could not delete empty file: $e');
+            }
+            _currentRecordingPath = null;
             _isRecording = false;
-            return _currentRecordingPath;
-          } else {
-            print('Warning: Recording file is empty');
+            return null;
+          } else if (fileSize < minFileSize) {
+            print('⚠️  Warning: Recording file is very small ($fileSize bytes < $minFileSize bytes)');
+            print('   This might indicate a recording issue (emulator/no mic)');
+            // Still return the path, but log the warning
           }
+          
+          // Verify file is readable
+          final canRead = await file.exists();
+          print('File exists and is readable: $canRead');
+          _isRecording = false;
+          return _currentRecordingPath;
         } else {
-          print('Error: Recording file does not exist at path: $_currentRecordingPath');
+          print('❌ Error: Recording file does not exist at path: $_currentRecordingPath');
+          _currentRecordingPath = null;
         }
       } else {
-        print('Error: Audio recorder returned null or empty path');
+        print('❌ Error: Audio recorder returned null or empty path');
       }
 
       _isRecording = false;
@@ -300,9 +318,33 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.$extension');
       }
       
-      // Copy/rename the file (temporarily, will delete if backend fails)
+      // Verify original file exists and is not empty before copying
+      if (!await originalFile.exists()) {
+        throw Exception('Original recording file does not exist');
+      }
+      final originalFileSize = await originalFile.length();
+      if (originalFileSize == 0) {
+        throw Exception('Recording file is empty (0 bytes) - recording may have failed');
+      }
+      print('Original recording file size: $originalFileSize bytes');
+      
+      // Copy/rename the file to final location - ALWAYS keep local copy
       await originalFile.copy(finalFile.path);
       print('Recording file copied to: ${finalFile.path}');
+      
+      // Verify the file was copied successfully and is not empty
+      final copiedFile = File(finalFile.path);
+      if (!await copiedFile.exists()) {
+        throw Exception('Failed to copy recording file to final location');
+      }
+      final fileSize = await copiedFile.length();
+      if (fileSize == 0) {
+        throw Exception('Copied recording file is empty (0 bytes)');
+      }
+      if (fileSize != originalFileSize) {
+        print('Warning: File size mismatch after copy (original: $originalFileSize, copied: $fileSize)');
+      }
+      print('Local file saved: ${finalFile.path} (${fileSize} bytes)');
 
       // Generate UUID
       final uuid = _uuid.v4();
@@ -316,7 +358,7 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         createdAt: DateTime.now(),
       );
 
-      // Try to save to backend FIRST - if this fails, we won't save locally
+      // Try to save to backend (but don't delete local file if it fails)
       String? backendErrorMessage;
       bool backendSuccess = false;
       try {
@@ -326,7 +368,7 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         print('Recording saved to backend successfully');
         backendSuccess = true;
       } on TimeoutException {
-        print('Backend save timeout - will not save locally');
+        print('Backend save timeout - local file will still be kept');
         backendErrorMessage = 'Backend save timed out';
       } catch (e) {
         print('Backend save failed: $e');
@@ -334,39 +376,7 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         backendErrorMessage = e.toString().replaceAll('Exception: ', '');
       }
 
-      // If backend save failed, delete the local file and return error
-      if (!backendSuccess) {
-        try {
-          if (await finalFile.exists()) {
-            await finalFile.delete();
-            print('Deleted local file because backend save failed: ${finalFile.path}');
-          }
-        } catch (e) {
-          print('Warning: Could not delete local file: $e');
-        }
-        
-        // Delete the original temporary file
-        try {
-          if (await originalFile.exists()) {
-            await originalFile.delete();
-            print('Deleted original temporary file: ${originalFile.path}');
-          }
-        } catch (e) {
-          print('Warning: Could not delete original file: $e');
-        }
-        
-        // Clear current recording
-        _currentRecordingPath = null;
-        
-        return {
-          'success': false,
-          'backendSuccess': false,
-          'errorMessage': backendErrorMessage ?? 'Failed to save recording to backend',
-        };
-      }
-
-      // Backend save succeeded - now finalize local save
-      // Delete the original temporary file
+      // ALWAYS keep local file - delete original temporary file only
       try {
         if (await originalFile.exists()) {
           await originalFile.delete();
@@ -377,20 +387,28 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         // Continue anyway - the new file is saved
       }
 
-      // Add to local list only after backend success
+      // Add to local list - ALWAYS add, regardless of backend success
       _recordings.add(recording);
       print('Recording added to local list: ${recording.name}');
 
       // Clear current recording
       _currentRecordingPath = null;
-      print('Recording saved successfully (both local and backend): $name');
       
-      // Return success
-      return {
-        'success': true,
-        'backendSuccess': true,
-        'errorMessage': null,
-      };
+      if (backendSuccess) {
+        print('Recording saved successfully (both local and backend): $name');
+        return {
+          'success': true,
+          'backendSuccess': true,
+          'errorMessage': null,
+        };
+      } else {
+        print('Recording saved locally but backend save failed: $name');
+        return {
+          'success': true, // Still success because local save worked
+          'backendSuccess': false,
+          'errorMessage': backendErrorMessage ?? 'Failed to save recording to backend',
+        };
+      }
     } catch (e, stackTrace) {
       print('Error saving recording: $e');
       print('Stack trace: $stackTrace');
@@ -702,55 +720,71 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
           final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
           final localFilePath = '${recordingsDir.path}/$sanitizedName$fileExtension';
           final localFile = File(localFilePath);
-          final localFileExists = await localFile.exists();
+          bool localFileExists = await localFile.exists();
+          
+          // Also check for files with .m4a extension (in case extension mismatch)
+          String actualLocalPath = localFilePath;
+          if (!localFileExists && fileExtension != '.m4a') {
+            final m4aPath = '${recordingsDir.path}/$sanitizedName.m4a';
+            final m4aFile = File(m4aPath);
+            if (await m4aFile.exists()) {
+              actualLocalPath = m4aPath;
+              localFileExists = true;
+            }
+          }
 
           print('\n📝 Processing backend recording: $name');
           print('   ID: $recordingId');
           print('   Language: $language ($languageCode)');
           print('   Created: $createdAt');
           print('   Local file exists: $localFileExists');
-          print('   Local path: $localFilePath');
+          print('   Local path: $actualLocalPath');
 
           if (localFileExists) {
-            // Local file exists - use it
-            print('   ✅ Using existing local file');
+            // Verify file is not empty and is valid
+            final actualFile = File(actualLocalPath);
+            final fileSize = await actualFile.length();
+            if (fileSize == 0) {
+              print('   ⚠️  Local file exists but is empty - skipping');
+              continue;
+            }
+            
+            // Local file exists and is valid - use it
+            print('   ✅ Using existing local file (${fileSize} bytes)');
             final recording = VoiceRecording(
               id: recordingId, // Use recording_id as id for backend recordings
               recordingId: recordingId, // Store recording_id separately
               name: name,
               language: language,
-              filePath: localFilePath,
+              filePath: actualLocalPath,
               createdAt: createdAt,
             );
             _recordings.add(recording);
           } else {
-            // Local file doesn't exist - try to download (dummy for now)
+            // Local file doesn't exist - try to download
             print('   ⬇️  Local file not found, attempting download...');
             final downloadSuccess = await _downloadRecordingFromUrl(
               recordingUrl: recordingUrl,
               localFilePath: localFilePath,
             );
             
-            // Always add recording to list (even if download failed)
-            // Use local file path if download succeeded, otherwise use a placeholder
-            String finalFilePath = localFilePath;
-            if (!downloadSuccess || !await localFile.exists()) {
-              print('   ⚠️  Download not available (URL not pre-signed), adding to list anyway');
-              // Still use the expected local path - file will be downloaded later when URLs are pre-signed
-              finalFilePath = localFilePath;
-            } else {
+            // Only add to list if download succeeded and file exists
+            if (downloadSuccess && await localFile.exists()) {
               print('   ✅ Downloaded successfully');
+              final recording = VoiceRecording(
+                id: recordingId, // Use recording_id as id for backend recordings
+                recordingId: recordingId, // Store recording_id separately
+                name: name,
+                language: language,
+                filePath: localFilePath,
+                createdAt: createdAt,
+              );
+              _recordings.add(recording);
+            } else {
+              print('   ⚠️  Download failed or file not available - skipping (will not add to list)');
+              print('   ⚠️  Recording exists on backend but local file is not available');
+              // Don't add to list - file doesn't exist locally and can't be downloaded
             }
-            
-            final recording = VoiceRecording(
-              id: recordingId, // Use recording_id as id for backend recordings
-              recordingId: recordingId, // Store recording_id separately
-              name: name,
-              language: language,
-              filePath: finalFilePath,
-              createdAt: createdAt,
-            );
-            _recordings.add(recording);
           }
         } catch (e) {
           print('❌ Error processing backend recording: $e');
@@ -758,7 +792,86 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         }
       }
 
-      // 7. Sort by creation date (newest first)
+      // 7. Process local-only files (files that exist locally but aren't in backend)
+      print('\n📂 Processing local-only files...');
+      final Set<String> processedFilePaths = {};
+      final Set<String> processedNames = {}; // Track by name to avoid duplicates
+      for (final recording in _recordings) {
+        processedFilePaths.add(recording.filePath);
+        processedNames.add(recording.name.toLowerCase());
+      }
+      
+      for (final fileEntity in files) {
+        if (fileEntity is File) {
+          final filePath = fileEntity.path;
+          
+          // Skip if already processed (matched with backend recording by exact path)
+          if (processedFilePaths.contains(filePath)) {
+            print('   ⏭️  Skipping already processed file: ${filePath.split('/').last}');
+            continue;
+          }
+          
+          // Skip if it's a temporary or invalid file
+          final filename = filePath.split('/').last;
+          if (_isTemporaryOrInvalidFile(filename)) {
+            print('   ⏭️  Skipping temporary/invalid file: $filename');
+            continue;
+          }
+          
+          try {
+            // Extract name from filename
+            final name = _extractNameFromPath(filePath);
+            if (name.isEmpty) {
+              print('   ⏭️  Skipping file with empty name: $filename');
+              continue;
+            }
+            
+            // Check for duplicate by name (case-insensitive)
+            if (processedNames.contains(name.toLowerCase())) {
+              print('   ⏭️  Skipping duplicate by name: $name (already processed)');
+              continue;
+            }
+            
+            // Verify file is not empty
+            final fileSize = await fileEntity.length();
+            if (fileSize == 0) {
+              print('   ⏭️  Skipping empty file: $filename (0 bytes)');
+              continue;
+            }
+            
+            // Get file metadata
+            final stat = await fileEntity.stat();
+            final createdAt = stat.modified;
+            
+            // Determine language from file (default to English if unknown)
+            final language = 'English'; // Default, could be enhanced to detect from metadata
+            
+            print('   📝 Found local-only recording: $name');
+            print('      Path: $filePath');
+            print('      Size: $fileSize bytes');
+            print('      Created: $createdAt');
+            
+            // Create recording object for local-only file
+            final recording = VoiceRecording(
+              id: _uuid.v4(), // Generate new UUID for local-only recording
+              name: name,
+              language: language,
+              filePath: filePath,
+              createdAt: createdAt,
+            );
+            
+            _recordings.add(recording);
+            processedFilePaths.add(filePath); // Track path
+            processedNames.add(name.toLowerCase()); // Track name to avoid duplicates
+            print('   ✅ Added local-only recording to list');
+          } catch (e) {
+            print('   ❌ Error processing local file $filename: $e');
+            // Continue with other files
+          }
+        }
+      }
+      
+      // 8. Sort by creation date (newest first)
       _recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       
       print('\n✅ Loaded ${_recordings.length} recordings total');
@@ -905,6 +1018,25 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
     }
     // Check if it's just numbers (timestamp only)
     if (RegExp(r'^\d+$').hasMatch(nameWithoutExt)) {
+      return true;
+    }
+    return false;
+  }
+
+  // Check if file is temporary or invalid (should be skipped)
+  bool _isTemporaryOrInvalidFile(String filename) {
+    // Skip hidden files
+    if (filename.startsWith('.')) {
+      return true;
+    }
+    // Skip files without audio extensions
+    final validExtensions = ['.m4a', '.mp4', '.mp3', '.wav', '.amr'];
+    final hasValidExtension = validExtensions.any((ext) => filename.toLowerCase().endsWith(ext));
+    if (!hasValidExtension) {
+      return true;
+    }
+    // Skip files that are clearly temporary (e.g., .tmp, .temp)
+    if (filename.toLowerCase().contains('.tmp') || filename.toLowerCase().contains('.temp')) {
       return true;
     }
     return false;
