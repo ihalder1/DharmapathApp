@@ -1714,8 +1714,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _addToCart(Mantra mantra) {
-    MantraService.addToCart(mantra);
+  Future<void> _addToCart(Mantra mantra) async {
+    await MantraService.addToCart(mantra);
     setState(() {
       // Update the mantra in our local list
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
@@ -1732,8 +1732,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _removeFromCart(Mantra mantra) {
-    MantraService.removeFromCart(mantra);
+  Future<void> _removeFromCart(Mantra mantra) async {
+    await MantraService.removeFromCart(mantra);
     setState(() {
       // Update the mantra in our local list
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
@@ -1750,7 +1750,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _addAllNonPurchasedToCart() {
+  Future<void> _addAllNonPurchasedToCart() async {
     // Get all non-purchased mantras that are not already in cart
     final nonPurchasedMantras = _filteredMantras
         .where((mantra) => !mantra.isBought && !mantra.isInCart)
@@ -1769,7 +1769,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Add all non-purchased mantras to cart
     int addedCount = 0;
     for (var mantra in nonPurchasedMantras) {
-      MantraService.addToCart(mantra);
+      await MantraService.addToCart(mantra);
       // Update the mantra in our local list
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
       if (index != -1) {

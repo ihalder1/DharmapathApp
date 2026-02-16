@@ -267,7 +267,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           print('📦 Marking ${widget.cartItems.length} mantras as purchased...');
           for (var mantra in widget.cartItems) {
             print('   - ${mantra.name} (${mantra.mantraFile})');
-            MantraService.markAsPurchased(mantra);
+            await MantraService.markAsPurchased(mantra);
           }
           
           // Verify mantras were marked
@@ -276,7 +276,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           print('✅ Verification: ${purchasedCount} mantras are now marked as purchased');
 
           // Clear cart
-          MantraService.clearCart();
+          await MantraService.clearCart();
 
           if (mounted && context.mounted) {
             // Return to previous screen with success result

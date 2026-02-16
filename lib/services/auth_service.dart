@@ -650,9 +650,18 @@ class AuthService extends ChangeNotifier {
       // Sign out from Google
       await _googleSignIn.signOut();
       
-      // Clear local data
+      // Save cart before clearing SharedPreferences
       final prefs = await SharedPreferences.getInstance();
+      final cartItems = prefs.getStringList('cart_items') ?? [];
+      
+      // Clear local data (but preserve cart)
       await prefs.clear();
+      
+      // Restore cart after clearing
+      if (cartItems.isNotEmpty) {
+        await prefs.setStringList('cart_items', cartItems);
+        debugPrint('Cart preserved after logout: ${cartItems.length} items');
+      }
       
       // Reset state
       _currentUser = null;
@@ -664,9 +673,17 @@ class AuthService extends ChangeNotifier {
       debugPrint('Logout completed');
     } catch (e) {
       debugPrint('Logout error: $e');
-      // Even if logout fails, clear local state
+      // Even if logout fails, clear local state (but preserve cart)
       final prefs = await SharedPreferences.getInstance();
+      final cartItems = prefs.getStringList('cart_items') ?? [];
       await prefs.clear();
+      
+      // Restore cart after clearing
+      if (cartItems.isNotEmpty) {
+        await prefs.setStringList('cart_items', cartItems);
+        debugPrint('Cart preserved after logout error: ${cartItems.length} items');
+      }
+      
       _currentUser = null;
       _accessToken = null;
       _refreshToken = null;

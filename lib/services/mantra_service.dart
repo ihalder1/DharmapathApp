@@ -61,15 +61,19 @@ class MantraService {
           final Map<String, dynamic> jsonData = json.decode(jsonString);
           print('Successfully loaded ${(jsonData['mantras'] as List).length} mantras from synced metadata');
           
-          _mantras = (jsonData['mantras'] as List)
-              .map((json) => Mantra.fromJson(json))
-              .toList();
-          
-          print('Successfully created ${_mantras.length} mantra objects');
-          for (var mantra in _mantras) {
-            print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
-          }
-          return _mantras;
+      _mantras = (jsonData['mantras'] as List)
+          .map((json) => Mantra.fromJson(json))
+          .toList();
+      
+      print('Successfully created ${_mantras.length} mantra objects');
+      for (var mantra in _mantras) {
+        print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
+      }
+      
+      // Load cart from SharedPreferences after mantras are loaded
+      await _loadCart();
+      
+      return _mantras;
         }
       } catch (e) {
         print('Could not load from synced metadata: $e');
@@ -98,6 +102,10 @@ class MantraService {
       for (var mantra in _mantras) {
         print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
       }
+      
+      // Load cart from SharedPreferences after mantras are loaded
+      await _loadCart();
+      
       return _mantras;
     } catch (e) {
       print('Error loading mantras from local JSON: $e');
@@ -136,7 +144,7 @@ class MantraService {
   }
 
   // Add mantra to cart
-  static void addToCart(Mantra mantra) {
+  static Future<void> addToCart(Mantra mantra) async {
     if (!_cart.any((item) => item.name == mantra.name)) {
       _cart.add(mantra.copyWith(isInCart: true));
       // Update the main list to reflect cart status
@@ -144,17 +152,21 @@ class MantraService {
       if (index != -1) {
         _mantras[index] = _mantras[index].copyWith(isInCart: true);
       }
+      // Save cart to SharedPreferences
+      await _saveCart();
     }
   }
 
   // Remove mantra from cart
-  static void removeFromCart(Mantra mantra) {
+  static Future<void> removeFromCart(Mantra mantra) async {
     _cart.removeWhere((item) => item.name == mantra.name);
     // Update the main list to reflect cart status
     final index = _mantras.indexWhere((item) => item.name == mantra.name);
     if (index != -1) {
       _mantras[index] = _mantras[index].copyWith(isInCart: false);
     }
+    // Save cart to SharedPreferences
+    await _saveCart();
   }
 
   // Get cart total
@@ -163,16 +175,79 @@ class MantraService {
   }
 
   // Clear cart
-  static void clearCart() {
+  static Future<void> clearCart() async {
     _cart.clear();
     // Update the main list to reflect cart status
     for (int i = 0; i < _mantras.length; i++) {
       _mantras[i] = _mantras[i].copyWith(isInCart: false);
     }
+    // Save cart to SharedPreferences
+    await _saveCart();
+  }
+
+  // Save cart to SharedPreferences
+  static Future<void> _saveCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Save cart as list of mantra names (simple and reliable)
+      final cartNames = _cart.map((m) => m.name).toList();
+      await prefs.setStringList('cart_items', cartNames);
+      print('✅ Cart saved to SharedPreferences: ${cartNames.length} items');
+    } catch (e) {
+      print('⚠️ Error saving cart to SharedPreferences: $e');
+    }
+  }
+
+  // Load cart from SharedPreferences
+  static Future<void> _loadCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cartNames = prefs.getStringList('cart_items') ?? [];
+      
+      if (cartNames.isEmpty) {
+        print('📦 No saved cart found');
+        return;
+      }
+      
+      print('📦 Loading cart from SharedPreferences: ${cartNames.length} items');
+      
+      // Rebuild cart from mantra names
+      _cart.clear();
+      for (final name in cartNames) {
+        final mantra = _mantras.firstWhere(
+          (m) => m.name == name && !m.isBought, // Only add if not purchased
+          orElse: () => Mantra(
+            name: name,
+            mantraFile: '',
+            icon: '',
+            price: 0,
+          ),
+        );
+        
+        // Only add if mantra exists and is not purchased
+        if (mantra.mantraFile.isNotEmpty && !mantra.isBought) {
+          _cart.add(mantra.copyWith(isInCart: true));
+          // Update the main list to reflect cart status
+          final index = _mantras.indexWhere((item) => item.name == mantra.name);
+          if (index != -1) {
+            _mantras[index] = _mantras[index].copyWith(isInCart: true);
+          }
+        } else {
+          print('⚠️ Skipping cart item "$name" - not found or already purchased');
+        }
+      }
+      
+      // Save cart again to remove any invalid items
+      await _saveCart();
+      
+      print('✅ Cart loaded: ${_cart.length} items');
+    } catch (e) {
+      print('⚠️ Error loading cart from SharedPreferences: $e');
+    }
   }
 
   // Mark mantra as purchased
-  static void markAsPurchased(Mantra mantra) {
+  static Future<void> markAsPurchased(Mantra mantra) async {
     print('═══════════════════════════════════════════════════════════');
     print('🛒 MARKING MANTRA AS PURCHASED');
     print('═══════════════════════════════════════════════════════════');
@@ -211,6 +286,13 @@ class MantraService {
         isBought: true,
         isInCart: false,
       );
+      
+      // Remove from cart if present
+      _cart.removeWhere((item) => item.name == mantra.name);
+      
+      // Save cart after removing purchased item
+      await _saveCart();
+      
       print('   After: ${_mantras[index].name} - isBought: ${_mantras[index].isBought}');
       print('═══════════════════════════════════════════════════════════');
     } else {
