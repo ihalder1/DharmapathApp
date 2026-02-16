@@ -3351,276 +3351,266 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 1),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
               'Your Cart',
               style: TextStyle(
-                fontSize: 22,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: AppColors.white,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 1),
             Text(
               '${cartItems.length} mantra${cartItems.length != 1 ? 's' : ''} selected',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 12,
                 color: AppColors.white.withOpacity(0.9),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 1),
             
             // Cart Items List - Make scrollable when items are present
-            Expanded(
-              child: cartItems.isEmpty
-                  ? LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minHeight: constraints.maxHeight,
+            if (cartItems.isEmpty)
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return SingleChildScrollView(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: constraints.maxHeight,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.shopping_cart_outlined,
+                                    size: 64,
+                                    color: AppColors.white.withOpacity(0.5),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Your cart is empty',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      color: AppColors.white.withOpacity(0.7),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Add mantras to get started',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.white.withOpacity(0.5),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                          );
+                        },
+                      ),
+                    ),
+                    // Back Button for empty cart - inside the Expanded to prevent overflow
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setState(() {
+                            _currentStep = 0; // Go to home screen
+                          });
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.white),
+                          foregroundColor: AppColors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text('Back'),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Scrollable cart items list - takes remaining space
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: cartItems.length,
+                        itemBuilder: (context, index) {
+                          final mantra = cartItems[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
                               children: [
-                                Icon(
-                                  Icons.shopping_cart_outlined,
-                                  size: 64,
-                                  color: AppColors.white.withOpacity(0.5),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Your cart is empty',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    color: AppColors.white.withOpacity(0.7),
+                                // Mantra Icon
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(6),
+                                    color: AppColors.white.withOpacity(0.2),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: _buildMantraIcon(
+                                      iconName: mantra.icon,
+                                      size: 16,
+                                      iconColor: AppColors.white,
+                                      fit: BoxFit.cover,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(width: 8),
+                                
+                                // Mantra Details
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        mantra.name,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.white,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                
+                                // Price
                                 Text(
-                                  'Add mantras to get started',
-                                  style: TextStyle(
+                                  mantra.formattedPrice,
+                                  style: const TextStyle(
                                     fontSize: 14,
-                                    color: AppColors.white.withOpacity(0.5),
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.white,
+                                  ),
+                                ),
+                                
+                                const SizedBox(width: 4),
+                                
+                                // Remove Button
+                                IconButton(
+                                  onPressed: () => _removeFromCart(mantra),
+                                  icon: const Icon(
+                                    Icons.remove_circle_outline,
+                                    color: Colors.red,
+                                    size: 18,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 28,
+                                    minHeight: 28,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        );
-                      },
-                    )
-                  : Column(
-                      children: [
-                        // Scrollable cart items list
-                        Expanded(
-                          child: ListView.builder(
-                            itemCount: cartItems.length,
-                            itemBuilder: (context, index) {
-                              final mantra = cartItems[index];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppColors.white.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    // Mantra Icon
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(6),
-                                        color: AppColors.white.withOpacity(0.2),
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(6),
-                                        child: _buildMantraIcon(
-                                          iconName: mantra.icon,
-                                          size: 20,
-                                          iconColor: AppColors.white,
-                                          fit: BoxFit.cover,
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    
-                                    // Mantra Details
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            mantra.name,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.white,
-                                            ),
-                                          ),
-                                          // Text(
-                                          //   mantra.formattedPlaytime, // COMMENTED OUT
-                                          //   style: TextStyle(
-                                          //     fontSize: 12,
-                                          //     color: AppColors.white.withOpacity(0.7),
-                                          //   ),
-                                          // ),
-                                        ],
-                                      ),
-                                    ),
-                                    
-                                    // Price
-                                    Text(
-                                      mantra.formattedPrice,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.white,
-                                      ),
-                                    ),
-                                    
-                                    const SizedBox(width: 8),
-                                    
-                                    // Remove Button
-                                    IconButton(
-                                      onPressed: () => _removeFromCart(mantra),
-                                      icon: const Icon(
-                                        Icons.remove_circle_outline,
-                                        color: Colors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        
-                        // Total and Checkout - Fixed at bottom (NOT in Expanded)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Total:',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.white,
-                                ),
-                              ),
-                              Text(
-                                '₹$total',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 4),
-                        
-                        // Checkout Button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () async {
-                              // Navigate to payment screen
-                              final paymentSuccess = await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PaymentScreen(
-                                    totalAmount: total,
-                                    cartItems: cartItems,
-                                  ),
-                                ),
-                              );
-                              
-                              // If payment was successful, update mantras and go to Select Mantra screen
-                              if (paymentSuccess == true && mounted) {
-                                // Get updated mantras from MantraService (already marked as purchased)
-                                // DO NOT reload from API/JSON as it will overwrite the purchased status
-                                final updatedMantras = MantraService.getMantras();
-                                print('Updating UI with ${updatedMantras.length} mantras after payment');
-                                print('Purchased mantras: ${updatedMantras.where((m) => m.isBought).map((m) => '${m.name} (${m.mantraFile})').join(', ')}');
-                                setState(() {
-                                  _mantras = updatedMantras;
-                                  _filteredMantras = updatedMantras;
-                                  _currentStep = 0; // Go to Select Mantra screen
-                                });
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.white,
-                              foregroundColor: AppColors.primarySaffron,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                            ),
-                            child: const Text(
-                              'Proceed to Checkout',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 0),
-                        
-                        // Back Button (goes to home screen)
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () {
-                              setState(() {
-                                _currentStep = 0; // Go to home screen
-                              });
-                            },
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppColors.white),
-                              foregroundColor: AppColors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              minimumSize: const Size(0, 30),
-                            ),
-                            child: const Text('Back'),
-                          ),
-                        ),
-                      ],
+                          );
+                        },
+                      ),
                     ),
-            ),
-            
-            // Back Button (only show when cart is empty, goes to home screen)
-            if (cartItems.isEmpty) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _currentStep = 0; // Go to home screen
-                    });
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.white),
-                    foregroundColor: AppColors.white,
-                  ),
-                  child: const Text('Back'),
+                    
+                    // Total and Checkout - Fixed at bottom
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Total:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.white,
+                            ),
+                          ),
+                          Text(
+                            '₹$total',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 1),
+                    
+                    // Checkout Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          // Navigate to payment screen
+                          final paymentSuccess = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => PaymentScreen(
+                                totalAmount: total,
+                                cartItems: cartItems,
+                              ),
+                            ),
+                          );
+                          
+                          // If payment was successful, update mantras and go to Select Mantra screen
+                          if (paymentSuccess == true && mounted) {
+                            // Get updated mantras from MantraService (already marked as purchased)
+                            // DO NOT reload from API/JSON as it will overwrite the purchased status
+                            final updatedMantras = MantraService.getMantras();
+                            print('Updating UI with ${updatedMantras.length} mantras after payment');
+                            print('Purchased mantras: ${updatedMantras.where((m) => m.isBought).map((m) => '${m.name} (${m.mantraFile})').join(', ')}');
+                            setState(() {
+                              _mantras = updatedMantras;
+                              _filteredMantras = updatedMantras;
+                              _currentStep = 0; // Go to Select Mantra screen
+                            });
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.white,
+                          foregroundColor: AppColors.primarySaffron,
+                          padding: const EdgeInsets.symmetric(vertical: 5),
+                        ),
+                        child: const Text(
+                          'Proceed to Checkout',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
           ],
         ),
       ),
