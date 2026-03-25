@@ -33,6 +33,65 @@ class VoiceRecordingService {
   String? get currentRecordingPath => _currentRecordingPath;
   List<VoiceRecording> get recordings => _recordings;
 
+  /// QA/testing helper: take an existing audio file, copy it into our
+  /// app recordings directory, and set it as the current recording.
+  ///
+  /// This allows the rest of the flow (playback, saveRecording -> backend upload)
+  /// to stay identical to a freshly recorded file.
+  Future<String?> setCurrentRecordingFromFile({
+    required String sourcePath,
+  }) async {
+    try {
+      if (_isRecording) {
+        print('Cannot import file while recording');
+        return null;
+      }
+
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) {
+        print('Import failed: source file does not exist: $sourcePath');
+        return null;
+      }
+
+      final sourceSize = await sourceFile.length();
+      if (sourceSize == 0) {
+        print('Import failed: source file is empty (0 bytes): $sourcePath');
+        return null;
+      }
+
+      final directory = await getApplicationDocumentsDirectory();
+      final recordingsDir = Directory('${directory.path}/recordings');
+      if (!await recordingsDir.exists()) {
+        await recordingsDir.create(recursive: true);
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final srcName = sourceFile.path.split('/').last;
+      String ext = '';
+      final dotIdx = srcName.lastIndexOf('.');
+      if (dotIdx != -1 && dotIdx < srcName.length - 1) {
+        ext = srcName.substring(dotIdx).toLowerCase();
+      }
+      // Fallback extension for unknown types
+      if (ext.isEmpty) {
+        ext = '.m4a';
+      }
+
+      final destPath = '${recordingsDir.path}/import_$timestamp$ext';
+      final destFile = await sourceFile.copy(destPath);
+
+      final destSize = await destFile.length();
+      print('Imported recording file: $destPath ($destSize bytes)');
+
+      _currentRecordingPath = destPath;
+      return _currentRecordingPath;
+    } catch (e, stackTrace) {
+      print('Error importing recording file: $e');
+      print('Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
   // Language content
   static const Map<String, String> languageContent = {
     'English': '''Hinduism is an ancient tradition of living, a continuous philosophy. Its greatest virtue is tolerance. Hindus have never harbored an aggressive attitude toward other religions. Hinduism has many Mantras. Regular chanting of these Mantras instills a sense of moral duty and makes people more responsible. Hindu Mantras are a profound spiritual science that establishes a connection between the mind and the cosmos. The regular recitation or chanting of Mantras has a far-reaching effect on an individual's life and Hindu religious culture. Chanting or even listening to these Mantras calms the mind and has a positive impact on the body's nervous system. Regular listening to Mantras brings control over the mind, increases concentration, and creates positive energy in the body. Beyond just the well-being of the body and mind, regular chanting of Hindu Mantras strengthens social bonds. When many people gather to chant Mantras or sing Kirtans, it creates a unified and peaceful environment that strengthens social and spiritual ties.

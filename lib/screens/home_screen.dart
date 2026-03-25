@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
@@ -575,6 +577,77 @@ class _HomeScreenState extends State<HomeScreen> {
         _isRecording = false;
         _recordingSeconds = 0;
       });
+    }
+  }
+
+  Future<void> _pickAudioFileForTesting() async {
+    try {
+      if (_isRecording) {
+        return;
+      }
+
+      // Stop playback if any
+      if (_isPlayingRecording) {
+        await _recordingPlayer.stop();
+        if (mounted) {
+          setState(() {
+            _isPlayingRecording = false;
+            _currentlyPlayingPath = null;
+          });
+        }
+      }
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowMultiple: false,
+        allowedExtensions: const ['m4a', 'mp3', 'wav', 'aac', 'mp4', 'amr'],
+        withData: false,
+      );
+
+      final pickedPath = result?.files.single.path;
+      if (pickedPath == null || pickedPath.isEmpty) {
+        return;
+      }
+
+      final importedPath = await _voiceService.setCurrentRecordingFromFile(
+        sourcePath: pickedPath,
+      );
+
+      if (importedPath == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to import audio file.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _currentRecordingPath = importedPath;
+        _recordingSeconds = 0;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Imported: ${pickedPath.split('/').last}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error picking audio file: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -2606,6 +2679,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       isPrimary: true,
                       isRecording: false,
                       enabled: _hasPurchasedMantras(),
+                    ),
+
+                  // QA/testing-only: Upload audio instead of recording
+                  if (kDebugMode && !_isRecording)
+                    _buildRecordingButton(
+                      icon: Icons.upload_file,
+                      onPressed: _pickAudioFileForTesting,
+                      isPrimary: false,
+                      enabled: true,
                     ),
                   
                   // Preview Button (only show if recording exists)
