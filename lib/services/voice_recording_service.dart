@@ -59,6 +59,57 @@ class VoiceRecordingService {
         return null;
       }
 
+      // Quick header sniff to avoid importing non-audio (e.g., text files)
+      try {
+        final raf = await sourceFile.open();
+        final headerBytes = await raf.read(16);
+        await raf.close();
+
+        bool looksLikeAudio = false;
+        // WAV: "RIFF....WAVE"
+        if (headerBytes.length >= 12) {
+          final riff = String.fromCharCodes(headerBytes.take(4));
+          final wave = String.fromCharCodes(headerBytes.skip(8).take(4));
+          if (riff == 'RIFF' && wave == 'WAVE') {
+            looksLikeAudio = true;
+          }
+        }
+        // MP3: "ID3" tag or 0xFF 0xFB frame sync
+        if (!looksLikeAudio && headerBytes.length >= 3) {
+          final id3 = String.fromCharCodes(headerBytes.take(3));
+          if (id3 == 'ID3') {
+            looksLikeAudio = true;
+          }
+        }
+        if (!looksLikeAudio && headerBytes.length >= 2) {
+          if (headerBytes[0] == 0xFF && (headerBytes[1] & 0xE0) == 0xE0) {
+            looksLikeAudio = true;
+          }
+        }
+        // MP4/M4A: contains "ftyp" at bytes 4-7
+        if (!looksLikeAudio && headerBytes.length >= 8) {
+          final ftyp = String.fromCharCodes(headerBytes.skip(4).take(4));
+          if (ftyp == 'ftyp') {
+            looksLikeAudio = true;
+          }
+        }
+        // AMR: "#!AMR"
+        if (!looksLikeAudio && headerBytes.length >= 5) {
+          final amr = String.fromCharCodes(headerBytes.take(5));
+          if (amr == '#!AMR') {
+            looksLikeAudio = true;
+          }
+        }
+
+        if (!looksLikeAudio) {
+          print('Import failed: file header does not look like audio');
+          return null;
+        }
+      } catch (e) {
+        // If header sniff fails, don't block import, but log it
+        print('Warning: could not sniff file header: $e');
+      }
+
       final directory = await getApplicationDocumentsDirectory();
       final recordingsDir = Directory('${directory.path}/recordings');
       if (!await recordingsDir.exists()) {
@@ -72,9 +123,11 @@ class VoiceRecordingService {
       if (dotIdx != -1 && dotIdx < srcName.length - 1) {
         ext = srcName.substring(dotIdx).toLowerCase();
       }
-      // Fallback extension for unknown types
-      if (ext.isEmpty) {
-        ext = '.m4a';
+      // Only allow known audio extensions; otherwise fail fast
+      const allowed = <String>{'.m4a', '.mp4', '.mp3', '.wav', '.aac', '.amr'};
+      if (ext.isEmpty || !allowed.contains(ext)) {
+        print('Import failed: unsupported extension "$ext" for $srcName');
+        return null;
       }
 
       final destPath = '${recordingsDir.path}/import_$timestamp$ext';
@@ -543,13 +596,24 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
         fileExtension = '.m4a';
       }
       
-      // Map extension to MIME type
+      // Normalize extension (some pickers may give .aac etc)
+      fileExtension = fileExtension.trim().toLowerCase();
+      if (!fileExtension.startsWith('.')) {
+        fileExtension = '.$fileExtension';
+      }
+
+      // Map extension to MIME type (backend expects a valid type/subtype)
       switch (fileExtension.toLowerCase()) {
         case '.m4a':
+          // Many backends accept audio/mp4 for m4a; some prefer audio/m4a.
+          // Prefer audio/mp4 to match existing recording flow in this app.
           mimeType = 'audio/mp4';
           break;
         case '.mp4':
           mimeType = 'audio/mp4';
+          break;
+        case '.aac':
+          mimeType = 'audio/aac';
           break;
         case '.mp3':
           mimeType = 'audio/mpeg';
@@ -562,6 +626,13 @@ For this reason, it is the duty of every Hindu to incorporate this spiritual sci
           break;
         default:
           mimeType = 'audio/mp4'; // Default
+      }
+
+      // Defensive: ensure mimeType is always valid "type/subtype"
+      final mimeParts = mimeType.split('/');
+      if (mimeParts.length != 2 || mimeParts[0].isEmpty || mimeParts[1].isEmpty) {
+        print('⚠️  Invalid mimeType computed ($mimeType), forcing audio/mp4');
+        mimeType = 'audio/mp4';
       }
 
       // Read file as bytes and encode to base64

@@ -931,31 +931,38 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Only show messages if widget is still mounted
                 if (!mounted) return;
                 
-                if (success && backendSuccess) {
-                  // Both local and backend save succeeded
-                  // Reload recordings to ensure list is up to date
+                if (success) {
+                  // Local save succeeded (backend may or may not have succeeded).
+                  // Reload recordings to ensure list is up to date.
                   await _voiceService.loadRecordings();
-                  
+
                   if (mounted) {
                     setState(() {
                       _currentRecordingPath = null;
                       _isPlayingRecording = false; // Reset playback state
                     });
-                    
-                    // Show success message
-                    scaffoldMessenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('Recording saved successfully!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
+
+                    if (backendSuccess) {
+                      scaffoldMessenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Recording saved successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Saved locally. Upload failed: ${errorMessage ?? "unknown error"}',
+                          ),
+                          backgroundColor: Colors.orange,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
                   }
                 } else {
-                  // Save failed (either local or backend)
-                  // Don't clear the recording path - user can try again
-                  // Don't reload recordings since nothing was saved
-                  
-                  // Show error message
+                  // Local save failed
                   scaffoldMessenger.showSnackBar(
                     SnackBar(
                       content: Text(errorMessage ?? 'Failed to save recording'),
