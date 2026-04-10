@@ -40,6 +40,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- FCM: enable remote notifications (also enable Push Notifications + Background Modes in Xcode) -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to microphone to record voice mantras for spiritual practice.</string>
 	<key>NSCameraUsageDescription</key>

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,6 +40,9 @@ class AuthService extends ChangeNotifier {
     try {
       await _loadSession();
       await _refreshTokenIfNeeded();
+      if (isLoggedIn && _currentUser != null && _currentUser!.id.isNotEmpty) {
+        FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
+      }
     } catch (e) {
       debugPrint('Auth initialization error: $e');
       // Continue with empty state
@@ -110,6 +114,7 @@ class AuthService extends ChangeNotifier {
         final finalIsLoggedIn = _currentUser != null && _accessToken != null;
         debugPrint('Final auth state - User: ${_currentUser?.email}, Token: ${_accessToken != null ? "SET (${_accessToken!.length} chars)" : "NULL"}, isLoggedIn: $finalIsLoggedIn');
         
+        FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
         notifyListeners();
         debugPrint('Google Sign-In completed successfully, notifying listeners');
         return true;
@@ -198,6 +203,7 @@ class AuthService extends ChangeNotifier {
           }
           await _saveSession();
           debugPrint('Facebook Sign-In completed successfully');
+          FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
           notifyListeners();
           return true;
         } else {
@@ -353,6 +359,9 @@ class AuthService extends ChangeNotifier {
 
       if (success) {
         await _saveSession();
+        if (_currentUser != null && _currentUser!.id.isNotEmpty) {
+          FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
+        }
         notifyListeners();
         return true;
       } else {

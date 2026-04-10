@@ -2604,7 +2604,7 @@ class _HomeScreenState extends State<HomeScreen> {
               
               // Text Display Box
               Expanded(
-                    flex: 4,
+                flex: 1,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
