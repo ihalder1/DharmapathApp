@@ -17,6 +17,7 @@ class ApiConfig {
   static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndpoint = '/auth/profile';
   static const String logoutEndpoint = '/auth/logout';
+  static const String putDeviceInfoEndpoint = '/auth/put-device-info';
   
   // Songs endpoint
   static const String songsEndpoint = '/songs';

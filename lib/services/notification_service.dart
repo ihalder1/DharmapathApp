@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../constants/api_config.dart';
 import '../models/notification.dart';
 
 // --- Firebase Cloud Messaging (FCM) -----------------------------------------
@@ -24,7 +25,7 @@ void _logFcmDeviceRegistrationBody(Map<String, String> payload, {required String
   debugPrint('FCM DEVICE REGISTRATION — request body (for backend developer)');
   debugPrint('Trigger: $trigger');
   debugPrint(line);
-  debugPrint('Suggested HTTP: POST /api/devices/register (replace with your real path)');
+  debugPrint('HTTP: PUT ${ApiConfig.baseUrl}${ApiConfig.putDeviceInfoEndpoint}');
   debugPrint('Content-Type: application/json');
   debugPrint('');
   debugPrint('--- Fields (copy-friendly) ---');
@@ -144,7 +145,13 @@ class FirebaseMessagingService {
     }
   }
 
-  /// Dummy backend call — logs only. [payload] keys: user_id, device_id, platform, fcm_token.
+  static Future<String?> _getAuthBearerToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token') ?? prefs.getString('access_token');
+  }
+
+  /// Registers device with backend: `PUT /auth/put-device-info` (Bearer + x-api-key).
+  /// [payload] keys: user_id, device_id, platform, fcm_token.
   static Future<void> sendDeviceToBackend(Map payload) async {
     try {
       String str(dynamic v) => v?.toString() ?? '';
@@ -154,7 +161,38 @@ class FirebaseMessagingService {
         'platform': str(payload['platform']),
         'fcm_token': str(payload['fcm_token']),
       };
-      _logFcmDeviceRegistrationBody(normalized, trigger: 'sendDeviceToBackend(Map)');
+      _logFcmDeviceRegistrationBody(normalized, trigger: 'sendDeviceToBackend → PUT');
+
+      if (normalized['user_id']!.isEmpty || normalized['fcm_token']!.isEmpty) {
+        debugPrint('[FCM] sendDeviceToBackend skipped: missing user_id or fcm_token');
+        return;
+      }
+
+      final bearer = await _getAuthBearerToken();
+      if (bearer == null || bearer.isEmpty) {
+        debugPrint('[FCM] sendDeviceToBackend skipped: no auth token (user not logged in)');
+        return;
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.putDeviceInfoEndpoint}');
+      final response = await http
+          .put(
+            uri,
+            headers: ApiConfig.getHeaders(accessToken: bearer),
+            body: json.encode(normalized),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('[FCM] put-device-info success: ${response.statusCode}');
+        if (response.body.isNotEmpty) {
+          debugPrint('[FCM] put-device-info body: ${response.body}');
+        }
+      } else {
+        debugPrint(
+          '[FCM] put-device-info failed: ${response.statusCode} ${response.body}',
+        );
+      }
     } catch (e) {
       debugPrint('[FCM] sendDeviceToBackend error (non-fatal): $e');
     }
