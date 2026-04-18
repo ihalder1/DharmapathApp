@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'permission_service.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
@@ -15,6 +16,9 @@ class VoiceRecordingService {
   static final VoiceRecordingService _instance = VoiceRecordingService._internal();
   factory VoiceRecordingService() => _instance;
   VoiceRecordingService._internal();
+
+  static const String _prefsRecordingIdPaths = 'voice_recording_id_paths_v1';
+  static const String _prefsPendingUploads = 'voice_pending_uploads_v1';
 
   final Uuid _uuid = const Uuid();
   AudioRecorder? _audioRecorder;
@@ -32,6 +36,114 @@ class VoiceRecordingService {
   bool get isRecording => _isRecording;
   String? get currentRecordingPath => _currentRecordingPath;
   List<VoiceRecording> get recordings => _recordings;
+
+  static String sanitizeRecordingBaseName(String name) {
+    return name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+  }
+
+  Future<Map<String, String>> _loadRecordingIdPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsRecordingIdPaths);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = json.decode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _persistRecordingIdPaths(Map<String, String> paths) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsRecordingIdPaths, json.encode(paths));
+  }
+
+  Future<void> _rememberPathForRecordingId(String recordingId, String path) async {
+    final m = await _loadRecordingIdPaths();
+    m[recordingId] = path;
+    await _persistRecordingIdPaths(m);
+  }
+
+  Future<void> _removePathForRecordingId(String? recordingId) async {
+    if (recordingId == null || recordingId.isEmpty) return;
+    final m = await _loadRecordingIdPaths();
+    m.remove(recordingId);
+    await _persistRecordingIdPaths(m);
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPendingUploads() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsPendingUploads);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final list = json.decode(raw) as List<dynamic>;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _persistPendingUploads(List<Map<String, dynamic>> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsPendingUploads, json.encode(items));
+  }
+
+  Future<void> _addPendingUpload({
+    required String localPath,
+    required String displayName,
+    required String language,
+  }) async {
+    final list = await _loadPendingUploads();
+    list.removeWhere((e) => e['localPath'] == localPath);
+    list.add({
+      'localPath': localPath,
+      'displayName': displayName,
+      'language': language,
+    });
+    await _persistPendingUploads(list);
+  }
+
+  Future<void> _removePendingUpload(String localPath) async {
+    final list = await _loadPendingUploads();
+    list.removeWhere((e) => e['localPath'] == localPath);
+    await _persistPendingUploads(list);
+  }
+
+  /// Called when the Record Your Voice tab loads — retries queued uploads silently.
+  Future<void> processPendingUploadsInBackground() async {
+    final pending = await _loadPendingUploads();
+    if (pending.isEmpty) return;
+
+    for (final item in List<Map<String, dynamic>>.from(pending)) {
+      final path = item['localPath']?.toString() ?? '';
+      final name = item['displayName']?.toString() ?? '';
+      final language = item['language']?.toString() ?? 'English';
+      if (path.isEmpty || name.isEmpty) continue;
+
+      final file = File(path);
+      if (!await file.exists() || await file.length() == 0) {
+        await _removePendingUpload(path);
+        continue;
+      }
+
+      final rec = VoiceRecording(
+        id: _uuid.v4(),
+        recordingId: null,
+        name: name,
+        language: language,
+        filePath: path,
+        createdAt: DateTime.now(),
+      );
+
+      final outcome = await _uploadRecordingWithRetries(recording: rec, showLogs: false);
+      if (outcome.ok) {
+        await _removePendingUpload(path);
+        if (outcome.recordingId != null && outcome.recordingId!.isNotEmpty) {
+          await _rememberPathForRecordingId(outcome.recordingId!, path);
+        }
+      }
+    }
+  }
 
   /// QA/testing helper: take an existing audio file, copy it into our
   /// app recordings directory, and set it as the current recording.
@@ -479,22 +591,26 @@ class VoiceRecordingService {
         createdAt: DateTime.now(),
       );
 
-      // Try to save to backend (but don't delete local file if it fails)
+      // Upload to backend: 3 retries, 3s apart (silent); queue for later if all fail
       String? backendErrorMessage;
       bool backendSuccess = false;
-      try {
-        await _saveToBackend(recording).timeout(
-          const Duration(seconds: 35), // Increased to allow for file upload
-        );
-        print('Recording saved to backend successfully');
+      final outcome =
+          await _uploadRecordingWithRetries(recording: recording, showLogs: true);
+      if (outcome.ok) {
         backendSuccess = true;
-      } on TimeoutException {
-        print('Backend save timeout - local file will still be kept');
-        backendErrorMessage = 'Backend save timed out';
-      } catch (e) {
-        print('Backend save failed: $e');
-        // Simple error message extraction - just get the message part
-        backendErrorMessage = e.toString().replaceAll('Exception: ', '');
+        if (outcome.recordingId != null && outcome.recordingId!.isNotEmpty) {
+          await _rememberPathForRecordingId(outcome.recordingId!, recording.filePath);
+        }
+        print('Recording saved to backend successfully');
+      } else {
+        await _addPendingUpload(
+          localPath: recording.filePath,
+          displayName: name,
+          language: language,
+        );
+        backendErrorMessage =
+            'Saved on device; server sync will retry when you open Record Your Voice again.';
+        print('Recording queued for background upload');
       }
 
       // ALWAYS keep local file - delete original temporary file only
@@ -600,177 +716,182 @@ class VoiceRecordingService {
     }
   }
 
-  // Save recording to backend (with base64 JSON body)
-  Future<void> _saveToBackend(VoiceRecording recording) async {
+  String? _parseRecordingIdFromUploadResponse(String body) {
+    if (body.trim().isEmpty) return null;
     try {
-      // Get auth token from AuthService
-      final authService = AuthService();
-      final accessToken = authService.accessToken;
-
-      if (accessToken == null || accessToken.isEmpty) {
-        print('❌ ERROR: No access token available for recording upload API');
-        throw Exception('No authentication token found');
-      }
-
-      // Read the audio file
-      final file = File(recording.filePath);
-      if (!await file.exists()) {
-        print('Error: Recording file does not exist: ${recording.filePath}');
-        throw Exception('Recording file does not exist');
-      }
-
-      // Get file size and details
-      final fileSize = await file.length();
-      final filename = recording.filePath.split('/').last;
-      print('✅ File verified: $fileSize bytes');
-      print('📝 Filename: $filename');
-
-      // Determine file extension and MIME type
-      String fileExtension = '';
-      String mimeType = 'audio/mp4'; // Default for m4a files
-      
-      if (filename.contains('.')) {
-        fileExtension = filename.substring(filename.lastIndexOf('.'));
-      } else {
-        // Default to .m4a if no extension found
-        fileExtension = '.m4a';
-      }
-      
-      // Normalize extension (some pickers may give .aac etc)
-      fileExtension = fileExtension.trim().toLowerCase();
-      if (!fileExtension.startsWith('.')) {
-        fileExtension = '.$fileExtension';
-      }
-
-      // Map extension to MIME type (backend expects a valid type/subtype)
-      switch (fileExtension.toLowerCase()) {
-        case '.m4a':
-          // Many backends accept audio/mp4 for m4a; some prefer audio/m4a.
-          // Prefer audio/mp4 to match existing recording flow in this app.
-          mimeType = 'audio/mp4';
-          break;
-        case '.mp4':
-          mimeType = 'audio/mp4';
-          break;
-        case '.aac':
-          mimeType = 'audio/aac';
-          break;
-        case '.mp3':
-          mimeType = 'audio/mpeg';
-          break;
-        case '.wav':
-          mimeType = 'audio/wav';
-          break;
-        case '.amr':
-          mimeType = 'audio/amr';
-          break;
-        default:
-          mimeType = 'audio/mp4'; // Default
-      }
-
-      // Defensive: ensure mimeType is always valid "type/subtype"
-      final mimeParts = mimeType.split('/');
-      if (mimeParts.length != 2 || mimeParts[0].isEmpty || mimeParts[1].isEmpty) {
-        print('⚠️  Invalid mimeType computed ($mimeType), forcing audio/mp4');
-        mimeType = 'audio/mp4';
-      }
-
-      // Read file as bytes and encode to base64
-      final fileBytes = await file.readAsBytes();
-      final base64Encoded = base64Encode(fileBytes);
-      print('📦 Base64 encoded size: ${base64Encoded.length} characters');
-
-      // Map language to code (e.g., "English" -> "en-US")
-      final languageCode = _mapLanguageToCode(recording.language);
-      
-      // Create JSON body
-      // fileName and recordingName are the same for now (as per user request)
-      final requestBody = json.encode({
-        'fileName': recording.name,
-        'recordingName': recording.name,
-        'fileExtension': fileExtension,
-        'mimeType': mimeType,
-        'language': languageCode,
-        'recordingBase64': base64Encoded,
-      });
-
-      // Create PUT request with JSON body
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
-      final headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': ApiConfig.apiKey,
-        'Authorization': 'Bearer $accessToken',
-      };
-
-      // Log detailed request information
-      print('═══════════════════════════════════════════════════════════');
-      print('🎤 UPLOAD RECORDING TO BACKEND API CALL (Base64 JSON)');
-      print('═══════════════════════════════════════════════════════════');
-      print('📤 REQUEST:');
-      print('   URL: $url');
-      print('   Method: PUT');
-      print('   Recording Name: ${recording.name}');
-      print('   Language: ${recording.language} -> $languageCode');
-      print('   File: $filename ($fileSize bytes)');
-      print('   File Extension: $fileExtension');
-      print('   MIME Type: $mimeType');
-      print('   Base64 Length: ${base64Encoded.length} characters');
-      print('   File Path: ${recording.filePath}');
-      print('   Headers: ${json.encode(headers)}');
-      print('   Request Body (first 200 chars): ${requestBody.substring(0, requestBody.length > 200 ? 200 : requestBody.length)}...');
-      print('   FULL TOKEN: $accessToken');
-      print('═══════════════════════════════════════════════════════════');
-
-      // Send PUT request
-      final response = await http.put(
-        url,
-        headers: headers,
-        body: requestBody,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
-
-      print('📥 RESPONSE:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        print('✅ Recording saved to backend successfully: ${recording.name}');
-      } else {
-        print('❌ Failed to save recording to backend: ${response.statusCode}');
-        print('   Response: ${response.body}');
-        
-        // Try to extract error message from response body
-        String errorMessage = 'Failed to save recording to backend';
-        try {
-          final responseData = json.decode(response.body);
-          if (responseData is Map && responseData.containsKey('error')) {
-            errorMessage = responseData['error'].toString();
-          } else if (responseData is Map && responseData.containsKey('message')) {
-            errorMessage = responseData['message'].toString();
-          } else {
-            errorMessage = 'Failed to save recording (Status: ${response.statusCode})';
-          }
-        } catch (e) {
-          // If JSON parsing fails, use the raw response or default message
-          if (response.body.isNotEmpty) {
-            errorMessage = 'Failed to save recording: ${response.body}';
-          } else {
-            errorMessage = 'Failed to save recording (Status: ${response.statusCode})';
-          }
+      final d = json.decode(body);
+      if (d is Map<String, dynamic>) {
+        final rid = d['recording_id'] ?? d['recordingId'];
+        if (rid != null) return rid.toString();
+        final data = d['data'];
+        if (data is Map<String, dynamic>) {
+          final rid2 = data['recording_id'] ?? data['recordingId'];
+          if (rid2 != null) return rid2.toString();
         }
-        
-        throw Exception(errorMessage);
       }
-    } on TimeoutException {
-      print('❌ Backend save timed out');
-      rethrow; // Re-throw so caller can handle timeout
-    } catch (e, stackTrace) {
-      print('❌ ERROR saving to backend: $e');
-      print('   StackTrace: $stackTrace');
-      rethrow; // Re-throw so caller can handle error
+    } catch (_) {}
+    return null;
+  }
+
+  /// Single PUT — returns server [recording_id] when present.
+  Future<String?> _uploadRecordingPutOnce(VoiceRecording recording, {required bool verbose}) async {
+    final authService = AuthService();
+    final accessToken = authService.accessToken;
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('No authentication token found');
     }
+
+    final file = File(recording.filePath);
+    if (!await file.exists()) {
+      throw Exception('Recording file does not exist');
+    }
+
+    final fileSize = await file.length();
+    final filename = recording.filePath.split('/').last;
+
+    String dottedExt = '.m4a';
+    if (filename.contains('.')) {
+      dottedExt = filename.substring(filename.lastIndexOf('.')).trim().toLowerCase();
+    }
+    if (!dottedExt.startsWith('.')) {
+      dottedExt = '.$dottedExt';
+    }
+
+    String mimeType = 'audio/mp4';
+    switch (dottedExt) {
+      case '.m4a':
+        mimeType = 'audio/m4a';
+        break;
+      case '.mp4':
+        mimeType = 'audio/mp4';
+        break;
+      case '.aac':
+        mimeType = 'audio/aac';
+        break;
+      case '.mp3':
+        mimeType = 'audio/mpeg';
+        break;
+      case '.wav':
+        mimeType = 'audio/wav';
+        break;
+      case '.amr':
+        mimeType = 'audio/amr';
+        break;
+      default:
+        mimeType = 'audio/mp4';
+    }
+
+    final extForApi =
+        dottedExt.startsWith('.') ? dottedExt.substring(1) : dottedExt;
+
+    final fileStem = filename.contains('.')
+        ? filename.substring(0, filename.lastIndexOf('.'))
+        : filename;
+
+    final fileBytes = await file.readAsBytes();
+    final base64Encoded = base64Encode(fileBytes);
+    final languageCode = _mapLanguageToCode(recording.language);
+
+    final requestBody = json.encode({
+      'fileName': fileStem,
+      'recordingName': recording.name,
+      'fileExtension': extForApi,
+      'mimeType': mimeType,
+      'language': languageCode,
+      'recordingBase64': base64Encoded,
+    });
+
+    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
+    final headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': ApiConfig.apiKey,
+      'Authorization': 'Bearer $accessToken',
+    };
+
+    if (verbose) {
+      print('═══════════════════════════════════════════════════════════');
+      print('🎤 UPLOAD RECORDING (PUT)');
+      print('   URL: $url');
+      print('   fileName: $fileStem / recordingName: ${recording.name}');
+      print('   ext: $extForApi / mime: $mimeType / bytes: $fileSize');
+      print('═══════════════════════════════════════════════════════════');
+    }
+
+    final response = await http.put(url, headers: headers, body: requestBody).timeout(
+          const Duration(seconds: 90),
+        );
+
+    if (verbose) {
+      print('📥 PUT status=${response.statusCode} body=${response.body}');
+    }
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return _parseRecordingIdFromUploadResponse(response.body);
+    }
+
+    String errorMessage = 'Failed to save recording to backend';
+    try {
+      final responseData = json.decode(response.body);
+      if (responseData is Map && responseData.containsKey('error')) {
+        errorMessage = responseData['error'].toString();
+      } else if (responseData is Map && responseData.containsKey('message')) {
+        errorMessage = responseData['message'].toString();
+      }
+    } catch (_) {
+      if (response.body.isNotEmpty) errorMessage = response.body;
+    }
+    throw Exception(errorMessage);
+  }
+
+  /// Up to 3 attempts, 3 seconds apart.
+  Future<_VoiceUploadOutcome> _uploadRecordingWithRetries({
+    required VoiceRecording recording,
+    required bool showLogs,
+  }) async {
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        final id = await _uploadRecordingPutOnce(recording, verbose: showLogs);
+        return _VoiceUploadOutcome(ok: true, recordingId: id);
+      } catch (e) {
+        if (showLogs) {
+          print('❌ Upload attempt $attempt/3 failed: $e');
+        }
+        if (attempt < 3) {
+          await Future<void>.delayed(const Duration(seconds: 3));
+        }
+      }
+    }
+    return const _VoiceUploadOutcome(ok: false, recordingId: null);
+  }
+
+  Future<String?> _resolveLocalAudioPath({
+    required String recordingId,
+    required String displayName,
+    required String fileExtensionRaw,
+    required Directory recordingsDir,
+    required Map<String, String> idPaths,
+  }) async {
+    final mapped = idPaths[recordingId];
+    if (mapped != null && mapped.isNotEmpty) {
+      final f = File(mapped);
+      if (await f.exists() && await f.length() > 0) return mapped;
+    }
+
+    var ext = fileExtensionRaw.trim();
+    if (ext.isEmpty) ext = '.m4a';
+    if (!ext.startsWith('.')) ext = '.$ext';
+
+    final base = sanitizeRecordingBaseName(displayName);
+    final candidates = <String>[
+      '${recordingsDir.path}/$base$ext',
+      '${recordingsDir.path}/$base.m4a',
+    ];
+    for (final p in candidates) {
+      final f = File(p);
+      if (await f.exists() && await f.length() > 0) return p;
+    }
+    return null;
   }
 
   // Download recording file from backend URL (pre-signed URL)
@@ -837,128 +958,80 @@ class VoiceRecordingService {
       print('🔄 LOADING RECORDINGS (Backend + Local Sync)');
       print('═══════════════════════════════════════════════════════════');
 
-      // 1. Fetch recordings from backend
+      await processPendingUploadsInBackground();
+
+      // 1. Fetch recordings from backend (GET .../voice/recordings → { recordings: [...] })
       final backendRecordings = await _fetchRecordingsFromBackend();
-      
-      // 2. Get app directory
+
+      // 2. App documents directory
       final directory = await getApplicationDocumentsDirectory();
       final recordingsDir = Directory('${directory.path}/recordings');
-      
+
       if (!await recordingsDir.exists()) {
         await recordingsDir.create(recursive: true);
       }
 
       print('📂 Local recordings directory: ${recordingsDir.path}');
 
-      // 3. Create a map of backend recordings by name for quick lookup
-      final Map<String, Map<String, dynamic>> backendRecordingsMap = {};
-      for (var backendRec in backendRecordings) {
-        final name = backendRec['name']?.toString() ?? '';
-        if (name.isNotEmpty) {
-          backendRecordingsMap[name] = backendRec;
-        }
-      }
+      final idPaths = await _loadRecordingIdPaths();
 
-      // 4. Load local files
+      // 3. Local files on disk
       final files = await recordingsDir.list().toList();
       print('📁 Found ${files.length} files in local directory');
 
-      // 5. Clear and rebuild recordings list
+      // 4. Clear and rebuild recordings list
       _recordings = [];
 
-      // 6. Process backend recordings first
-      for (var backendRec in backendRecordings) {
+      // 5. Every server row — match local file by recording_id map + name/extension
+      for (final backendRec in backendRecordings) {
         try {
-          final recordingId = backendRec['recording_id']?.toString() ?? _uuid.v4();
+          final recordingId = backendRec['recording_id']?.toString() ?? '';
+          if (recordingId.isEmpty) continue;
+
           final name = backendRec['name']?.toString() ?? '';
+          if (name.isEmpty) continue;
+
           final languageCode = backendRec['language']?.toString() ?? 'en-US';
           final language = _mapCodeToLanguage(languageCode);
           final createdAtStr = backendRec['created_at']?.toString() ?? '';
-          final recordingUrl = backendRec['recording_url']?.toString() ?? '';
-          final fileExtension = backendRec['file_extension']?.toString() ?? '.mp4';
-          
-          // Parse created_at date
+          final fileExtension =
+              backendRec['file_extension']?.toString() ?? '.m4a';
+          final trainingStatus =
+              backendRec['training_status']?.toString();
+
           DateTime createdAt;
           try {
             createdAt = DateTime.parse(createdAtStr).toLocal();
           } catch (e) {
-            print('⚠️  Could not parse date: $createdAtStr, using current time');
             createdAt = DateTime.now();
           }
 
-          // Check if local file exists
-          final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-          final localFilePath = '${recordingsDir.path}/$sanitizedName$fileExtension';
-          final localFile = File(localFilePath);
-          bool localFileExists = await localFile.exists();
-          
-          // Also check for files with .m4a extension (in case extension mismatch)
-          String actualLocalPath = localFilePath;
-          if (!localFileExists && fileExtension != '.m4a') {
-            final m4aPath = '${recordingsDir.path}/$sanitizedName.m4a';
-            final m4aFile = File(m4aPath);
-            if (await m4aFile.exists()) {
-              actualLocalPath = m4aPath;
-              localFileExists = true;
-            }
-          }
+          final localPath = await _resolveLocalAudioPath(
+            recordingId: recordingId,
+            displayName: name,
+            fileExtensionRaw: fileExtension,
+            recordingsDir: recordingsDir,
+            idPaths: idPaths,
+          );
 
-          print('\n📝 Processing backend recording: $name');
-          print('   ID: $recordingId');
-          print('   Language: $language ($languageCode)');
-          print('   Created: $createdAt');
-          print('   Local file exists: $localFileExists');
-          print('   Local path: $actualLocalPath');
+          final hasLocal = localPath != null && localPath.isNotEmpty;
 
-          if (localFileExists) {
-            // Verify file is not empty and is valid
-            final actualFile = File(actualLocalPath);
-            final fileSize = await actualFile.length();
-            if (fileSize == 0) {
-              print('   ⚠️  Local file exists but is empty - skipping');
-              continue;
-            }
-            
-            // Local file exists and is valid - use it
-            print('   ✅ Using existing local file (${fileSize} bytes)');
-            final recording = VoiceRecording(
-              id: recordingId, // Use recording_id as id for backend recordings
-              recordingId: recordingId, // Store recording_id separately
+          print('\n📝 Backend recording: $name id=$recordingId local=${hasLocal ? "yes" : "no"}');
+
+          _recordings.add(
+            VoiceRecording(
+              id: recordingId,
+              recordingId: recordingId,
               name: name,
               language: language,
-              filePath: actualLocalPath,
+              filePath: localPath ?? '',
               createdAt: createdAt,
-            );
-            _recordings.add(recording);
-          } else {
-            // Local file doesn't exist - try to download
-            print('   ⬇️  Local file not found, attempting download...');
-            final downloadSuccess = await _downloadRecordingFromUrl(
-              recordingUrl: recordingUrl,
-              localFilePath: localFilePath,
-            );
-            
-            // Only add to list if download succeeded and file exists
-            if (downloadSuccess && await localFile.exists()) {
-              print('   ✅ Downloaded successfully');
-              final recording = VoiceRecording(
-                id: recordingId, // Use recording_id as id for backend recordings
-                recordingId: recordingId, // Store recording_id separately
-                name: name,
-                language: language,
-                filePath: localFilePath,
-                createdAt: createdAt,
-              );
-              _recordings.add(recording);
-            } else {
-              print('   ⚠️  Download failed or file not available - skipping (will not add to list)');
-              print('   ⚠️  Recording exists on backend but local file is not available');
-              // Don't add to list - file doesn't exist locally and can't be downloaded
-            }
-          }
+              hasLocalFile: hasLocal,
+              trainingStatus: trainingStatus,
+            ),
+          );
         } catch (e) {
           print('❌ Error processing backend recording: $e');
-          // Continue with other recordings
         }
       }
 
@@ -1095,9 +1168,20 @@ class VoiceRecordingService {
       print('═══════════════════════════════════════════════════════════');
 
       if (response.statusCode == 200) {
-        final List<dynamic> recordingsList = json.decode(response.body);
+        final decoded = json.decode(response.body);
+        List<dynamic> recordingsList = [];
+        if (decoded is Map<String, dynamic>) {
+          final raw = decoded['recordings'];
+          if (raw is List) {
+            recordingsList = raw;
+          }
+        } else if (decoded is List) {
+          recordingsList = decoded;
+        }
         print('✅ Successfully fetched ${recordingsList.length} recordings from backend');
-        return recordingsList.map((rec) => rec as Map<String, dynamic>).toList();
+        return recordingsList
+            .map((rec) => Map<String, dynamic>.from(rec as Map))
+            .toList();
       } else {
         print('❌ Failed to fetch recordings: ${response.statusCode}');
         print('   Response: ${response.body}');
@@ -1239,42 +1323,32 @@ class VoiceRecordingService {
     return nameWithoutExtension.replaceAll('_', ' ');
   }
 
-  // Delete recording
+  // Delete recording — local file first, then DELETE on server when [recordingId] exists.
   Future<bool> deleteRecording(VoiceRecording recording) async {
     try {
-      // Check if recording has recordingId (from backend)
-      if (recording.recordingId == null || recording.recordingId!.isEmpty) {
-        print('⚠️  Recording does not have recordingId, cannot delete from backend');
-        print('   Recording name: ${recording.name}');
-        // For old recordings without recordingId, just delete locally
+      final backendId = recording.recordingId;
+
+      if (recording.filePath.isNotEmpty) {
         final file = File(recording.filePath);
         if (await file.exists()) {
           await file.delete();
           print('Deleted local recording file: ${recording.filePath}');
         }
-        _recordings.remove(recording);
-        return true;
       }
 
-      // Delete from backend FIRST
-      final backendSuccess = await _deleteFromBackend(recording);
-      
-      if (!backendSuccess) {
-        print('❌ Backend delete failed, not deleting locally');
-        return false;
+      await _removePathForRecordingId(backendId);
+
+      if (backendId != null && backendId.isNotEmpty) {
+        final backendSuccess = await _deleteFromBackend(recording);
+        if (!backendSuccess) {
+          _recordings.remove(recording);
+          print('❌ Backend delete failed');
+          return false;
+        }
       }
 
-      // Backend delete succeeded - now delete locally
-      final file = File(recording.filePath);
-      if (await file.exists()) {
-        await file.delete();
-        print('✅ Deleted local recording file: ${recording.filePath}');
-      }
-      
-      // Remove from local list
       _recordings.remove(recording);
-      print('✅ Recording deleted successfully: ${recording.name}');
-      
+      print('✅ Recording deleted: ${recording.name}');
       return true;
     } catch (e, stackTrace) {
       print('❌ Error deleting recording: $e');
@@ -1364,22 +1438,56 @@ class VoiceRecordingService {
   }
 }
 
+class _VoiceUploadOutcome {
+  final bool ok;
+  final String? recordingId;
+  const _VoiceUploadOutcome({required this.ok, this.recordingId});
+}
+
 class VoiceRecording {
   final String id;
   final String? recordingId; // Backend recording_id from API
   final String name;
   final String language;
+  /// Local file path; empty when [hasLocalFile] is false (remote-only row).
   final String filePath;
   final DateTime createdAt;
+  /// False when the server lists the recording but there is no local audio file.
+  final bool hasLocalFile;
+  final String? trainingStatus;
 
   VoiceRecording({
     required this.id,
-    this.recordingId, // Optional - only available for backend recordings
+    this.recordingId,
     required this.name,
     required this.language,
     required this.filePath,
     required this.createdAt,
+    this.hasLocalFile = true,
+    this.trainingStatus,
   });
+
+  VoiceRecording copyWith({
+    String? id,
+    String? recordingId,
+    String? name,
+    String? language,
+    String? filePath,
+    DateTime? createdAt,
+    bool? hasLocalFile,
+    String? trainingStatus,
+  }) {
+    return VoiceRecording(
+      id: id ?? this.id,
+      recordingId: recordingId ?? this.recordingId,
+      name: name ?? this.name,
+      language: language ?? this.language,
+      filePath: filePath ?? this.filePath,
+      createdAt: createdAt ?? this.createdAt,
+      hasLocalFile: hasLocalFile ?? this.hasLocalFile,
+      trainingStatus: trainingStatus ?? this.trainingStatus,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -1389,17 +1497,21 @@ class VoiceRecording {
       'language': language,
       'filePath': filePath,
       'createdAt': createdAt.toIso8601String(),
+      'hasLocalFile': hasLocalFile,
+      'trainingStatus': trainingStatus,
     };
   }
 
   factory VoiceRecording.fromJson(Map<String, dynamic> json) {
     return VoiceRecording(
-      id: json['id'],
-      recordingId: json['recordingId'],
-      name: json['name'],
-      language: json['language'],
-      filePath: json['filePath'],
-      createdAt: DateTime.parse(json['createdAt']),
+      id: json['id'] as String,
+      recordingId: json['recordingId'] as String?,
+      name: json['name'] as String,
+      language: json['language'] as String,
+      filePath: json['filePath'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      hasLocalFile: json['hasLocalFile'] as bool? ?? true,
+      trainingStatus: json['trainingStatus'] as String?,
     );
   }
 }

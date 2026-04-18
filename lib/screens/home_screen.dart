@@ -62,7 +62,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentlyPlayingPath; // Track which file is currently playing
   String? _currentRecordingPath;
   final AudioPlayer _recordingPlayer = AudioPlayer();
-  bool _hasSyncedRecordings = false;
+  /// Tracks step transitions so we refresh GET voice/recordings when entering Record Voice.
+  int? _prevStepForVoiceRefresh;
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
   static const int _maxRecordingSeconds = 60;
@@ -453,19 +454,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Sync recordings when voice recording step is loaded
-  Future<void> _syncRecordings() async {
-    try {
-      await _voiceService.syncRecordings();
-      // Reload recordings after sync to ensure UI is updated
-      await _voiceService.loadRecordings();
-      setState(() {});
-    } catch (e) {
-      print('Error syncing recordings: $e');
-      // Don't show error to user - sync is background operation
-    }
-  }
-
   // Voice recording methods
   // Check if user has purchased at least one mantra
   bool _hasPurchasedMantras() {
@@ -669,6 +657,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _playRecording(String path) async {
+    if (path.isEmpty) return;
     try {
       // If already playing this file, stop it
       if (_isPlayingRecording && _currentlyPlayingPath == path) {
@@ -982,6 +971,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Whenever user switches to "Record your voice" (step 1), refresh list from GET .../voice/recordings
+    if (_currentStep == 1) {
+      if (_prevStepForVoiceRefresh != 1) {
+        _prevStepForVoiceRefresh = 1;
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await _voiceService.processPendingUploadsInBackground();
+          await _loadRecordings();
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      _prevStepForVoiceRefresh = _currentStep;
+    }
+
     // If recordings is expanded, show it as full screen (check first, regardless of step)
     if (_isRecordingsExpanded) {
       return _buildExpandedRecordingsStep();
@@ -2494,17 +2497,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildVoiceRecordingStep() {
-    // Load and sync recordings when this step is first loaded (only once)
-    if (!_hasSyncedRecordings) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _hasSyncedRecordings = true;
-        // Load recordings first to show existing ones
-        _loadRecordings();
-        // Then sync with backend
-        _syncRecordings();
-      });
-    }
-    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -2517,10 +2509,6 @@ class _HomeScreenState extends State<HomeScreen> {
             await _cleanupUnsavedRecording();
             setState(() {
               _currentStep--;
-              // Reset sync flag when leaving this step
-              if (_currentStep != 1) {
-                _hasSyncedRecordings = false;
-              }
             });
           },
         ),
@@ -2789,11 +2777,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                 itemCount: _voiceService.recordings.length,
                                 itemBuilder: (context, index) {
                                   final recording = _voiceService.recordings[index];
+                                  final missing = !recording.hasLocalFile;
+                                  final titleStyle = TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: missing ? Colors.grey[600]! : Colors.black,
+                                  );
+                                  final subStyle = TextStyle(
+                                    fontSize: 11,
+                                    color: missing ? Colors.grey[600]! : Colors.black54,
+                                  );
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 6),
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: missing ? Colors.grey[200]! : Colors.white,
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(color: Colors.grey[300]!),
                                     ),
@@ -2803,53 +2801,47 @@ class _HomeScreenState extends State<HomeScreen> {
                                           child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
+                                              Text(recording.name, style: titleStyle),
                                               Text(
-                                                recording.name,
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black,
-                                                ),
-                                              ),
-                                              Text(
-                                                '${recording.language} • ${_formatDate(recording.createdAt)}',
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.black54,
-                                                ),
+                                                missing
+                                                    ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
+                                                    : '${recording.language} • ${_formatDate(recording.createdAt)}',
+                                                style: subStyle,
                                               ),
                                             ],
                                           ),
                                         ),
-                                        IconButton(
-                                          onPressed: () => _playRecording(recording.filePath),
-                                          icon: Icon(
-                                            (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
-                                                ? Icons.pause 
-                                                : Icons.play_arrow,
-                                            color: Colors.black,
-                                            size: 20,
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                        ),
-                                        Tooltip(
-                                          message: 'Create your Mantra',
-                                          child: IconButton(
-                                            onPressed: () {
-                                              _showCreateMantraDialog(recording);
-                                            },
-                                            icon: const Text(
-                                              'ॐ',
-                                              style: TextStyle(
-                                                fontSize: 18,
-                                                color: AppColors.primarySaffron,
-                                              ),
+                                        if (!missing) ...[
+                                          IconButton(
+                                            onPressed: () => _playRecording(recording.filePath),
+                                            icon: Icon(
+                                              (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
+                                                  ? Icons.pause
+                                                  : Icons.play_arrow,
+                                              color: Colors.black,
+                                              size: 20,
                                             ),
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(),
                                           ),
-                                        ),
+                                          Tooltip(
+                                            message: 'Create your Mantra',
+                                            child: IconButton(
+                                              onPressed: () {
+                                                _showCreateMantraDialog(recording);
+                                              },
+                                              icon: const Text(
+                                                'ॐ',
+                                                style: TextStyle(
+                                                  fontSize: 18,
+                                                  color: AppColors.primarySaffron,
+                                                ),
+                                              ),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                            ),
+                                          ),
+                                        ],
                                         IconButton(
                                           onPressed: () => _deleteRecording(recording),
                                           icon: const Icon(
@@ -2921,11 +2913,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: _voiceService.recordings.length,
                   itemBuilder: (context, index) {
                     final recording = _voiceService.recordings[index];
+                    final missing = !recording.hasLocalFile;
+                    final titleStyle = TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: missing ? Colors.grey[600]! : Colors.black,
+                    );
+                    final subStyle = TextStyle(
+                      fontSize: 14,
+                      color: missing ? Colors.grey[600]! : Colors.black54,
+                    );
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: missing ? Colors.grey[200]! : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey[300]!),
                         boxShadow: [
@@ -2942,50 +2944,44 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  recording.name,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black,
-                                  ),
-                                ),
+                                Text(recording.name, style: titleStyle),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${recording.language} • ${_formatDate(recording.createdAt)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black54,
-                                  ),
+                                  missing
+                                      ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
+                                      : '${recording.language} • ${_formatDate(recording.createdAt)}',
+                                  style: subStyle,
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            onPressed: () => _playRecording(recording.filePath),
-                            icon: Icon(
-                              (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
-                                  ? Icons.pause 
-                                  : Icons.play_arrow,
-                              color: AppColors.primarySaffron,
-                              size: 32,
+                          if (!missing) ...[
+                            IconButton(
+                              onPressed: () => _playRecording(recording.filePath),
+                              icon: Icon(
+                                (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                                color: AppColors.primarySaffron,
+                                size: 32,
+                              ),
                             ),
-                          ),
-                          Tooltip(
-                            message: 'Create your Mantra',
-                            child: IconButton(
-                              onPressed: () {
-                                _showCreateMantraDialog(recording);
-                              },
-                              icon: const Text(
-                                'ॐ',
-                                style: TextStyle(
-                                  fontSize: 28,
-                                  color: AppColors.primarySaffron,
+                            Tooltip(
+                              message: 'Create your Mantra',
+                              child: IconButton(
+                                onPressed: () {
+                                  _showCreateMantraDialog(recording);
+                                },
+                                icon: const Text(
+                                  'ॐ',
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    color: AppColors.primarySaffron,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                           IconButton(
                             onPressed: () => _deleteRecording(recording),
                             icon: const Icon(
@@ -3750,6 +3746,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showCreateMantraDialog(VoiceRecording recording) {
+    if (!recording.hasLocalFile) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Audio file is not on this device.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     // Get purchased mantras
     final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
     
