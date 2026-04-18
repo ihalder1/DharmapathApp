@@ -1,53 +1,191 @@
 {
     "mantras": [
-        {
-            "name": "Maa Durga Mantra",
-            "mantra_file": "M-DURGA-001.mp3",
-            "icon": "M-DURGA-001.jpg",
-            "price": 201,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Ganesh Mantra",
-            "mantra_file": "M-GANESH-001.mp3",
-            "icon": "M-GANESH-001.jpg",
-            "price": 99,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Maa MahaKali Mantra",
-            "mantra_file": "M-MAHAKALI-001.mp3",
-            "icon": "M-MAHAKALI-001.jpg",
-            "price": 151,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Shri Rama Mantra",
-            "mantra_file": "M-RAM-001.mp3",
-            "icon": "M-RAM-001.jpg",
-            "price": 100,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Maa Saraswati Mantra",
-            "mantra_file": "M-SARASWATI-001.mp3",
-            "icon": "M-SARASWATI-001.jpg",
-            "price": 110,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Shani Dev Mantra",
-            "mantra_file": "M-SHANI-001.mp3",
-            "icon": "M-SHANI-001.jpg",
-            "price": 161,
-            "last_modified": "2025-12-01 12:05:00"
-        },
-        {
-            "name": "Surya Dev Mantra",
-            "mantra_file": "M-SURYA-001.mp3",
-            "icon": "M-SURYA-001.jpg",
-            "price": 55,
-            "last_modified": "2025-12-01 12:05:00"
-        }
-    ]
+            {
+              "name": "Aarati Mantra",
+              "mantra_file": "F-AARATI-001.mp3",
+              "icon": "F-AARATI-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Brahma Mantra",
+              "mantra_file": "F-BRAHMA-001.mp3",
+              "icon": "F-BRAHMA-001.png",
+              "price_in": 89,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Devi Mantra",
+              "mantra_file": "F-DEVI-001.mp3",
+              "icon": "F-DEVI-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Maa Durga Mantra",
+              "mantra_file": "F-DURGA-001.mp3",
+              "icon": "F-DURGA-001.png",
+              "price_in": 89,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Ganapataye Mantra",
+              "mantra_file": "F-GANAPATAYE-001.mp3",
+              "icon": "F-GANAPATAYE-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Gayatri Mantra",
+              "mantra_file": "F-GAYATRI-001.mp3",
+              "icon": "F-GAYATRI-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shri Jagannath Mantra",
+              "mantra_file": "F-JAGANNATH-001.mp3",
+              "icon": "F-JAGANNATH-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shri Krishna Mantra",
+              "mantra_file": "F-KRISHNA-001.mp3",
+              "icon": "F-KRISHNA-001.png",
+              "price_in": 89,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Maa Mahalakshmi Mantra",
+              "mantra_file": "F-MAHALAKSHMI-001.mp3",
+              "icon": "F-MAHALAKSHMI-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Mahamrityunjay Mantra",
+              "mantra_file": "F-MAHAMRITYUNJAY-001.mp3",
+              "icon": "F-MAHAMRITYUNJAY-001.png",
+              "price_in": 99,
+              "price_other": 5.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Sri Radha Mantra",
+              "mantra_file": "F-RADHE-001.mp3",
+              "icon": "F-RADHE-001.png",
+              "price_in": 89,
+              "price_other": 3.99,  
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Maa Saraswati Mantra",
+              "mantra_file": "F-SARASWATI-001.mp3",
+              "icon": "F-SARASWATI-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shri Shanidev Mantra",
+              "mantra_file": "F-SHANIDEV-001.mp3",
+              "icon": "F-SHANIDEV-001.png",
+              "price_in": 99,
+              "price_other": 3.99,  
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shiva Mantra",
+              "mantra_file": "F-SHIVA-001.mp3",
+              "icon": "F-SHIVA-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shree Rama Mantra",
+              "mantra_file": "F-SHREERAM-001.mp3",
+              "icon": "F-SHREERAM-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Surya Deva Mantra",
+              "mantra_file": "F-SURYA-001.mp3",
+              "icon": "F-SURYA-001.png",
+              "price_in": 99,
+              "price_other": 3.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Shri Vishnu Mantra",
+              "mantra_file": "F-VISHNU-001.mp3",
+              "icon": "F-VISHNU-001.png",
+              "price_in": 99,
+              "price_other": 4.99,      
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Hanuman Mantra",
+              "mantra_file": "M-HANUMAN-001.mp3",
+              "icon": "M-HANUMAN-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Hare Krishna Mantra",
+              "mantra_file": "M-HAREKRISHNA-001.mp3",
+              "icon": "M-HAREKRISHNA-001.png",
+              "price_in": 89,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Maa Jagatdhatri Mantra",
+              "mantra_file": "M-JAGADHATRI-001.mp3",
+              "icon": "M-JAGADHATRI-001.png",
+              "price_in": 99,
+              "price_other": 4.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            },
+            {
+              "name": "Maa Mahakali Mantra",
+              "mantra_file": "M-MAHAKALI-001.mp3",
+              "icon": "M-MAHAKALI-001.png",
+              "price_in": 99,
+              "price_other": 5.99,
+              "price": 201,
+              "last_modified": "2025-12-01 12:05:00"
+            }
+          ]
 }

@@ -9,6 +9,47 @@ import '../constants/api_config.dart';
 import 'auth_service.dart';
 
 class MantraSyncService {
+  /// Unwrap metadata where `mantras` is nested like `[ [ {...}, {...} ] ]`.
+  static List<Map<String, dynamic>> flattenMantrasToMaps(dynamic raw) {
+    final result = <Map<String, dynamic>>[];
+    void walk(dynamic node) {
+      if (node == null) return;
+      if (node is Map<String, dynamic>) {
+        result.add(Map<String, dynamic>.from(node));
+      } else if (node is Map) {
+        result.add(Map<String, dynamic>.from(
+          node.map((k, v) => MapEntry(k.toString(), v)),
+        ));
+      } else if (node is List) {
+        for (final item in node) {
+          walk(item);
+        }
+      }
+    }
+
+    walk(raw);
+    return result;
+  }
+
+  /// Normalize decoded metadata so `mantras` is always a flat list of maps.
+  static Map<String, dynamic> normalizeMetadataMantras(Map<String, dynamic> jsonData) {
+    final flat = flattenMantrasToMaps(jsonData['mantras']);
+    return Map<String, dynamic>.from(jsonData)..['mantras'] = flat;
+  }
+
+  /// Songs list may be at `data.songs`, top-level `songs`, or `data` as a bare list.
+  static List<dynamic> songsFromApiResponse(Map<String, dynamic> apiResponse) {
+    final data = apiResponse['data'];
+    if (data is Map<String, dynamic>) {
+      final songs = data['songs'];
+      if (songs is List) return List<dynamic>.from(songs);
+    }
+    if (data is List) return List<dynamic>.from(data);
+    final top = apiResponse['songs'];
+    if (top is List) return List<dynamic>.from(top);
+    return [];
+  }
+
   // Fetch songs from API
   static Future<Map<String, dynamic>?> fetchSongsFromAPI() async {
     try {
@@ -82,7 +123,8 @@ class MantraSyncService {
         } catch (e) {
           jsonString = await rootBundle.loadString('assets/Media/metadata.json');
         }
-        final Map<String, dynamic> jsonData = json.decode(jsonString);
+        final Map<String, dynamic> jsonData =
+            normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
         print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from assets');
         return jsonData;
       }
@@ -96,7 +138,8 @@ class MantraSyncService {
         if (await metadataFile.exists()) {
           print('Loading from synced metadata: $mediaPath');
           final String jsonString = await metadataFile.readAsString();
-          final Map<String, dynamic> jsonData = json.decode(jsonString);
+          final Map<String, dynamic> jsonData =
+              normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
           print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from synced metadata');
           return jsonData;
         }
@@ -118,7 +161,8 @@ class MantraSyncService {
           rethrow;
         }
       }
-      final Map<String, dynamic> jsonData = json.decode(jsonString);
+      final Map<String, dynamic> jsonData =
+          normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
       print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from assets');
       return jsonData;
     } catch (e) {
@@ -241,12 +285,16 @@ class MantraSyncService {
       
       // 1. Fetch songs from API
       final apiResponse = await fetchSongsFromAPI();
-      if (apiResponse == null || apiResponse['data'] == null) {
+      if (apiResponse == null) {
         print('❌ Failed to fetch songs from API');
         return false;
       }
 
-      final List<dynamic> apiSongs = apiResponse['data']['songs'] ?? [];
+      final List<dynamic> apiSongs = songsFromApiResponse(apiResponse);
+      if (apiSongs.isEmpty) {
+        print('❌ No songs list in API response (expected data.songs or songs)');
+        return false;
+      }
       final String? globalLastUpdated = apiResponse['last_updated'];
       final DateTime? globalLastUpdatedDate = parseDate(globalLastUpdated);
       final DateTime defaultLastUpdated = parseDate('2025-01-01T07:42:24.648Z') ?? DateTime(2025, 1, 1);

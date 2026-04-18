@@ -201,6 +201,7 @@ class FirebaseMessagingService {
   /// Attach [FirebaseMessaging.instance.onTokenRefresh] once the user is known. Safe to call again on re-login (replaces listener).
   static Future<void> initTokenRefreshListener(String userId, String deviceId) async {
     try {
+      if (Firebase.apps.isEmpty) return;
       if (userId.isEmpty || deviceId.isEmpty) {
         debugPrint('[FCM] initTokenRefreshListener skipped: empty userId or deviceId');
         return;
@@ -260,7 +261,7 @@ class FirebaseMessagingService {
 
   /// Fire-and-forget after login. Registers device payload, then attaches token refresh listener.
   static void registerDeviceAfterLogin(String userId) {
-    if (userId.isEmpty) return;
+    if (Firebase.apps.isEmpty || userId.isEmpty) return;
     unawaited(_registerDeviceAfterLoginSafe(userId));
   }
 
@@ -523,7 +524,7 @@ class NotificationService {
       ),
       NotificationItem(
         id: '3',
-        title: 'Welcome to Dharmapath',
+        title: 'Welcome to MantraSutra',
         message: 'Thank you for joining us on your spiritual journey.',
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
         isRead: true,

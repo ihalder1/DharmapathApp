@@ -18,9 +18,24 @@ import 'services/voice_recording_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-  await FirebaseMessagingService.initialize();
+  // iOS requires ios/Runner/GoogleService-Info.plist (download from Firebase Console).
+  // Without it, Firebase.initializeApp throws — still run the app without push.
+  var firebaseReady = false;
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } catch (e, st) {
+    debugPrint(
+      'Firebase.initializeApp failed — add ios/Runner/GoogleService-Info.plist '
+      '(Firebase Console → Project settings → Your apps → iOS). Push disabled. Error: $e',
+    );
+    debugPrint('$st');
+  }
+
+  if (firebaseReady) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await FirebaseMessagingService.initialize();
+  }
 
   // Lock orientation to portrait only
   await SystemChrome.setPreferredOrientations([

@@ -153,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         
         // App Title
         const Text(
-          'Dharmapath - धर्मपथ',
+          'MantraSutra - मन्त्रसूत्र',
           style: TextStyle(
             fontSize: 32,
             fontWeight: FontWeight.bold,
@@ -166,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         
         // Tagline
         Text(
-          'Turn your words into timeless chants.',
+          'The Science of Sacred Sounds',
           style: TextStyle(
             fontSize: 18,
             color: AppColors.textSecondary,

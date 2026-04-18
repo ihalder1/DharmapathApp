@@ -1007,19 +1007,24 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
-            _buildHeader(),
-            
-            // Personal Info Card
-            _buildPersonalInfoCard(),
-            
-            const SizedBox(height: 8),
-            
-            // Step Indicator
-            _buildStepIndicator(),
-            
-            const SizedBox(height: 12),
-            
+            // flex: 0 = only intrinsic height; Expanded below gets the rest (avoids 50/50 split)
+            Flexible(
+              flex: 0,
+              fit: FlexFit.loose,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeader(),
+                    _buildPersonalInfoCard(),
+                    const SizedBox(height: 8),
+                    _buildStepIndicator(),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            ),
+
             // Content Area - Scrollable
             Expanded(
               child: Container(
@@ -1168,7 +1173,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           // App title
           const Text(
-            'Dharmapath - धर्मपथ',
+            'MantraSutra - मन्त्रसूत्र',
             style: TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,
@@ -1177,7 +1182,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Turn your words into timeless chants.',
+            'The Science of Sacred Sounds',
             style: TextStyle(
               fontSize: 18,
               color: AppColors.textSecondary,

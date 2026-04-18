@@ -1,14 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
-import 'song_service.dart';
 import 'mantra_sync_service.dart';
 
 class MantraService {
@@ -48,64 +43,25 @@ class MantraService {
   static Future<List<Mantra>> _loadFromLocalJson() async {
     try {
       print('Attempting to load mantras from metadata.json');
-      
-      // First try to load from writable location (where sync saves updated metadata)
-      try {
-        final Directory appDir = await getApplicationDocumentsDirectory();
-        final String mediaPath = path.join(appDir.path, 'Media', 'metadata.json');
-        final File metadataFile = File(mediaPath);
-        
-        if (await metadataFile.exists()) {
-          print('Loading from synced metadata: $mediaPath');
-          final String jsonString = await metadataFile.readAsString();
-          final Map<String, dynamic> jsonData = json.decode(jsonString);
-          print('Successfully loaded ${(jsonData['mantras'] as List).length} mantras from synced metadata');
-          
-      _mantras = (jsonData['mantras'] as List)
-          .map((json) => Mantra.fromJson(json))
+
+      final Map<String, dynamic> jsonData =
+          await MantraSyncService.loadLocalMetadata();
+      final raw = jsonData['mantras'];
+      if (raw is! List || raw.isEmpty) {
+        throw Exception('metadata mantras missing or empty');
+      }
+
+      _mantras = raw
+          .map((json) => Mantra.fromJson(json as Map<String, dynamic>))
           .toList();
-      
+
       print('Successfully created ${_mantras.length} mantra objects');
       for (var mantra in _mantras) {
         print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
       }
-      
-      // Load cart from SharedPreferences after mantras are loaded
+
       await _loadCart();
-      
-      return _mantras;
-        }
-      } catch (e) {
-        print('Could not load from synced metadata: $e');
-      }
-      
-      // Fallback to assets if writable location doesn't exist
-      print('Falling back to assets metadata.json');
-      String jsonString;
-      try {
-        jsonString = await rootBundle.loadString('Media/metadata.json');
-      } catch (e) {
-        print('Failed to load from Media/metadata.json, trying assets/Media/metadata.json: $e');
-        jsonString = await rootBundle.loadString('assets/Media/metadata.json');
-      }
-      print('Successfully loaded JSON string: ${jsonString.length} characters');
-      print('First 200 characters: ${jsonString.substring(0, jsonString.length > 200 ? 200 : jsonString.length)}');
-      
-      final Map<String, dynamic> jsonData = json.decode(jsonString);
-      print('Successfully parsed JSON data');
-      
-      _mantras = (jsonData['mantras'] as List)
-          .map((json) => Mantra.fromJson(json))
-          .toList();
-      
-      print('Successfully created ${_mantras.length} mantra objects');
-      for (var mantra in _mantras) {
-        print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
-      }
-      
-      // Load cart from SharedPreferences after mantras are loaded
-      await _loadCart();
-      
+
       return _mantras;
     } catch (e) {
       print('Error loading mantras from local JSON: $e');
