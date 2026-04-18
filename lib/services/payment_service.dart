@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 class PaymentService {
   // Create Payment Intent
@@ -45,12 +45,9 @@ class PaymentService {
       print('   Body: ${json.encode(requestBody)}');
       print('   FULL TOKEN: $token');
 
-      final response = await http.post(
+      final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
-        headers: headers,
         body: json.encode(requestBody),
-      ).timeout(
-        const Duration(seconds: 30),
       );
 
       print('📥 RESPONSE DETAILS:');
@@ -113,12 +110,9 @@ class PaymentService {
       print('   Body: ${json.encode(requestBody)}');
       print('   FULL TOKEN: $token');
 
-      final response = await http.post(
+      final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
-        headers: headers,
         body: json.encode(requestBody),
-      ).timeout(
-        const Duration(seconds: 30),
       );
 
       print('📥 RESPONSE DETAILS:');
@@ -173,12 +167,8 @@ class PaymentService {
       print('   Headers: ${json.encode(headers)}');
       print('   FULL TOKEN: $token');
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response =
+          await AuthenticatedHttp.paymentGet(Uri.parse(url));
 
       print('📥 RESPONSE DETAILS:');
       print('   Status Code: ${response.statusCode}');

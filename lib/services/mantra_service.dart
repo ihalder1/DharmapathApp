@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'mantra_sync_service.dart';
+import 'authenticated_http.dart';
 
 class MantraService {
   static List<Mantra> _mantras = [];
@@ -312,12 +312,9 @@ class MantraService {
       print('═══════════════════════════════════════════════════════════');
 
       // Make API call (PUT method as per API spec)
-      final response = await http.put(
+      final response = await AuthenticatedHttp.put(
         url,
-        headers: headers,
         body: requestBody,
-      ).timeout(
-        const Duration(seconds: 30),
       );
 
       print('═══════════════════════════════════════════════════════════');

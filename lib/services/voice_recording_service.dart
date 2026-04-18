@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'permission_service.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 class VoiceRecordingService {
   static final VoiceRecordingService _instance = VoiceRecordingService._internal();
@@ -803,11 +803,6 @@ class VoiceRecordingService {
     });
 
     final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
-    final headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': ApiConfig.apiKey,
-      'Authorization': 'Bearer $accessToken',
-    };
 
     if (verbose) {
       print('═══════════════════════════════════════════════════════════');
@@ -818,9 +813,11 @@ class VoiceRecordingService {
       print('═══════════════════════════════════════════════════════════');
     }
 
-    final response = await http.put(url, headers: headers, body: requestBody).timeout(
-          const Duration(seconds: 90),
-        );
+    final response = await AuthenticatedHttp.put(
+      url,
+      body: requestBody,
+      timeout: const Duration(seconds: 90),
+    );
 
     if (verbose) {
       print('📥 PUT status=${response.statusCode} body=${response.body}');
@@ -1141,10 +1138,6 @@ class VoiceRecordingService {
       }
 
       final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
-      final headers = {
-        'x-api-key': ApiConfig.apiKey,
-        'Authorization': 'Bearer $accessToken',
-      };
 
       print('═══════════════════════════════════════════════════════════');
       print('📥 FETCH RECORDINGS FROM BACKEND API CALL');
@@ -1152,15 +1145,9 @@ class VoiceRecordingService {
       print('📤 REQUEST:');
       print('   URL: $url');
       print('   Method: GET');
-      print('   Headers: ${json.encode(headers)}');
       print('═══════════════════════════════════════════════════════════');
 
-      final response = await http.get(
-        url,
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.get(url);
 
       print('📥 RESPONSE:');
       print('   Status Code: ${response.statusCode}');
@@ -1371,10 +1358,6 @@ class VoiceRecordingService {
       // Use recordingId from backend
       final recordingId = recording.recordingId!;
       final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}/$recordingId');
-      final headers = {
-        'x-api-key': ApiConfig.apiKey,
-        'Authorization': 'Bearer $accessToken',
-      };
 
       print('═══════════════════════════════════════════════════════════');
       print('🗑️  DELETE RECORDING FROM BACKEND API CALL');
@@ -1384,15 +1367,9 @@ class VoiceRecordingService {
       print('   Method: DELETE');
       print('   Recording ID: $recordingId');
       print('   Recording Name: ${recording.name}');
-      print('   Headers: ${json.encode(headers)}');
       print('═══════════════════════════════════════════════════════════');
 
-      final response = await http.delete(
-        url,
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.delete(url);
 
       print('📥 RESPONSE:');
       print('   Status Code: ${response.statusCode}');

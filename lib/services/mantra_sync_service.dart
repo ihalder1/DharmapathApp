@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../constants/api_config.dart';
 import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 class MantraSyncService {
   /// Unwrap metadata where `mantras` is nested like `[ [ {...}, {...} ] ]`.
@@ -74,12 +75,7 @@ class MantraSyncService {
       print('   Headers: ${json.encode(headers)}');
       print('   FULL TOKEN: $token');
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.get(Uri.parse(url));
 
       print('📥 RESPONSE DETAILS:');
       print('   Status Code: ${response.statusCode}');

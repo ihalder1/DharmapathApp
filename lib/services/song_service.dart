@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../models/mantra.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 class SongService {
   // Fetch songs from API
@@ -30,12 +30,7 @@ class SongService {
       print('   Headers: ${json.encode(headers)}');
       print('   FULL TOKEN: $token');
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.get(Uri.parse(url));
 
       print('📥 RESPONSE DETAILS:');
       print('   Status Code: ${response.statusCode}');
@@ -112,23 +107,13 @@ class SongService {
       }
 
       final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
-      final headers = {
-        'x-api-key': ApiConfig.apiKey,
-        'Authorization': 'Bearer $token',
-      };
 
       print('📤 REQUEST DETAILS:');
       print('   Method: GET');
       print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
       print('═══════════════════════════════════════════════════════════');
 
-      final response = await http.get(
-        url,
-        headers: headers,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.get(url);
 
       print('📥 RESPONSE DETAILS:');
       print('   Status Code: ${response.statusCode}');
@@ -264,13 +249,7 @@ class SongService {
       print('   Request Body: $requestBody');
       print('═══════════════════════════════════════════════════════════');
 
-      final response = await http.put(
-        url,
-        headers: headers,
-        body: requestBody,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await AuthenticatedHttp.put(url, body: requestBody);
 
       print('📥 RESPONSE DETAILS:');
       print('   Status Code: ${response.statusCode}');

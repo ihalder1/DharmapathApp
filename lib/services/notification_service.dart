@@ -10,6 +10,8 @@ import 'package:uuid/uuid.dart';
 
 import '../constants/api_config.dart';
 import '../models/notification.dart';
+import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 // --- Firebase Cloud Messaging (FCM) -----------------------------------------
 // Native config: android/app/google-services.json, ios/Runner/GoogleService-Info.plist
@@ -145,11 +147,6 @@ class FirebaseMessagingService {
     }
   }
 
-  static Future<String?> _getAuthBearerToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token') ?? prefs.getString('access_token');
-  }
-
   /// Registers device with backend: `PUT /auth/put-device-info` (Bearer + x-api-key).
   /// [payload] keys: user_id, device_id, platform, fcm_token.
   static Future<void> sendDeviceToBackend(Map payload) async {
@@ -168,20 +165,18 @@ class FirebaseMessagingService {
         return;
       }
 
-      final bearer = await _getAuthBearerToken();
+      final auth = AuthService();
+      final bearer = auth.accessToken;
       if (bearer == null || bearer.isEmpty) {
         debugPrint('[FCM] sendDeviceToBackend skipped: no auth token (user not logged in)');
         return;
       }
 
       final uri = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.putDeviceInfoEndpoint}');
-      final response = await http
-          .put(
-            uri,
-            headers: ApiConfig.getHeaders(accessToken: bearer),
-            body: json.encode(normalized),
-          )
-          .timeout(const Duration(seconds: 30));
+      final response = await AuthenticatedHttp.put(
+        uri,
+        body: json.encode(normalized),
+      );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         debugPrint('[FCM] put-device-info success: ${response.statusCode}');

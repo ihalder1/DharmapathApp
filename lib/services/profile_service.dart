@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import 'auth_service.dart';
+import 'authenticated_http.dart';
 
 class ProfileService {
   // Get user profile data - uses AuthService to get profile from correct API
@@ -136,21 +137,22 @@ class ProfileService {
         throw Exception('No authentication token found');
       }
 
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}/photo'),
+      final response = await AuthenticatedHttp.sendMultipart(
+        (headers) async {
+          final request = http.MultipartRequest(
+            'POST',
+            Uri.parse('${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}/photo'),
+          );
+          request.headers.addAll(headers);
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'photo',
+              imageFile.path,
+            ),
+          );
+          return request;
+        },
       );
-
-      final headers = ApiConfig.getHeaders(accessToken: token);
-      request.headers.addAll(headers);
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'photo',
-          imageFile.path,
-        ),
-      );
-
-      final response = await request.send();
       final responseBody = await response.stream.bytesToString();
 
       if (response.statusCode == 200) {
@@ -204,12 +206,9 @@ class ProfileService {
       debugPrint('ProfileService.updateProfile: Calling PUT $url');
       debugPrint('ProfileService.updateProfile: Data - name: $fullName, location: $location, phone: $mobile, gender: $gender');
 
-      final response = await http.put(
+      final response = await AuthenticatedHttp.put(
         Uri.parse(url),
-        headers: headers,
         body: json.encode(requestBody),
-      ).timeout(
-        const Duration(seconds: 30),
       );
 
       print('📥 RESPONSE DETAILS:');
