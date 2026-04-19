@@ -128,4 +128,17 @@ class AuthenticatedHttp {
 
     return send(ApiConfig.getHeaders(accessToken: _auth.accessToken));
   }
+
+  /// POST [`ApiConfig.createJobBaseUrl`]/create-job only: JSON + `x-api-key`; **no** Bearer token.
+  static Future<http.Response> postCreateJob(
+    Uri url, {
+    Object? body,
+    Duration? timeout,
+  }) {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'x-api-key': ApiConfig.createJobApiKey,
+    };
+    return http.post(url, headers: headers, body: body).timeout(_timeout(timeout));
+  }
 }

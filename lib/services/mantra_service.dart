@@ -267,54 +267,57 @@ class MantraService {
     return _cart.any((item) => item.name == mantra.name);
   }
 
-  // Generate mantra in user's voice
+  /// Maps local `mantra_file` values (e.g. `F-SURYA-001.mp3`) to API `song_ids` (`F-SURYA-001`).
+  static List<String> songIdsForCreateJob(List<String> mantraFileIds) {
+    return mantraFileIds.map((id) {
+      final t = id.trim();
+      final lower = t.toLowerCase();
+      if (lower.endsWith('.mp3')) return t.substring(0, t.length - 4);
+      return t;
+    }).toList();
+  }
+
+  // Generate mantra in user's voice (async job — POST create-job)
   static Future<bool> generateMantraInVoice({
     required String recordingId,
     required List<String> mantraIds,
   }) async {
     try {
-      // Get auth token from AuthService
       final authService = AuthService();
-      final accessToken = authService.accessToken;
 
-      if (accessToken == null || accessToken.isEmpty) {
-        print('❌ ERROR: No access token available for generate mantra API');
+      final userFields = authService.getCreateJobUserFields();
+      if (userFields == null) {
+        print('❌ ERROR: Could not resolve userId from JWT / session for create-job');
         return false;
       }
 
-      // API endpoint
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.generateMantraEndpoint}');
+      final url = Uri.parse(
+        '${ApiConfig.createJobBaseUrl}${ApiConfig.createJobEndpoint}',
+      );
 
-      // Prepare request body
-      final requestBody = json.encode({
+      final songIds = songIdsForCreateJob(mantraIds);
+
+      final bodyMap = <String, dynamic>{
+        'userId': userFields['userId'],
+        'email': userFields['email'],
         'recording_id': recordingId,
-        'mantra_ids': mantraIds,
-      });
-
-      // Construct headers manually (same as voice recording service)
-      final headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': ApiConfig.apiKey,
-        'Authorization': 'Bearer $accessToken',
+        'song_ids': songIds,
       };
 
+      final prettyBody = const JsonEncoder.withIndent('  ').convert(bodyMap);
+
       print('═══════════════════════════════════════════════════════════');
-      print('🎤 GENERATE MANTRA IN VOICE API CALL');
+      print('🎤 CREATE MANTRA JOB (POST create-job)');
       print('═══════════════════════════════════════════════════════════');
-      print('📤 REQUEST:');
-      print('   URL: $url');
-      print('   Method: PUT');
-      print('   Recording ID: $recordingId');
-      print('   Mantra IDs: $mantraIds');
-      print('   Headers: ${json.encode(headers)}');
-      print('   FULL TOKEN: $accessToken');
-      print('   Request Body: $requestBody');
+      print('📤 REQUEST JSON (verification):');
+      print(prettyBody);
+      print('📤 URL: $url');
+      print('   Method: POST (x-api-key only; no Authorization header)');
       print('═══════════════════════════════════════════════════════════');
 
-      // Make API call (PUT method as per API spec)
-      final response = await AuthenticatedHttp.put(
+      final response = await AuthenticatedHttp.postCreateJob(
         url,
-        body: requestBody,
+        body: json.encode(bodyMap),
       );
 
       print('═══════════════════════════════════════════════════════════');
@@ -323,14 +326,15 @@ class MantraService {
       print('   Response Body: ${response.body}');
       print('═══════════════════════════════════════════════════════════');
 
-      if (response.statusCode == 200) {
-        print('✅ Mantra generation started successfully');
+      final ok = response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 202;
+      if (ok) {
+        print('✅ Create-job accepted');
         return true;
-      } else {
-        print('❌ Failed to generate mantra: ${response.statusCode}');
-        print('   Response: ${response.body}');
-        return false;
       }
+      print('❌ Create-job failed: ${response.statusCode}');
+      return false;
     } catch (e, stackTrace) {
       print('❌ ERROR generating mantra in voice: $e');
       print('   StackTrace: $stackTrace');

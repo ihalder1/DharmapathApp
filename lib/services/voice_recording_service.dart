@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +12,56 @@ import 'permission_service.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
+
+/// Writes one flat JSON per upload (full base64). Prefers **Downloads** so it is visible on device;
+/// `flutter run -d macos` writes under **~/Downloads** on your Mac.
+Future<void> _writeDebugUploadPayload(String requestBody) async {
+  if (!kDebugMode) return;
+
+  try {
+    final downloads = await getDownloadsDirectory();
+    final baseDir = downloads ??
+        await getApplicationDocumentsDirectory();
+    final folder = Directory(
+      '${baseDir.path}/colab_voice_upload_debug',
+    );
+    if (!await folder.exists()) await folder.create(recursive: true);
+
+    final f = File(
+      '${folder.path}/payload_${DateTime.now().millisecondsSinceEpoch}.json',
+    );
+    await f.writeAsString(requestBody);
+
+    final p = f.path;
+    final segs = p.split(RegExp(r'[/\\]'));
+    final basename = segs.isNotEmpty ? segs.last : p;
+    print('VOICE_UPLOAD_DEBUG_JSON_FILENAME=$basename');
+    print('VOICE_UPLOAD_DEBUG_JSON_FULLPATH=$p');
+    print(
+      '📤 DEBUG VOICE UPLOAD JSON (${requestBody.length} chars)\n'
+      '   → $p',
+    );
+
+    if (Platform.isMacOS) {
+      print(
+        '   On Mac: open Downloads folder or run:\n'
+        '   open -R "$p"',
+      );
+    } else if (Platform.isAndroid) {
+      print(
+        '   Copy this file to your Mac (USB debugging on):\n'
+        '   adb pull "$p" ~/Desktop/',
+      );
+    } else if (Platform.isIOS && !kIsWeb) {
+      print(
+        '   iOS Simulator: path is on your Mac (paste into Finder → Go → Go to Folder…).\n'
+        '   Physical iPhone: use Xcode Window → Devices → download container, or share from app.',
+      );
+    }
+  } catch (e) {
+    print('Could not write debug payload file: $e');
+  }
+}
 
 class VoiceRecordingService {
   static final VoiceRecordingService _instance = VoiceRecordingService._internal();
@@ -361,35 +412,30 @@ class VoiceRecordingService {
         await recordingsDir.create(recursive: true);
       }
 
-      // Generate unique filename - use platform-appropriate extension
+      // AAC in M4A container (no conversion; same as before WAV experiment).
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      String extension;
+      const extension = 'm4a';
       RecordConfig config;
-      
+
       if (Platform.isAndroid) {
-        // Android configuration - use AAC with optimized settings
-        // Note: Android emulators don't have microphone input, so recordings will be blank
-        extension = 'm4a';
-        config = const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100, // 44.1kHz for good quality
-          numChannels: 1, // Mono for voice recording
-          autoGain: true, // Enable auto gain for better volume consistency
-          echoCancel: true, // Enable echo cancellation
-          noiseSuppress: true, // Enable noise suppression
-        );
-        print('Starting Android recording with AAC encoder (autoGain enabled)');
-      } else {
-        // iOS configuration - use AAC
-        extension = 'm4a';
         config = const RecordConfig(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
           sampleRate: 44100,
-          numChannels: 1, // Mono for voice recording
+          numChannels: 1,
+          autoGain: true,
+          echoCancel: true,
+          noiseSuppress: true,
         );
-        print('Starting iOS recording with AAC encoder');
+        print('Starting Android recording with AAC (m4a)');
+      } else {
+        config = const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+          numChannels: 1,
+        );
+        print('Starting iOS recording with AAC (m4a)');
       }
       
       final filename = 'recording_$timestamp.$extension';
@@ -539,8 +585,7 @@ class VoiceRecordingService {
 
       // Rename file to match the user's name (sanitize name for filename)
       final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
-      // Use platform-appropriate extension (both use m4a now)
-      final extension = Platform.isAndroid ? 'm4a' : 'm4a';
+      const extension = 'm4a';
       final newFilePath = '${recordingsDir.path}/$sanitizedName.$extension';
       
       // If file with same name exists, add timestamp
@@ -779,7 +824,7 @@ class VoiceRecordingService {
         mimeType = 'audio/amr';
         break;
       default:
-        mimeType = 'audio/mp4';
+        mimeType = 'audio/m4a';
     }
 
     final extForApi =
@@ -810,6 +855,7 @@ class VoiceRecordingService {
       print('   URL: $url');
       print('   fileName: $fileStem / recordingName: ${recording.name}');
       print('   ext: $extForApi / mime: $mimeType / bytes: $fileSize');
+      await _writeDebugUploadPayload(requestBody);
       print('═══════════════════════════════════════════════════════════');
     }
 
@@ -883,6 +929,7 @@ class VoiceRecordingService {
     final candidates = <String>[
       '${recordingsDir.path}/$base$ext',
       '${recordingsDir.path}/$base.m4a',
+      '${recordingsDir.path}/$base.wav',
     ];
     for (final p in candidates) {
       final f = File(p);
@@ -1206,8 +1253,7 @@ class VoiceRecordingService {
           await recordingsDir.create(recursive: true);
         }
 
-        // Save file with platform-appropriate extension (both use m4a now)
-        final extension = Platform.isAndroid ? 'm4a' : 'm4a';
+        const extension = 'm4a';
         final file = File('${recordingsDir.path}/$name.$extension');
         await file.writeAsBytes(response.bodyBytes);
         

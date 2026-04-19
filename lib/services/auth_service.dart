@@ -9,6 +9,24 @@ import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import '../utils/device_info.dart';
 
+/// Decodes the JWT access token payload (middle segment). Does not verify the signature.
+Map<String, dynamic>? decodeJwtPayload(String jwt) {
+  try {
+    final parts = jwt.split('.');
+    if (parts.length != 3) return null;
+    var payload = parts[1];
+    final pad = payload.length % 4;
+    if (pad > 0) payload += '=' * (4 - pad);
+    payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+    final decoded = json.decode(utf8.decode(base64.decode(payload)));
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
 class AuthService extends ChangeNotifier {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
@@ -648,6 +666,39 @@ class AuthService extends ChangeNotifier {
       debugPrint('Error fetching profile: $e');
       return null;
     }
+  }
+
+  /// `userId` and `email` for async mantra job APIs — prefers JWT [`sub`], [`email`], then [currentUser].
+  Map<String, String>? getCreateJobUserFields() {
+    String userId = '';
+    String email = '';
+
+    final token = _accessToken;
+    if (token != null && token.isNotEmpty) {
+      final claims = decodeJwtPayload(token);
+      if (claims != null) {
+        final sub = claims['sub'];
+        if (sub != null && sub.toString().isNotEmpty) {
+          userId = sub.toString();
+        }
+        final em = claims['email'];
+        if (em != null && em.toString().isNotEmpty) {
+          email = em.toString();
+        }
+        if (userId.isEmpty) {
+          final uid = claims['userId'] ?? claims['user_id'] ?? claims['id'];
+          if (uid != null && uid.toString().isNotEmpty) {
+            userId = uid.toString();
+          }
+        }
+      }
+    }
+
+    if (userId.isEmpty && _currentUser != null) userId = _currentUser!.id;
+    if (email.isEmpty && _currentUser != null) email = _currentUser!.email;
+
+    if (userId.isEmpty) return null;
+    return {'userId': userId, 'email': email};
   }
 
   // Save session to local storage

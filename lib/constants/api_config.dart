@@ -22,8 +22,15 @@ class ApiConfig {
   // Songs endpoint
   static const String songsEndpoint = '/songs';
   
-  // Generate Mantra endpoint
+  // Generate Mantra endpoint (legacy; voice job uses [createJobBaseUrl])
   static const String generateMantraEndpoint = '/auth/profile/generate-mantra';
+
+  /// Async mantra generation job (prod). Headers: `x-api-key` only ([createJobApiKey]); no Bearer.
+  static const String createJobBaseUrl =
+      'https://ing22b4cv7.execute-api.ap-south-1.amazonaws.com/prod';
+  static const String createJobEndpoint = '/create-job';
+  static const String createJobApiKey =
+      'Fh2ObHGSPm9uejJvEoBfz14e9wLDX7is4c88IbJ1';
   
   // Voice Recording endpoint
   static const String voiceRecordingsEndpoint = '/auth/profile/voice/recordings';
