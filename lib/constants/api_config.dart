@@ -34,6 +34,9 @@ class ApiConfig {
   
   // Voice Recording endpoint
   static const String voiceRecordingsEndpoint = '/auth/profile/voice/recordings';
+
+  /// User-specific inferred / generated mantra audio (list + per-id download URL).
+  static const String inferredSongsEndpoint = '/auth/profile/inferred/songs';
   
   // Purchased Songs endpoint
   static const String purchasedSongsEndpoint = '/auth/profile/purchase/songs';

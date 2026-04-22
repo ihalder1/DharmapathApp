@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_colors.dart';
@@ -15,7 +16,9 @@ import '../services/mantra_service.dart';
 import '../services/voice_recording_service.dart';
 import '../services/notification_service.dart';
 import '../services/song_service.dart';
+import '../services/inferred_mantras_service.dart';
 import '../models/mantra.dart';
+import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
 import 'login_screen.dart';
@@ -49,6 +52,14 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Mantra> _mantras = [];
   List<Mantra> _filteredMantras = [];
   bool _isLoadingMantras = false;
+
+  final InferredMantrasService _inferredMantrasService = InferredMantrasService();
+  List<InferredSong> _inferredSongs = [];
+  final Map<String, String> _inferredLocalPaths = {};
+  bool _loadingInferredSongs = false;
+  String? _inferredSongsError;
+  final Set<String> _inferredDownloadingIds = {};
+  InferredSong? _currentInferredPlaying;
   final AudioPlayer _audioPlayer = AudioPlayer();
   Mantra? _currentlyPlaying;
   bool _isPlaying = false;
@@ -1233,6 +1244,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 setState(() {
                   _currentStep = index;
                 });
+                if (index == 2) {
+                  _loadInferredSongs();
+                }
               },
               child: Column(
                 children: [
@@ -1729,6 +1743,187 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadInferredSongs() async {
+    setState(() {
+      _loadingInferredSongs = true;
+      _inferredSongsError = null;
+    });
+    try {
+      final list = await _inferredMantrasService.fetchInferredSongs();
+      final paths = <String, String>{};
+      for (final s in list) {
+        final p = await _inferredMantrasService.localPathIfExists(s.inferredId);
+        if (p != null) paths[s.inferredId] = p;
+      }
+      if (!mounted) return;
+      setState(() {
+        _inferredSongs = list;
+        _inferredLocalPaths
+          ..clear()
+          ..addAll(paths);
+        _loadingInferredSongs = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _inferredSongsError = e.toString();
+        _loadingInferredSongs = false;
+      });
+    }
+  }
+
+  Future<void> _downloadInferredSong(InferredSong song) async {
+    if (_inferredDownloadingIds.contains(song.inferredId)) return;
+    setState(() => _inferredDownloadingIds.add(song.inferredId));
+    try {
+      var path = _inferredLocalPaths[song.inferredId] ??
+          await _inferredMantrasService.localPathIfExists(song.inferredId);
+      if (path != null) {
+        if (mounted) {
+          setState(() => _inferredLocalPaths[song.inferredId] = path!);
+        }
+        return;
+      }
+
+      final url = await _inferredMantrasService.fetchDownloadUrl(song.inferredId);
+      if (url == null || url.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not get a download link for this mantra.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      path = await _inferredMantrasService.downloadInferredMp3(
+        inferredId: song.inferredId,
+        downloadUrl: url,
+      );
+
+      if (!mounted) return;
+      if (path != null) {
+        setState(() => _inferredLocalPaths[song.inferredId] = path!);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Saved "${song.displayTitle}" for playback.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Download failed. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _inferredDownloadingIds.remove(song.inferredId));
+      }
+    }
+  }
+
+  Future<void> _shareInferredSong(InferredSong song) async {
+    final path = _inferredLocalPaths[song.inferredId] ??
+        await _inferredMantrasService.localPathIfExists(song.inferredId);
+    if (path == null || !await File(path).exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Download the mantra in the app first, then use Share.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      await Share.shareXFiles(
+        [
+          XFile(
+            path,
+            mimeType: 'audio/mpeg',
+            name: '${song.songId}.mp3',
+          ),
+        ],
+        text: song.displayTitle,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Share failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _playInferredMantra(InferredSong song) async {
+    final path = _inferredLocalPaths[song.inferredId];
+    if (path == null || path.isEmpty) return;
+    final file = File(path);
+    if (!await file.exists() || await file.length() == 0) return;
+
+    try {
+      if (_currentInferredPlaying == song && _isPlaying) {
+        await _audioPlayer.pause();
+        setState(() {
+          _isPlaying = false;
+        });
+      } else {
+        if (_isPlaying) {
+          await _audioPlayer.stop();
+        }
+
+        if (Platform.isIOS) {
+          try {
+            const MethodChannel audioChannel = MethodChannel('app.channel.audio');
+            await audioChannel.invokeMethod('configureAudioSessionForPlayback');
+          } catch (_) {}
+        }
+
+        await _audioPlayer.play(DeviceFileSource(path));
+        setState(() {
+          _currentlyPlaying = null;
+          _currentInferredPlaying = song;
+          _isPlaying = true;
+        });
+
+        _audioPlayer.onPlayerComplete.listen((_) {
+          if (mounted) {
+            setState(() {
+              _isPlaying = false;
+              _currentInferredPlaying = null;
+            });
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Playback error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Audio playback methods
   Future<void> _playMantra(Mantra mantra) async {
     try {
@@ -1743,7 +1938,11 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_isPlaying) {
           await _audioPlayer.stop();
         }
-        
+
+        setState(() {
+          _currentInferredPlaying = null;
+        });
+
         // Play new mantra
         String assetPath = 'Media/${mantra.mantraFile}';
         print('Attempting to play: $assetPath');
@@ -3066,10 +3265,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMyMantraStep() {
-    // Get purchased mantras
-    final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
-    
     return Container(
+      width: double.infinity,
       decoration: const BoxDecoration(
         gradient: AppColors.voiceGradient,
         borderRadius: BorderRadius.all(Radius.circular(20)),
@@ -3077,6 +3274,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3092,7 +3290,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.white,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -3100,7 +3298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         'Your purchased mantras collection',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.white.withOpacity(0.9),
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ],
@@ -3111,10 +3309,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     setState(() {
                       _isMyMantrasExpanded = true;
                     });
+                    _loadInferredSongs();
                   },
                   icon: const Icon(
                     Icons.fullscreen,
-                    color: AppColors.white,
+                    color: AppColors.textPrimary,
                     size: 18,
                   ),
                   tooltip: 'Expand to full screen',
@@ -3127,136 +3326,191 @@ class _HomeScreenState extends State<HomeScreen> {
             
             // Mantras List - Use Expanded to fill available space
             Expanded(
-              child: purchasedMantras.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.music_note_outlined,
-                            size: 56,
-                            color: AppColors.white.withOpacity(0.5),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No mantras purchased yet',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: AppColors.white.withOpacity(0.7),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Purchase mantras to see them here',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.white.withOpacity(0.5),
-                            ),
-                          ),
-                        ],
+              child: _loadingInferredSongs
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primarySaffron,
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: purchasedMantras.length,
-                      itemBuilder: (context, index) {
-                        final mantra = purchasedMantras[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
+                  : _inferredSongsError != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              _inferredSongsError!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
                           ),
-                          child: Row(
-                            children: [
-                              // Icon
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  color: AppColors.white.withOpacity(0.2),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: _buildMantraIcon(
-                                    iconName: mantra.icon,
-                                    size: 28,
-                                    iconColor: AppColors.white,
-                                    fit: BoxFit.cover,
-                                    borderRadius: BorderRadius.circular(8),
+                        )
+                      : _inferredSongs.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.music_note_outlined,
+                                    size: 56,
+                                    color: AppColors.textSecondary.withOpacity(0.6),
                                   ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              
-                              // Details
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      mantra.name,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.white,
-                                      ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No mantras ready yet',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: AppColors.textSecondary,
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Purchased',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.green.withOpacity(0.8),
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Completed voice mantras appear here',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.textSecondary.withOpacity(0.85),
                                     ),
-                                  ],
-                                ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
                               ),
-                              
-                              // Play Button
-                              IconButton(
-                                onPressed: () => _playMantra(mantra),
-                                icon: Icon(
-                                  _currentlyPlaying == mantra && _isPlaying 
-                                      ? Icons.pause_circle_filled 
-                                      : Icons.play_circle_filled,
-                                  color: AppColors.white,
-                                  size: 28,
-                                ),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            
-            const SizedBox(height: 6),
-            
-            // Back Button (goes to home screen) - Use smaller button to save space
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () {
-                  setState(() {
-                    _currentStep = 0; // Go to home screen
-                  });
-                },
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.white),
-                  foregroundColor: AppColors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  minimumSize: const Size(0, 36),
-                ),
-                child: const Text('Back', style: TextStyle(fontSize: 13)),
-              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _inferredSongs.length,
+                              itemBuilder: (context, index) {
+                                final song = _inferredSongs[index];
+                                final hasLocal =
+                                    _inferredLocalPaths.containsKey(song.inferredId);
+                                final downloading =
+                                    _inferredDownloadingIds.contains(song.inferredId);
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.white.withOpacity(0.4),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(8),
+                                          color: AppColors.white.withOpacity(0.55),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: _buildMantraIcon(
+                                            iconName: song.iconAssetFileName,
+                                            size: 28,
+                                            iconColor: AppColors.textPrimary,
+                                            fit: BoxFit.cover,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              song.displayTitle,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              hasLocal
+                                                  ? 'On device'
+                                                  : 'Tap ↓ to download',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: hasLocal
+                                                    ? AppColors.successGreen
+                                                    : AppColors.textSecondary,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (downloading)
+                                        const SizedBox(
+                                          width: 28,
+                                          height: 28,
+                                          child: Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: AppColors.primarySaffron,
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        IconButton(
+                                          onPressed: () =>
+                                              _downloadInferredSong(song),
+                                          icon: const Icon(
+                                            Icons.download,
+                                            color: AppColors.textPrimary,
+                                            size: 22,
+                                          ),
+                                          tooltip: 'Download to app',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      IconButton(
+                                        onPressed: hasLocal
+                                            ? () => _shareInferredSong(song)
+                                            : null,
+                                        icon: Icon(
+                                          Icons.share,
+                                          color: hasLocal
+                                              ? AppColors.textPrimary
+                                              : AppColors.textPrimary
+                                                  .withOpacity(0.3),
+                                          size: 20,
+                                        ),
+                                        tooltip:
+                                            'Save or share (Files, Drive…)',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                      IconButton(
+                                        onPressed: hasLocal
+                                            ? () => _playInferredMantra(song)
+                                            : null,
+                                        icon: Icon(
+                                          _currentInferredPlaying == song &&
+                                                  _isPlaying
+                                              ? Icons.pause_circle_filled
+                                              : Icons.play_circle_filled,
+                                          color: hasLocal
+                                              ? AppColors.primarySaffron
+                                              : AppColors.textPrimary
+                                                  .withOpacity(0.3),
+                                          size: 28,
+                                        ),
+                                        tooltip: 'Play',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
             ),
           ],
         ),
@@ -3265,9 +3519,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildExpandedMyMantrasStep() {
-    // Get purchased mantras
-    final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
-    
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -3299,130 +3550,195 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: Text(
                   'Your purchased mantras collection',
                   style: TextStyle(
                     fontSize: 16,
-                    color: AppColors.white.withOpacity(0.9),
+                    color: AppColors.textSecondary,
                   ),
                 ),
               ),
               Expanded(
-                child: purchasedMantras.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.music_note_outlined,
-                              size: 64,
-                              color: AppColors.white.withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No mantras purchased yet',
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: AppColors.white.withOpacity(0.7),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Purchase mantras to see them here',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: AppColors.white.withOpacity(0.5),
-                              ),
-                            ),
-                          ],
+                child: _loadingInferredSongs
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primarySaffron,
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: purchasedMantras.length,
-                        itemBuilder: (context, index) {
-                          final mantra = purchasedMantras[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.white.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
+                    : _inferredSongsError != null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                _inferredSongsError!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
                             ),
-                            child: Row(
-                              children: [
-                                // Icon
-                                Container(
-                                  width: 50,
-                                  height: 50,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: AppColors.white.withOpacity(0.2),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: _buildMantraIcon(
-                                      iconName: mantra.icon,
-                                      size: 30,
-                                      iconColor: AppColors.white,
-                                      fit: BoxFit.cover,
-                                      borderRadius: BorderRadius.circular(8),
+                          )
+                        : _inferredSongs.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.music_note_outlined,
+                                      size: 64,
+                                      color: AppColors.textSecondary.withOpacity(0.6),
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                
-                                // Details
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        mantra.name,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.white,
-                                        ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'No mantras ready yet',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        color: AppColors.textSecondary,
                                       ),
-                                      const SizedBox(height: 4),
-                                      // Text(
-                                      //   mantra.formattedPlaytime, // COMMENTED OUT
-                                      //   style: TextStyle(
-                                      //     fontSize: 12,
-                                      //     color: AppColors.white.withOpacity(0.7),
-                                      //   ),
-                                      // ),
-                                      // const SizedBox(height: 4),
-                                      Text(
-                                        'Purchased',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.green.withOpacity(0.8),
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Completed voice mantras appear here',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.textSecondary.withOpacity(0.85),
                                       ),
-                                    ],
-                                  ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
                                 ),
-                                
-                                // Play Button
-                                IconButton(
-                                  onPressed: () => _playMantra(mantra),
-                                  icon: Icon(
-                                    _currentlyPlaying == mantra && _isPlaying 
-                                        ? Icons.pause_circle_filled 
-                                        : Icons.play_circle_filled,
-                                    color: AppColors.white,
-                                    size: 32,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                              )
+                            : ListView.builder(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
+                                itemCount: _inferredSongs.length,
+                                itemBuilder: (context, index) {
+                                  final song = _inferredSongs[index];
+                                  final hasLocal = _inferredLocalPaths
+                                      .containsKey(song.inferredId);
+                                  final downloading = _inferredDownloadingIds
+                                      .contains(song.inferredId);
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.white.withOpacity(0.4),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 50,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(8),
+                                            color: AppColors.white.withOpacity(0.55),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: _buildMantraIcon(
+                                              iconName: song.iconAssetFileName,
+                                              size: 30,
+                                              iconColor: AppColors.textPrimary,
+                                              fit: BoxFit.cover,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                song.displayTitle,
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                hasLocal
+                                                    ? 'On device'
+                                                    : 'Tap ↓ to download',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: hasLocal
+                                                      ? AppColors.successGreen
+                                                      : AppColors.textSecondary,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (downloading)
+                                          const SizedBox(
+                                            width: 36,
+                                            height: 36,
+                                            child: Padding(
+                                              padding: EdgeInsets.all(6),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.primarySaffron,
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          IconButton(
+                                            onPressed: () =>
+                                                _downloadInferredSong(song),
+                                            icon: const Icon(
+                                              Icons.download,
+                                              color: AppColors.textPrimary,
+                                              size: 26,
+                                            ),
+                                            tooltip: 'Download to app',
+                                          ),
+                                        IconButton(
+                                          onPressed: hasLocal
+                                              ? () => _shareInferredSong(song)
+                                              : null,
+                                          icon: Icon(
+                                            Icons.share,
+                                            color: hasLocal
+                                                ? AppColors.textPrimary
+                                                : AppColors.textPrimary
+                                                    .withOpacity(0.3),
+                                            size: 26,
+                                          ),
+                                          tooltip:
+                                              'Save or share (Files, Drive…)',
+                                        ),
+                                        IconButton(
+                                          onPressed: hasLocal
+                                              ? () => _playInferredMantra(song)
+                                              : null,
+                                          icon: Icon(
+                                            _currentInferredPlaying == song &&
+                                                    _isPlaying
+                                                ? Icons.pause_circle_filled
+                                                : Icons.play_circle_filled,
+                                            color: hasLocal
+                                                ? AppColors.primarySaffron
+                                                : AppColors.textPrimary
+                                                    .withOpacity(0.3),
+                                            size: 32,
+                                          ),
+                                          tooltip: 'Play',
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
               ),
             ],
           ),
@@ -3436,13 +3752,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final total = MantraService.getCartTotal();
     
     return Container(
+      width: double.infinity,
       decoration: const BoxDecoration(
         gradient: AppColors.paymentGradient,
         borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 1),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
@@ -3505,23 +3823,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           );
                         },
-                      ),
-                    ),
-                    // Back Button for empty cart - inside the Expanded to prevent overflow
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          setState(() {
-                            _currentStep = 0; // Go to home screen
-                          });
-                        },
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.white),
-                          foregroundColor: AppColors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text('Back'),
                       ),
                     ),
                   ],
