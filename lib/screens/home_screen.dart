@@ -2777,21 +2777,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                 itemCount: _voiceService.recordings.length,
                                 itemBuilder: (context, index) {
                                   final recording = _voiceService.recordings[index];
-                                  final missing = !recording.hasLocalFile;
+                                  final greyedOut = !recording.hasLocalFile;
                                   final titleStyle = TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: missing ? Colors.grey[600]! : Colors.black,
+                                    color: greyedOut ? Colors.grey[600]! : Colors.black,
                                   );
                                   final subStyle = TextStyle(
                                     fontSize: 11,
-                                    color: missing ? Colors.grey[600]! : Colors.black54,
+                                    color: greyedOut ? Colors.grey[600]! : Colors.black54,
                                   );
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 6),
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: missing ? Colors.grey[200]! : Colors.white,
+                                      color: greyedOut ? Colors.grey[200]! : Colors.white,
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(color: Colors.grey[300]!),
                                     ),
@@ -2803,7 +2803,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             children: [
                                               Text(recording.name, style: titleStyle),
                                               Text(
-                                                missing
+                                                greyedOut
                                                     ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
                                                     : '${recording.language} • ${_formatDate(recording.createdAt)}',
                                                 style: subStyle,
@@ -2811,7 +2811,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             ],
                                           ),
                                         ),
-                                        if (!missing) ...[
+                                        if (recording.hasLocalFile) ...[
                                           IconButton(
                                             onPressed: () => _playRecording(recording.filePath),
                                             icon: Icon(
@@ -2913,21 +2913,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: _voiceService.recordings.length,
                   itemBuilder: (context, index) {
                     final recording = _voiceService.recordings[index];
-                    final missing = !recording.hasLocalFile;
+                    final greyedOut = !recording.hasLocalFile;
                     final titleStyle = TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: missing ? Colors.grey[600]! : Colors.black,
+                      color: greyedOut ? Colors.grey[600]! : Colors.black,
                     );
                     final subStyle = TextStyle(
                       fontSize: 14,
-                      color: missing ? Colors.grey[600]! : Colors.black54,
+                      color: greyedOut ? Colors.grey[600]! : Colors.black54,
                     );
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: missing ? Colors.grey[200]! : Colors.white,
+                        color: greyedOut ? Colors.grey[200]! : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey[300]!),
                         boxShadow: [
@@ -2947,7 +2947,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Text(recording.name, style: titleStyle),
                                 const SizedBox(height: 4),
                                 Text(
-                                  missing
+                                  greyedOut
                                       ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
                                       : '${recording.language} • ${_formatDate(recording.createdAt)}',
                                   style: subStyle,
@@ -2955,7 +2955,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           ),
-                          if (!missing) ...[
+                          if (recording.hasLocalFile) ...[
                             IconButton(
                               onPressed: () => _playRecording(recording.filePath),
                               icon: Icon(

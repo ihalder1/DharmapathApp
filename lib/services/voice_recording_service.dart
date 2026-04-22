@@ -63,6 +63,14 @@ Future<void> _writeDebugUploadPayload(String requestBody) async {
   }
 }
 
+String _stripDataUrlBase64(String raw) {
+  final t = raw.trim();
+  const marker = 'base64,';
+  final idx = t.indexOf(marker);
+  if (idx >= 0) return t.substring(idx + marker.length);
+  return t;
+}
+
 class VoiceRecordingService {
   static final VoiceRecordingService _instance = VoiceRecordingService._internal();
   factory VoiceRecordingService() => _instance;
@@ -995,6 +1003,101 @@ class VoiceRecordingService {
     }
   }
 
+  /// When the list API has a row but no local file, GET the recording payload
+  /// (base64 `file` field), write bytes under [recordingsDir], and persist id→path.
+  /// Returns the saved path on success; null if the file could not be obtained
+  /// (missing/empty payload, HTTP error, decode/write failure, etc.).
+  Future<String?> _tryRestoreRecordingFromBackend({
+    required String recordingId,
+    required String displayName,
+    required String fileExtensionRaw,
+    required Directory recordingsDir,
+    required Map<String, String> idPaths,
+  }) async {
+    try {
+      final url = Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}/$recordingId',
+      );
+      print('📥 RESTORE recording file GET $url');
+
+      final response = await AuthenticatedHttp.get(
+        url,
+        timeout: const Duration(seconds: 120),
+      );
+
+      if (response.statusCode == 404 || response.statusCode == 410) {
+        print('   Backend reports recording/file not found (${response.statusCode})');
+        return null;
+      }
+
+      if (response.statusCode != 200) {
+        print('   Restore failed: HTTP ${response.statusCode}');
+        return null;
+      }
+
+      final Map<String, dynamic> map;
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          return null;
+        }
+        map = decoded;
+      } catch (e) {
+        print('   Restore failed: invalid JSON $e');
+        return null;
+      }
+
+      final err = map['error']?.toString() ?? map['message']?.toString() ?? '';
+      final errLower = err.toLowerCase();
+      if (err.isNotEmpty &&
+          (errLower.contains('not found') ||
+              errLower.contains('no file') ||
+              errLower.contains('file not available') ||
+              errLower.contains('unavailable'))) {
+        return null;
+      }
+
+      final fileStr = map['file']?.toString();
+      if (fileStr == null || fileStr.trim().isEmpty) {
+        return null;
+      }
+
+      late final List<int> bytes;
+      try {
+        final cleaned = fileStr.replaceAll(RegExp(r'\s'), '');
+        bytes = base64Decode(_stripDataUrlBase64(cleaned));
+      } catch (e) {
+        print('   Restore failed: base64 decode error $e');
+        return null;
+      }
+
+      if (bytes.isEmpty) {
+        return null;
+      }
+
+      var ext = (map['file_extension'] ?? fileExtensionRaw).toString().trim();
+      if (ext.isEmpty) ext = 'm4a';
+      if (ext.startsWith('.')) ext = ext.substring(1);
+
+      final base = sanitizeRecordingBaseName(displayName);
+      final localPath = '${recordingsDir.path}/$base.$ext';
+      final file = File(localPath);
+      await file.writeAsBytes(bytes, flush: true);
+
+      if (!await file.exists() || await file.length() == 0) {
+        return null;
+      }
+
+      idPaths[recordingId] = localPath;
+      await _rememberPathForRecordingId(recordingId, localPath);
+      print('   ✅ Restored recording to $localPath (${bytes.length} bytes)');
+      return localPath;
+    } catch (e, st) {
+      print('   ❌ Restore recording error: $e\n$st');
+      return null;
+    }
+  }
+
   // Load recordings from backend and sync with local storage
   Future<void> loadRecordings() async {
     try {
@@ -1050,7 +1153,7 @@ class VoiceRecordingService {
             createdAt = DateTime.now();
           }
 
-          final localPath = await _resolveLocalAudioPath(
+          String? localPath = await _resolveLocalAudioPath(
             recordingId: recordingId,
             displayName: name,
             fileExtensionRaw: fileExtension,
@@ -1058,7 +1161,21 @@ class VoiceRecordingService {
             idPaths: idPaths,
           );
 
-          final hasLocal = localPath != null && localPath.isNotEmpty;
+          var hasLocal = localPath != null && localPath.isNotEmpty;
+
+          if (!hasLocal) {
+            final restoredPath = await _tryRestoreRecordingFromBackend(
+              recordingId: recordingId,
+              displayName: name,
+              fileExtensionRaw: fileExtension,
+              recordingsDir: recordingsDir,
+              idPaths: idPaths,
+            );
+            if (restoredPath != null) {
+              localPath = restoredPath;
+              hasLocal = true;
+            }
+          }
 
           print('\n📝 Backend recording: $name id=$recordingId local=${hasLocal ? "yes" : "no"}');
 
