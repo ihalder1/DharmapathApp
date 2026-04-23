@@ -11,12 +11,14 @@ import '../services/song_service.dart';
 import '../models/mantra.dart';
 
 class PaymentScreen extends StatefulWidget {
-  final int totalAmount;
+  final double totalAmount;
+  final String currencyCode;
   final List<Mantra> cartItems;
 
   const PaymentScreen({
     super.key,
     required this.totalAmount,
+    required this.currencyCode,
     required this.cartItems,
   });
 
@@ -32,6 +34,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _clientSecret;
   String? _paymentIntentId;
   bool _isCardComplete = false;
+
+  String get _currencySymbol => Mantra.currencySymbolFor(widget.currencyCode);
+  String get _formattedAmount {
+    if (widget.currencyCode.toUpperCase() == 'USD') {
+      return widget.totalAmount.toStringAsFixed(2);
+    }
+    final whole = widget.totalAmount % 1 == 0;
+    return whole
+        ? widget.totalAmount.toInt().toString()
+        : widget.totalAmount.toStringAsFixed(2);
+  }
 
   @override
   void initState() {
@@ -124,8 +137,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       // Create payment intent with backend
       final paymentIntentData = await PaymentService.createPaymentIntent(
-        amount: widget.totalAmount * 100, // Convert to cents
-        currency: 'aud',
+        amount: (widget.totalAmount * 100).round(), // Convert to minor units
+        currency: widget.currencyCode.toLowerCase(),
         productId: productId,
         productName: productName,
         customerEmail: currentUser.email,
@@ -233,9 +246,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             final now = DateTime.now();
             final transactionTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
             
-            // Use totalAmount and INR currency (use dummy values if not available)
+            // Use region-specific amount/currency selected at song pricing time
             final amount = widget.totalAmount.toString();
-            final currency = 'INR';
+            final currency = widget.currencyCode;
 
             print('📤 Sending purchase data to backend...');
             print('   Transaction ID: $transactionId');
@@ -264,8 +277,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           }
 
           // Mark mantras as purchased
-          print('📦 Marking ${widget.cartItems.length} mantras as purchased...');
-          for (var mantra in widget.cartItems) {
+          final purchasedItems = List<Mantra>.from(widget.cartItems);
+          print('📦 Marking ${purchasedItems.length} mantras as purchased...');
+          for (final mantra in purchasedItems) {
             print('   - ${mantra.name} (${mantra.mantraFile})');
             await MantraService.markAsPurchased(mantra);
           }
@@ -374,7 +388,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 ),
                               ),
                               Text(
-                                '₹${widget.totalAmount}',
+                                '$_currencySymbol$_formattedAmount',
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
@@ -479,7 +493,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                             )
                           : Text(
-                              'Pay ₹${widget.totalAmount}',
+                              'Pay $_currencySymbol$_formattedAmount',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,

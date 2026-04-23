@@ -3,8 +3,14 @@ import '../models/mantra.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
+import 'location_pricing_service.dart';
 
 class SongService {
+  static double _parsePrice(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   // Fetch songs from API
   static Future<List<Mantra>> getSongs() async {
     try {
@@ -45,15 +51,24 @@ class SongService {
         print('   Songs count: ${songs.length}');
         print('═══════════════════════════════════════════════════════════');
         
+        final bool isInIndia = await LocationPricingService.isUserInIndia();
+        final String currencyCode =
+            LocationPricingService.currencyCodeForIndiaFlag(isInIndia);
+
         // Convert API response to Mantra objects
         final List<Mantra> mantras = songs.map((song) {
+          final double selectedPrice = isInIndia
+              ? _parsePrice(song['price_in'])
+              : _parsePrice(song['price_other']);
+
           // Map API response to Mantra format
           return Mantra(
             name: _generateNameFromId(song['id'] ?? ''),
             mantraFile: song['file_name'] ?? '',
             icon: song['icon'] ?? '',
             // playtime: 0, // COMMENTED OUT
-            price: int.tryParse(song['price']?.toString() ?? '0') ?? 0,
+            price: selectedPrice,
+            currencyCode: currencyCode,
             isBought: false, // API doesn't provide this, will be set from local state
           );
         }).toList();

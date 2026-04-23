@@ -3,7 +3,8 @@ class Mantra {
   final String mantraFile;
   final String icon;
   // final int playtime; // in seconds - COMMENTED OUT
-  final int price;
+  final double price;
+  final String currencyCode;
   final bool isInCart;
   final bool isBought; // whether user has purchased this mantra
 
@@ -13,9 +14,15 @@ class Mantra {
     required this.icon,
     // required this.playtime, // COMMENTED OUT
     required this.price,
+    this.currencyCode = 'INR',
     this.isInCart = false,
     this.isBought = false,
   });
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
 
   factory Mantra.fromJson(Map<String, dynamic> json) {
     return Mantra(
@@ -23,7 +30,8 @@ class Mantra {
       mantraFile: json['mantra_file'] ?? '',
       icon: json['icon'] ?? '',
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
-      price: json['price'] ?? 0,
+      price: _toDouble(json['price']),
+      currencyCode: (json['currency_code'] ?? 'INR').toString(),
     );
   }
 
@@ -34,7 +42,8 @@ class Mantra {
       mantraFile: json['song_id'] ?? json['mantra_file'] ?? '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
-      price: json['price'] ?? 0,
+      price: _toDouble(json['price']),
+      currencyCode: (json['currency_code'] ?? 'INR').toString(),
       isBought: json['bought'] == 'Y', // Convert "Y"/"N" to boolean
     );
   }
@@ -46,6 +55,7 @@ class Mantra {
       'icon': icon,
       // 'playtime': playtime, // COMMENTED OUT
       'price': price,
+      'currency_code': currencyCode,
     };
   }
 
@@ -54,7 +64,8 @@ class Mantra {
     String? mantraFile,
     String? icon,
     // int? playtime, // COMMENTED OUT
-    int? price,
+    double? price,
+    String? currencyCode,
     bool? isInCart,
     bool? isBought,
   }) {
@@ -64,6 +75,7 @@ class Mantra {
       icon: icon ?? this.icon,
       // playtime: playtime ?? this.playtime, // COMMENTED OUT
       price: price ?? this.price,
+      currencyCode: currencyCode ?? this.currencyCode,
       isInCart: isInCart ?? this.isInCart,
       isBought: isBought ?? this.isBought,
     );
@@ -78,6 +90,20 @@ class Mantra {
 
   // Helper method to format price
   String get formattedPrice {
-    return '₹$price';
+    if (currencyCode.toUpperCase() == 'USD') {
+      return '${currencySymbolFor(currencyCode)}${price.toStringAsFixed(2)}';
+    }
+    final whole = price % 1 == 0;
+    return '${currencySymbolFor(currencyCode)}${whole ? price.toInt() : price.toStringAsFixed(2)}';
+  }
+
+  static String currencySymbolFor(String code) {
+    switch (code.toUpperCase()) {
+      case 'USD':
+        return r'$';
+      case 'INR':
+      default:
+        return '₹';
+    }
   }
 }

@@ -75,14 +75,16 @@ class MantraService {
           mantraFile: 'test1.mp3',
           icon: 'test1.jpg',
           // playtime: 300, // COMMENTED OUT
-          price: 299,
+          price: 299.0,
+          currencyCode: 'INR',
         ),
         Mantra(
           name: 'Test Mantra 2',
           mantraFile: 'test2.mp3',
           icon: 'test2.jpg',
           // playtime: 240, // COMMENTED OUT
-          price: 249,
+          price: 249.0,
+          currencyCode: 'INR',
         ),
       ];
       return _mantras;
@@ -126,8 +128,18 @@ class MantraService {
   }
 
   // Get cart total
-  static int getCartTotal() {
-    return _cart.fold(0, (total, mantra) => total + mantra.price);
+  static double getCartTotal() {
+    return _cart.fold(0.0, (total, mantra) => total + mantra.price);
+  }
+
+  static String getCartCurrencyCode() {
+    if (_cart.isNotEmpty) {
+      return _cart.first.currencyCode;
+    }
+    if (_mantras.isNotEmpty) {
+      return _mantras.first.currencyCode;
+    }
+    return 'INR';
   }
 
   // Clear cart
@@ -176,7 +188,7 @@ class MantraService {
             name: name,
             mantraFile: '',
             icon: '',
-            price: 0,
+            price: 0.0,
           ),
         );
         

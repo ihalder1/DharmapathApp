@@ -338,15 +338,13 @@ class _HomeScreenState extends State<HomeScreen> {
         }).toList();
         
         setState(() {
-          _mantras = updatedMantras;
-          _filteredMantras = updatedMantras;
+          _applyMantraList(updatedMantras);
         });
       } catch (e) {
         print('⚠️  Error fetching purchased songs: $e');
         // Continue with mantras even if purchased songs fetch fails
         setState(() {
-          _mantras = mantras;
-          _filteredMantras = mantras;
+          _applyMantraList(mantras);
         });
       }
     } catch (e) {
@@ -380,6 +378,31 @@ class _HomeScreenState extends State<HomeScreen> {
         }).toList();
       }
     });
+  }
+
+  List<Mantra> _sortMantrasByPurchase(List<Mantra> mantras) {
+    final sorted = List<Mantra>.from(mantras);
+    sorted.sort((a, b) {
+      if (a.isBought != b.isBought) {
+        return a.isBought ? -1 : 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return sorted;
+  }
+
+  void _applyMantraList(List<Mantra> mantras) {
+    final sorted = _sortMantrasByPurchase(mantras);
+    _mantras = sorted;
+
+    final query = _searchController.text.toLowerCase();
+    if (query.isEmpty) {
+      _filteredMantras = sorted;
+    } else {
+      _filteredMantras = sorted.where((mantra) {
+        return mantra.name.toLowerCase().contains(query);
+      }).toList();
+    }
   }
 
   // Helper widget to load mantra icon with failsafe (tries .png, then .jpg)
@@ -3750,6 +3773,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCartStep() {
     final cartItems = MantraService.getCart();
     final total = MantraService.getCartTotal();
+    final cartCurrencyCode = MantraService.getCartCurrencyCode();
+    final totalAmountText = cartCurrencyCode.toUpperCase() == 'USD'
+        ? total.toStringAsFixed(2)
+        : (total % 1 == 0 ? total.toInt().toString() : total.toStringAsFixed(2));
+    final totalDisplay =
+        '${Mantra.currencySymbolFor(cartCurrencyCode)}$totalAmountText';
     
     return Container(
       width: double.infinity,
@@ -3942,7 +3971,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           Text(
-                            '₹$total',
+                            totalDisplay,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -3966,23 +3995,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             MaterialPageRoute(
                               builder: (context) => PaymentScreen(
                                 totalAmount: total,
-                                cartItems: cartItems,
+                                currencyCode: cartCurrencyCode,
+                                cartItems: List<Mantra>.from(cartItems),
                               ),
                             ),
                           );
                           
                           // If payment was successful, update mantras and go to Select Mantra screen
                           if (paymentSuccess == true && mounted) {
-                            // Get updated mantras from MantraService (already marked as purchased)
-                            // DO NOT reload from API/JSON as it will overwrite the purchased status
-                            final updatedMantras = MantraService.getMantras();
-                            print('Updating UI with ${updatedMantras.length} mantras after payment');
-                            print('Purchased mantras: ${updatedMantras.where((m) => m.isBought).map((m) => '${m.name} (${m.mantraFile})').join(', ')}');
                             setState(() {
-                              _mantras = updatedMantras;
-                              _filteredMantras = updatedMantras;
                               _currentStep = 0; // Go to Select Mantra screen
                             });
+                            await _loadMantras();
                           }
                         },
                         style: ElevatedButton.styleFrom(
