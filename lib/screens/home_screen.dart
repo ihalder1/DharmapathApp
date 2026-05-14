@@ -75,6 +75,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final AudioPlayer _recordingPlayer = AudioPlayer();
   /// Tracks step transitions so we refresh GET voice/recordings when entering Record Voice.
   int? _prevStepForVoiceRefresh;
+
+  int? _profileTotalRecordings;
+  int? _profileTotalInferredSongs;
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
   static const int _maxRecordingSeconds = 60;
@@ -135,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadMantras();
     _searchController.addListener(_filterMantras);
     _loadRecordings();
+    _loadRecordingAndSongTotals();
     _loadUnreadNotificationCount();
     // Don't request permission on startup - request when user actually tries to record
   }
@@ -148,6 +152,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     _voiceService.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRecordingAndSongTotals() async {
+    final totals = await ProfileService.fetchRecordingAndSongTotals();
+    if (!mounted) return;
+    setState(() {
+      if (totals != null) {
+        _profileTotalRecordings = totals.totalRecordings;
+        _profileTotalInferredSongs = totals.totalInferredSongs;
+      }
+    });
   }
 
   // Initialize personal info with authenticated user data
@@ -299,9 +314,16 @@ class _HomeScreenState extends State<HomeScreen> {
             String normalizeId(String id) {
               return id.toLowerCase().trim().replaceAll('.mp3', '').replaceAll('.MP3', '');
             }
-            
-            final mantraFileNormalized = normalizeId(mantra.mantraFile);
+
             final purchasedIdNormalized = normalizeId(purchasedId);
+            final mantraSongId =
+                normalizeId(SongService.extractSongId(mantra.mantraFile));
+            if (mantraSongId.isNotEmpty &&
+                mantraSongId == purchasedIdNormalized) {
+              return true;
+            }
+
+            final mantraFileNormalized = normalizeId(mantra.mantraFile);
             
             // Exact match (after normalization)
             if (mantraFileNormalized == purchasedIdNormalized) {
@@ -1264,11 +1286,15 @@ class _HomeScreenState extends State<HomeScreen> {
           return Expanded(
             child: GestureDetector(
               onTap: () {
+                final prevStep = _currentStep;
                 setState(() {
                   _currentStep = index;
                 });
                 if (index == 2) {
                   _loadInferredSongs();
+                }
+                if (index == 0 && prevStep != 0) {
+                  _loadRecordingAndSongTotals();
                 }
               },
               child: Column(
@@ -1415,11 +1441,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStatisticsRow() {
+    final recordings = _profileTotalRecordings;
+    final songs = _profileTotalInferredSongs;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatisticItem('RECORDINGS', '12'),
-        _buildStatisticItem('SONGS', '8'),
+        _buildStatisticItem(
+          'RECORDINGS',
+          recordings == null ? '—' : '$recordings',
+        ),
+        _buildStatisticItem(
+          'SONGS',
+          songs == null ? '—' : '$songs',
+        ),
       ],
     );
   }

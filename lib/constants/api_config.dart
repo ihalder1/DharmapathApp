@@ -16,6 +16,8 @@ class ApiConfig {
   static const String facebookSignInEndpoint = '/auth/facebook-signin';
   static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndpoint = '/auth/profile';
+  static const String listRecordingAndSongsEndpoint =
+      '/auth/profile/list-recording-and-songs';
   static const String logoutEndpoint = '/auth/logout';
   static const String putDeviceInfoEndpoint = '/auth/put-device-info';
   
@@ -45,6 +47,11 @@ class ApiConfig {
   static const String createPaymentIntentEndpoint = '/payments/create-intent';
   static const String confirmPaymentEndpoint = '/payments/confirm';
   static const String getPaymentStatusEndpoint = '/payments/status';
+
+  /// Stripe Checkout Session (UPI / hosted checkout) — opened in WebView, not PaymentSheet.
+  static const String createCheckoutSessionEndpoint =
+      '/payments/create-checkout-session';
+  static const String verifyCheckoutSessionEndpoint = '/payments/verify-session';
   
   // Google OAuth Configuration
   static const String googleClientId = '333289829093-pg9e6o14ulmqflanirvosu9qgpjdbt3p.apps.googleusercontent.com';

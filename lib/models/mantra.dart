@@ -25,13 +25,22 @@ class Mantra {
   }
 
   factory Mantra.fromJson(Map<String, dynamic> json) {
+    // Prefer API `price_in` when present (Indian list price); else legacy `price`.
+    final dynamic rawIn = json['price_in'];
+    final bool usePriceIn =
+        rawIn != null && rawIn.toString().trim().isNotEmpty;
+    final double price =
+        usePriceIn ? _toDouble(rawIn) : _toDouble(json['price']);
+    final String currencyCode = usePriceIn
+        ? 'INR'
+        : (json['currency_code'] ?? 'INR').toString();
     return Mantra(
       name: json['name'] ?? '',
       mantraFile: json['mantra_file'] ?? '',
       icon: json['icon'] ?? '',
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
-      price: _toDouble(json['price']),
-      currencyCode: (json['currency_code'] ?? 'INR').toString(),
+      price: price,
+      currencyCode: currencyCode,
     );
   }
 

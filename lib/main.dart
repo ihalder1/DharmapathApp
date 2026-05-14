@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'widgets/auth_wrapper.dart';
-import 'constants/app_colors.dart';
 import 'constants/app_theme.dart';
 import 'constants/api_config.dart';
 import 'services/auth_service.dart';
@@ -43,9 +42,11 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Initialize Stripe
+  // Initialize Stripe (publishable key, url scheme + Android return URL for 3DS / redirects)
   Stripe.publishableKey = ApiConfig.stripePublishableKey;
   Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
+  Stripe.urlScheme = 'mantrasutra';
+  Stripe.setReturnUrlSchemeOnAndroid = true;
   await Stripe.instance.applySettings();
   print('Stripe initialized with publishable key: ${ApiConfig.stripePublishableKey}');
   

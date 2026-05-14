@@ -3,7 +3,7 @@ import '../models/mantra.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
-import 'location_pricing_service.dart';
+import 'payment_http_log.dart';
 
 class SongService {
   static double _parsePrice(dynamic value) {
@@ -51,15 +51,12 @@ class SongService {
         print('   Songs count: ${songs.length}');
         print('═══════════════════════════════════════════════════════════');
         
-        final bool isInIndia = await LocationPricingService.isUserInIndia();
-        final String currencyCode =
-            LocationPricingService.currencyCodeForIndiaFlag(isInIndia);
+        // Temporarily always use API `price_in` (Indian list price) + INR for display/checkout.
+        const String currencyCode = 'INR';
 
         // Convert API response to Mantra objects
         final List<Mantra> mantras = songs.map((song) {
-          final double selectedPrice = isInIndia
-              ? _parsePrice(song['price_in'])
-              : _parsePrice(song['price_other']);
+          final double selectedPrice = _parsePrice(song['price_in']);
 
           // Map API response to Mantra format
           return Mantra(
@@ -145,10 +142,33 @@ class SongService {
         final List<String> purchasedIdentifiers = [];
         
         // Handle different response formats:
-        // 1. Direct object with songs_ids: {"songs_ids": ["M-SARASWATI-001"]}
-        // 2. List of objects with mantra_ids: [{"recording_id": "...", "mantra_ids": ["M-RAM-001.mp3"], ...}]
+        // - available_songs: [{"song_id":"F-AARATI-001","available_count":2}, ...] (ignore counts)
+        // - songs_ids / song_ids on root or nested under `data`
+        // - List of objects with mantra_ids (legacy)
         
         if (responseData is Map<String, dynamic>) {
+          void addFromAvailableSongs(Map<String, dynamic> m) {
+            if (!m.containsKey('available_songs')) return;
+            final list = m['available_songs'] as List<dynamic>? ?? [];
+            print('   Found available_songs with ${list.length} items');
+            for (final item in list) {
+              if (item is! Map) continue;
+              final row = Map<String, dynamic>.from(item);
+              final songId =
+                  (row['song_id'] ?? row['songId'])?.toString().trim() ?? '';
+              if (songId.isNotEmpty) {
+                purchasedIdentifiers.add(songId);
+                print('     → Purchased song_id: $songId');
+              }
+            }
+          }
+
+          addFromAvailableSongs(responseData);
+          final nested = responseData['data'];
+          if (nested is Map<String, dynamic>) {
+            addFromAvailableSongs(nested);
+          }
+
           // Format 1: Direct object with songs_ids
           if (responseData.containsKey('songs_ids')) {
             final songsIds = responseData['songs_ids'] as List<dynamic>? ?? [];
@@ -193,9 +213,10 @@ class SongService {
           }
         }
         
-        print('   Total purchased song IDs: ${purchasedIdentifiers.length}');
+        final unique = purchasedIdentifiers.toSet().toList();
+        print('   Total purchased song IDs (deduped): ${unique.length}');
         print('═══════════════════════════════════════════════════════════');
-        return purchasedIdentifiers;
+        return unique;
       } else if (response.statusCode == 404) {
         // 404 means no songs have been purchased yet - this is a normal case, not an error
         print('ℹ️  NO PURCHASED SONGS FOUND (404)');
@@ -219,7 +240,7 @@ class SongService {
     }
   }
 
-  // Send purchase data to backend after successful payment
+  /// PUT purchase after payment — logged with [PaymentHttpLog] (same shape as payment APIs).
   static Future<bool> sendPurchaseData({
     required String transactionId,
     required String transactionTime,
@@ -227,29 +248,29 @@ class SongService {
     required String currency,
     required List<String> songIds,
   }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
+    final urlExact = url.toString();
+    Map<String, String>? headers;
+    String? bodyExact;
+
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🛒 SENDING PURCHASE DATA TO BACKEND');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
-      
+
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
+        print(
+          '[SongService] sendPurchaseData — no access token; URL (exact): $urlExact',
+        );
         return false;
       }
 
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
-      final headers = {
+      headers = {
         'Content-Type': 'application/json',
         'x-api-key': ApiConfig.apiKey,
         'Authorization': 'Bearer $token',
       };
 
-      // Prepare request body
-      final requestBody = json.encode({
+      bodyExact = json.encode({
         'transactionId': transactionId,
         'transactionTime': transactionTime,
         'amount': amount,
@@ -257,36 +278,33 @@ class SongService {
         'song_ids': songIds,
       });
 
-      print('📤 REQUEST DETAILS:');
-      print('   Method: PUT');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   Request Body: $requestBody');
-      print('═══════════════════════════════════════════════════════════');
+      final response = await AuthenticatedHttp.put(url, body: bodyExact);
 
-      final response = await AuthenticatedHttp.put(url, body: requestBody);
-
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
+      PaymentHttpLog.log(
+        operation: 'sendPurchaseData (after payment)',
+        method: 'PUT',
+        urlExact: urlExact,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('✅ SEND PURCHASE DATA SUCCESS');
-        print('═══════════════════════════════════════════════════════════');
         return true;
-      } else {
-        print('❌ SEND PURCHASE DATA FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
-        return false;
       }
+      return false;
     } catch (e, stackTrace) {
-      print('❌ SEND PURCHASE DATA ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
+      PaymentHttpLog.logError(
+        operation: 'sendPurchaseData (after payment)',
+        method: 'PUT',
+        urlExact: urlExact,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        error: e,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }

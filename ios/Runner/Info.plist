@@ -90,6 +90,14 @@
 	        <key>CFBundleURLName</key>
 	        <string>Facebook</string>
 	    </dict>
+	    <dict>
+	        <key>CFBundleURLName</key>
+	        <string>Stripe payments</string>
+	        <key>CFBundleURLSchemes</key>
+	        <array>
+	            <string>mantrasutra</string>
+	        </array>
+	    </dict>
 	</array>
 </dict>
 </plist>

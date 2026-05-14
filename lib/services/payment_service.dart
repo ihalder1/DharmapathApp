@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
+import 'payment_http_log.dart';
 
 class PaymentService {
   // Create Payment Intent
@@ -13,69 +13,72 @@ class PaymentService {
     required String productName,
     required String customerEmail,
     Map<String, dynamic>? metadata,
+
+    /// When set (e.g. `['card']`), the server should create the Stripe PaymentIntent
+    /// with only these `payment_method_types` so PaymentSheet does not list UPI, etc.
+    List<String>? paymentMethodTypes,
   }) async {
+    final url =
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.createPaymentIntentEndpoint}';
+    Map<String, String>? headers;
+    String? bodyExact;
+
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('💳 CREATE PAYMENT INTENT API CALL START');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
+        print(
+          '[PaymentService] createPaymentIntent — no access token; URL (exact): $url',
+        );
         return null;
       }
 
-      final url = '${ApiConfig.paymentBaseUrl}${ApiConfig.createPaymentIntentEndpoint}';
-      final headers = ApiConfig.getPaymentHeaders(accessToken: token);
-      final requestBody = {
+      headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      final requestBody = <String, dynamic>{
         'amount': amount,
         'currency': currency,
         'productId': productId,
         'productName': productName,
         'customerEmail': customerEmail,
         if (metadata != null) 'metadata': metadata,
+        if (paymentMethodTypes != null && paymentMethodTypes.isNotEmpty) ...{
+          'paymentMethodTypes': paymentMethodTypes,
+          'payment_method_types': paymentMethodTypes,
+        },
       };
-
-      print('📤 REQUEST DETAILS:');
-      print('   Method: POST');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   Body: ${json.encode(requestBody)}');
-      print('   FULL TOKEN: $token');
+      bodyExact = json.encode(requestBody);
 
       final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
-        body: json.encode(requestBody),
+        body: bodyExact,
       );
 
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
+      PaymentHttpLog.log(
+        operation: 'createPaymentIntent',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-        print('✅ CREATE PAYMENT INTENT SUCCESS');
-        print('   Client Secret: ${responseData['clientSecret']}');
-        print('   Payment Intent ID: ${responseData['paymentIntentId']}');
-        print('   Status: ${responseData['status']}');
-        print('═══════════════════════════════════════════════════════════');
-        return responseData;
-      } else {
-        print('❌ CREATE PAYMENT INTENT FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
-        return null;
+        return json.decode(response.body) as Map<String, dynamic>;
       }
+      return null;
     } catch (e, stackTrace) {
-      print('❌ CREATE PAYMENT INTENT ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
-      debugPrint('Error creating payment intent: $e');
+      PaymentHttpLog.logError(
+        operation: 'createPaymentIntent',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('Error creating payment intent: $e');
       return null;
     }
   }
@@ -84,59 +87,57 @@ class PaymentService {
   static Future<bool> confirmPayment({
     required String paymentIntentId,
   }) async {
+    final url = '${ApiConfig.paymentBaseUrl}${ApiConfig.confirmPaymentEndpoint}';
+    Map<String, String>? headers;
+    String? bodyExact;
+
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('✅ CONFIRM PAYMENT API CALL START');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
+        print(
+          '[PaymentService] confirmPayment — no access token; URL (exact): $url',
+        );
         return false;
       }
 
-      final url = '${ApiConfig.paymentBaseUrl}${ApiConfig.confirmPaymentEndpoint}';
-      final headers = ApiConfig.getPaymentHeaders(accessToken: token);
-      final requestBody = {
+      headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      final requestBody = <String, dynamic>{
         'paymentIntentId': paymentIntentId,
       };
-
-      print('📤 REQUEST DETAILS:');
-      print('   Method: POST');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   Body: ${json.encode(requestBody)}');
-      print('   FULL TOKEN: $token');
+      bodyExact = json.encode(requestBody);
 
       final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
-        body: json.encode(requestBody),
+        body: bodyExact,
       );
 
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
+      PaymentHttpLog.log(
+        operation: 'confirmPayment',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        print('✅ CONFIRM PAYMENT SUCCESS');
-        print('═══════════════════════════════════════════════════════════');
         return true;
-      } else {
-        print('❌ CONFIRM PAYMENT FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
-        return false;
       }
+      return false;
     } catch (e, stackTrace) {
-      print('❌ CONFIRM PAYMENT ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
-      debugPrint('Error confirming payment: $e');
+      PaymentHttpLog.logError(
+        operation: 'confirmPayment',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('Error confirming payment: $e');
       return false;
     }
   }
@@ -145,57 +146,257 @@ class PaymentService {
   static Future<Map<String, dynamic>?> getPaymentStatus({
     required String paymentIntentId,
   }) async {
+    final url =
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.getPaymentStatusEndpoint}/$paymentIntentId';
+    Map<String, String>? headers;
+
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('📊 GET PAYMENT STATUS API CALL START');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
+        print(
+          '[PaymentService] getPaymentStatus — no access token; URL (exact): $url',
+        );
         return null;
       }
 
-      final url = '${ApiConfig.paymentBaseUrl}${ApiConfig.getPaymentStatusEndpoint}/$paymentIntentId';
-      final headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      final response = await AuthenticatedHttp.paymentGet(Uri.parse(url));
 
-      print('📤 REQUEST DETAILS:');
-      print('   Method: GET');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   FULL TOKEN: $token');
-
-      final response =
-          await AuthenticatedHttp.paymentGet(Uri.parse(url));
-
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
+      PaymentHttpLog.log(
+        operation: 'getPaymentStatus',
+        method: 'GET',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: null,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        print('✅ GET PAYMENT STATUS SUCCESS');
-        print('   Data: ${json.encode(responseData)}');
-        print('═══════════════════════════════════════════════════════════');
-        return responseData;
-      } else {
-        print('❌ GET PAYMENT STATUS FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
-        return null;
+        return json.decode(response.body) as Map<String, dynamic>;
       }
+      return null;
     } catch (e, stackTrace) {
-      print('❌ GET PAYMENT STATUS ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
-      debugPrint('Error getting payment status: $e');
+      PaymentHttpLog.logError(
+        operation: 'getPaymentStatus',
+        method: 'GET',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: null,
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('Error getting payment status: $e');
       return null;
     }
   }
+
+  /// Stripe Checkout Session for UPI (hosted Checkout URL in WebView).
+  /// Body: `{ "currency": "inr", "products": [ { "productId", "productName", "unitAmount" } ] }`.
+  static Future<Map<String, dynamic>?> createCheckoutSession({
+    required String currency,
+    required List<Map<String, dynamic>> products,
+  }) async {
+    final url =
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.createCheckoutSessionEndpoint}';
+    Map<String, String>? headers;
+    String? bodyExact;
+
+    try {
+      final authService = AuthService();
+      final token = authService.accessToken;
+      if (token == null) {
+        print(
+          '[PaymentService] createCheckoutSession — no access token; URL (exact): $url',
+        );
+        return null;
+      }
+
+      headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      final requestBody = <String, dynamic>{
+        'currency': currency.toLowerCase(),
+        'products': products,
+      };
+      bodyExact = json.encode(requestBody);
+
+      final response = await AuthenticatedHttp.paymentPost(
+        Uri.parse(url),
+        body: bodyExact,
+      );
+
+      PaymentHttpLog.log(
+        operation: 'createCheckoutSession',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e, stackTrace) {
+      PaymentHttpLog.logError(
+        operation: 'createCheckoutSession',
+        method: 'POST',
+        urlExact: url,
+        requestHeaders: headers,
+        requestBodyExact: bodyExact,
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('createCheckoutSession error: $e');
+      return null;
+    }
+  }
+
+  /// GET `/payments/verify-session?session_id=...` — UI feedback only; webhook is source of truth.
+  static Future<Map<String, dynamic>?> verifyCheckoutSession({
+    required String sessionId,
+  }) async {
+    final url = Uri.parse(
+      '${ApiConfig.paymentBaseUrl}${ApiConfig.verifyCheckoutSessionEndpoint}',
+    ).replace(queryParameters: {'session_id': sessionId});
+    final urlExact = url.toString();
+    Map<String, String>? headers;
+
+    try {
+      final authService = AuthService();
+      final token = authService.accessToken;
+      if (token == null) {
+        print(
+          '[PaymentService] verifyCheckoutSession — no access token; URL (exact): $urlExact',
+        );
+        return null;
+      }
+
+      headers = ApiConfig.getPaymentHeaders(accessToken: token);
+      final response = await AuthenticatedHttp.paymentGet(url);
+
+      PaymentHttpLog.log(
+        operation: 'verifyCheckoutSession',
+        method: 'GET',
+        urlExact: urlExact,
+        requestHeaders: headers,
+        requestBodyExact: null,
+        responseStatus: response.statusCode,
+        responseHeaders: response.headers,
+        responseBodyExact: response.body,
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e, stackTrace) {
+      PaymentHttpLog.logError(
+        operation: 'verifyCheckoutSession',
+        method: 'GET',
+        urlExact: urlExact,
+        requestHeaders: headers,
+        requestBodyExact: null,
+        error: e,
+        stackTrace: stackTrace,
+      );
+      print('verifyCheckoutSession error: $e');
+      return null;
+    }
+  }
+
+  /// Poll until backend reports paid (webhook may lag) or a terminal non-paid state / timeout.
+  static Future<CheckoutSessionVerifyOutcome>
+      verifyCheckoutSessionUntilPaid({
+    required String sessionId,
+    int maxAttempts = 30,
+    Duration interval = const Duration(seconds: 2),
+  }) async {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      print(
+        '[PaymentService] verifyCheckoutSessionUntilPaid attempt ${attempt + 1}/$maxAttempts session_id (exact): $sessionId',
+      );
+      final data = await verifyCheckoutSession(sessionId: sessionId);
+      final parsed = parseCheckoutVerifyResponse(data);
+      switch (parsed) {
+        case CheckoutSessionVerifyOutcome.paid:
+        case CheckoutSessionVerifyOutcome.failed:
+        case CheckoutSessionVerifyOutcome.unpaid:
+          return parsed;
+        case CheckoutSessionVerifyOutcome.pending:
+        case CheckoutSessionVerifyOutcome.unknown:
+        case CheckoutSessionVerifyOutcome.timeout:
+          break;
+      }
+      await Future<void>.delayed(interval);
+    }
+    print(
+      '[PaymentService] verifyCheckoutSessionUntilPaid finished after $maxAttempts attempts — outcome: timeout',
+    );
+    return CheckoutSessionVerifyOutcome.timeout;
+  }
+
+  static CheckoutSessionVerifyOutcome parseCheckoutVerifyResponse(
+    Map<String, dynamic>? body,
+  ) {
+    if (body == null) return CheckoutSessionVerifyOutcome.unknown;
+
+    bool? asBool(dynamic v) {
+      if (v is bool) return v;
+      if (v is String) {
+        final s = v.toLowerCase();
+        if (s == 'true') return true;
+        if (s == 'false') return false;
+      }
+      return null;
+    }
+
+    String? str(dynamic v) => v?.toString();
+
+    final paid = asBool(body['paid'] ?? body['isPaid']);
+    if (paid == true) return CheckoutSessionVerifyOutcome.paid;
+    if (paid == false &&
+        (body.containsKey('paid') || body.containsKey('isPaid'))) {
+      return CheckoutSessionVerifyOutcome.unpaid;
+    }
+
+    final paymentStatus = str(
+          body['payment_status'] ?? body['paymentStatus'],
+        )?.toLowerCase() ??
+        '';
+    final status = str(body['status'])?.toLowerCase() ?? '';
+
+    if (paymentStatus == 'paid' ||
+        paymentStatus == 'succeeded' ||
+        (status == 'complete' && paymentStatus == 'paid')) {
+      return CheckoutSessionVerifyOutcome.paid;
+    }
+    if (paymentStatus == 'canceled' ||
+        paymentStatus == 'cancelled' ||
+        status == 'expired') {
+      return CheckoutSessionVerifyOutcome.failed;
+    }
+    if (paymentStatus == 'unpaid' && status == 'complete') {
+      return CheckoutSessionVerifyOutcome.pending;
+    }
+    if (status == 'open' || paymentStatus == 'unpaid') {
+      return CheckoutSessionVerifyOutcome.pending;
+    }
+
+    return CheckoutSessionVerifyOutcome.unknown;
+  }
 }
 
+/// Result of interpreting [verifyCheckoutSession] JSON (until webhook, may stay pending).
+enum CheckoutSessionVerifyOutcome {
+  paid,
+  pending,
+  unpaid,
+  failed,
+  unknown,
+  timeout,
+}

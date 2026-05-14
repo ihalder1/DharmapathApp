@@ -56,7 +56,8 @@ dependencies:
   package_info_plus: ^8.0.0
   
   # Payment Integration
-  flutter_stripe: ^11.1.0
+  flutter_stripe: ^12.6.0
+  webview_flutter: ^4.10.0
   firebase_core: ^4.6.0
   firebase_messaging: ^16.1.3
 

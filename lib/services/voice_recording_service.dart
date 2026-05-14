@@ -1102,7 +1102,7 @@ class VoiceRecordingService {
   Future<void> loadRecordings() async {
     try {
       print('═══════════════════════════════════════════════════════════');
-      print('🔄 LOADING RECORDINGS (Backend + Local Sync)');
+      print('🔄 LOADING RECORDINGS (GET list + local / restore)');
       print('═══════════════════════════════════════════════════════════');
 
       await processPendingUploadsInBackground();
@@ -1122,14 +1122,11 @@ class VoiceRecordingService {
 
       final idPaths = await _loadRecordingIdPaths();
 
-      // 3. Local files on disk
-      final files = await recordingsDir.list().toList();
-      print('📁 Found ${files.length} files in local directory');
-
-      // 4. Clear and rebuild recordings list
+      // List is API-authoritative only: local orphan files are not shown as extra rows.
       _recordings = [];
 
-      // 5. Every server row — match local file by recording_id map + name/extension
+      // Each server row — resolve local file by recording_id map + name/extension,
+      // then restore from GET .../recordings/{id} if missing; grey card if still no file.
       for (final backendRec in backendRecordings) {
         try {
           final recordingId = backendRec['recording_id']?.toString() ?? '';
@@ -1196,86 +1193,7 @@ class VoiceRecordingService {
         }
       }
 
-      // 7. Process local-only files (files that exist locally but aren't in backend)
-      print('\n📂 Processing local-only files...');
-      final Set<String> processedFilePaths = {};
-      final Set<String> processedNames = {}; // Track by name to avoid duplicates
-      for (final recording in _recordings) {
-        processedFilePaths.add(recording.filePath);
-        processedNames.add(recording.name.toLowerCase());
-      }
-      
-      for (final fileEntity in files) {
-        if (fileEntity is File) {
-          final filePath = fileEntity.path;
-          
-          // Skip if already processed (matched with backend recording by exact path)
-          if (processedFilePaths.contains(filePath)) {
-            print('   ⏭️  Skipping already processed file: ${filePath.split('/').last}');
-            continue;
-          }
-          
-          // Skip if it's a temporary or invalid file
-          final filename = filePath.split('/').last;
-          if (_isTemporaryOrInvalidFile(filename)) {
-            print('   ⏭️  Skipping temporary/invalid file: $filename');
-            continue;
-          }
-          
-          try {
-            // Extract name from filename
-            final name = _extractNameFromPath(filePath);
-            if (name.isEmpty) {
-              print('   ⏭️  Skipping file with empty name: $filename');
-              continue;
-            }
-            
-            // Check for duplicate by name (case-insensitive)
-            if (processedNames.contains(name.toLowerCase())) {
-              print('   ⏭️  Skipping duplicate by name: $name (already processed)');
-              continue;
-            }
-            
-            // Verify file is not empty
-            final fileSize = await fileEntity.length();
-            if (fileSize == 0) {
-              print('   ⏭️  Skipping empty file: $filename (0 bytes)');
-              continue;
-            }
-            
-            // Get file metadata
-            final stat = await fileEntity.stat();
-            final createdAt = stat.modified;
-            
-            // Determine language from file (default to English if unknown)
-            final language = 'English'; // Default, could be enhanced to detect from metadata
-            
-            print('   📝 Found local-only recording: $name');
-            print('      Path: $filePath');
-            print('      Size: $fileSize bytes');
-            print('      Created: $createdAt');
-            
-            // Create recording object for local-only file
-            final recording = VoiceRecording(
-              id: _uuid.v4(), // Generate new UUID for local-only recording
-              name: name,
-              language: language,
-              filePath: filePath,
-              createdAt: createdAt,
-            );
-            
-            _recordings.add(recording);
-            processedFilePaths.add(filePath); // Track path
-            processedNames.add(name.toLowerCase()); // Track name to avoid duplicates
-            print('   ✅ Added local-only recording to list');
-          } catch (e) {
-            print('   ❌ Error processing local file $filename: $e');
-            // Continue with other files
-          }
-        }
-      }
-      
-      // 8. Sort by creation date (newest first)
+      // Sort by creation date (newest first)
       _recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       
       print('\n✅ Loaded ${_recordings.length} recordings total');
@@ -1412,65 +1330,6 @@ class VoiceRecordingService {
       print('Error syncing recordings: $e');
       print('Stack trace: $stackTrace');
     }
-  }
-
-  // Check if file is a temporary/unsaved recording
-  bool _isTemporaryFile(String nameWithoutExt) {
-    // Check if it matches timestamp pattern (recording_1234567890 or just numbers)
-    if (RegExp(r'^recording_\d+$').hasMatch(nameWithoutExt)) {
-      return true;
-    }
-    // Check if it's just numbers (timestamp only)
-    if (RegExp(r'^\d+$').hasMatch(nameWithoutExt)) {
-      return true;
-    }
-    return false;
-  }
-
-  // Check if file is temporary or invalid (should be skipped)
-  bool _isTemporaryOrInvalidFile(String filename) {
-    // Skip hidden files
-    if (filename.startsWith('.')) {
-      return true;
-    }
-    // Skip files without audio extensions
-    final validExtensions = ['.m4a', '.mp4', '.mp3', '.wav', '.amr'];
-    final hasValidExtension = validExtensions.any((ext) => filename.toLowerCase().endsWith(ext));
-    if (!hasValidExtension) {
-      return true;
-    }
-    // Skip files that are clearly temporary (e.g., .tmp, .temp)
-    if (filename.toLowerCase().contains('.tmp') || filename.toLowerCase().contains('.temp')) {
-      return true;
-    }
-    return false;
-  }
-
-  // Extract name from file path
-  String _extractNameFromPath(String path) {
-    final filename = path.split('/').last;
-    // Remove .m4a, .mp4, .amr, and .wav extensions (all supported formats)
-    String nameWithoutExtension = filename
-        .replaceAll('.m4a', '')
-        .replaceAll('.mp4', '')
-        .replaceAll('.amr', '')
-        .replaceAll('.wav', '');
-    
-    // If it's a timestamp-based name (old format), format it nicely
-    if (nameWithoutExtension.startsWith('recording_')) {
-      return nameWithoutExtension.replaceAll('recording_', 'Recording ');
-    }
-    
-    // If it has timestamp suffix (name_timestamp), remove the timestamp
-    if (nameWithoutExtension.contains('_') && 
-        RegExp(r'_\d+$').hasMatch(nameWithoutExtension)) {
-      final parts = nameWithoutExtension.split('_');
-      parts.removeLast(); // Remove timestamp
-      return parts.join('_').replaceAll('_', ' ');
-    }
-    
-    // Otherwise, just replace underscores with spaces
-    return nameWithoutExtension.replaceAll('_', ' ');
   }
 
   // Delete recording — local file first, then DELETE on server when [recordingId] exists.

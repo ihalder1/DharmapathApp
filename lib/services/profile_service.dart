@@ -128,6 +128,38 @@ class ProfileService {
     }
   }
 
+  /// GET `/auth/profile/list-recording-and-songs` — totals for profile stats row.
+  static Future<({int totalRecordings, int totalInferredSongs})?>
+      fetchRecordingAndSongTotals() async {
+    try {
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.listRecordingAndSongsEndpoint}',
+      );
+      final response = await AuthenticatedHttp.get(uri);
+      if (response.statusCode != 200) {
+        debugPrint(
+          'ProfileService.fetchRecordingAndSongTotals: HTTP ${response.statusCode}',
+        );
+        return null;
+      }
+      final decoded = json.decode(response.body) as Map<String, dynamic>;
+      final Map<String, dynamic> root =
+          decoded['data'] is Map<String, dynamic>
+              ? decoded['data'] as Map<String, dynamic>
+              : decoded;
+      final tr = root['total_recordings'];
+      final ts = root['total_inferred_songs'];
+      final recordings = tr is int
+          ? tr
+          : int.tryParse(tr?.toString() ?? '') ?? 0;
+      final songs = ts is int ? ts : int.tryParse(ts?.toString() ?? '') ?? 0;
+      return (totalRecordings: recordings, totalInferredSongs: songs);
+    } catch (e, st) {
+      debugPrint('ProfileService.fetchRecordingAndSongTotals: $e\n$st');
+      return null;
+    }
+  }
+
   // Upload profile photo
   static Future<String?> uploadProfilePhoto(File imageFile) async {
     try {

@@ -8,7 +8,6 @@ import 'package:path/path.dart' as path;
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
-import 'location_pricing_service.dart';
 
 class MantraSyncService {
   static double _parsePrice(dynamic value) {
@@ -321,9 +320,8 @@ class MantraSyncService {
         }
       }
 
-      final bool isInIndia = await LocationPricingService.isUserInIndia();
-      final String currencyCode =
-          LocationPricingService.currencyCodeForIndiaFlag(isInIndia);
+      // Temporarily always use API `price_in` + INR (see SongService.getSongs).
+      const String currencyCode = 'INR';
 
       // 4. Process each API song
       final List<Map<String, dynamic>> updatedMantras = [];
@@ -332,9 +330,7 @@ class MantraSyncService {
       for (var apiSong in apiSongs) {
         final String fileName = apiSong['file_name'] ?? '';
         final String id = apiSong['id'] ?? '';
-        final double selectedPrice = isInIndia
-            ? _parsePrice(apiSong['price_in'])
-            : _parsePrice(apiSong['price_other']);
+        final double selectedPrice = _parsePrice(apiSong['price_in']);
         final String iconUrl = apiSong['icon'] ?? '';
         final String? songLastUpdated = apiSong['last_updated'];
         
