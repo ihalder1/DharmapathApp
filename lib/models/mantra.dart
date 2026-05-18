@@ -1,3 +1,5 @@
+import '../services/location_pricing_service.dart';
+
 class Mantra {
   final String name;
   final String mantraFile;
@@ -7,6 +9,8 @@ class Mantra {
   final String currencyCode;
   final bool isInCart;
   final bool isBought; // whether user has purchased this mantra
+  /// Licenses owned for this song (from purchase API `available_count`).
+  final int purchasedCount;
 
   Mantra({
     required this.name,
@@ -17,6 +21,7 @@ class Mantra {
     this.currencyCode = 'INR',
     this.isInCart = false,
     this.isBought = false,
+    this.purchasedCount = 0,
   });
 
   static double _toDouble(dynamic value) {
@@ -24,16 +29,29 @@ class Mantra {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  factory Mantra.fromJson(Map<String, dynamic> json) {
-    // Prefer API `price_in` when present (Indian list price); else legacy `price`.
-    final dynamic rawIn = json['price_in'];
-    final bool usePriceIn =
-        rawIn != null && rawIn.toString().trim().isNotEmpty;
-    final double price =
-        usePriceIn ? _toDouble(rawIn) : _toDouble(json['price']);
-    final String currencyCode = usePriceIn
-        ? 'INR'
-        : (json['currency_code'] ?? 'INR').toString();
+  factory Mantra.fromJson(
+    Map<String, dynamic> json, {
+    PricingRegion? region,
+  }) {
+    final effectiveRegion = region ?? LocationPricingService.cachedRegion;
+    final hasRegionalPrices = ['price_in', 'price_sa', 'price_other'].any((k) {
+      final v = json[k];
+      return v != null && v.toString().trim().isNotEmpty;
+    });
+
+    late final double price;
+    late final String currencyCode;
+    if (hasRegionalPrices && effectiveRegion != null) {
+      final resolved = LocationPricingService.resolveSongPricing(
+        json,
+        effectiveRegion,
+      );
+      price = resolved.price;
+      currencyCode = resolved.currencyCode;
+    } else {
+      price = _toDouble(json['price']);
+      currencyCode = (json['currency_code'] ?? 'INR').toString();
+    }
     return Mantra(
       name: json['name'] ?? '',
       mantraFile: json['mantra_file'] ?? '',
@@ -41,19 +59,47 @@ class Mantra {
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
       price: price,
       currencyCode: currencyCode,
+      purchasedCount: (json['purchased_count'] is int)
+          ? json['purchased_count'] as int
+          : int.tryParse(json['purchased_count']?.toString() ?? '') ?? 0,
     );
   }
 
   // Factory method for API data (song_id instead of mantra_file)
-  factory Mantra.fromApiJson(Map<String, dynamic> json) {
+  factory Mantra.fromApiJson(
+    Map<String, dynamic> json, {
+    PricingRegion? region,
+  }) {
+    final effectiveRegion = region ?? LocationPricingService.cachedRegion;
+    final hasRegionalPrices = ['price_in', 'price_sa', 'price_other'].any((k) {
+      final v = json[k];
+      return v != null && v.toString().trim().isNotEmpty;
+    });
+    late final double price;
+    late final String currencyCode;
+    if (hasRegionalPrices && effectiveRegion != null) {
+      final resolved = LocationPricingService.resolveSongPricing(
+        json,
+        effectiveRegion,
+      );
+      price = resolved.price;
+      currencyCode = resolved.currencyCode;
+    } else {
+      price = _toDouble(json['price']);
+      currencyCode = (json['currency_code'] ?? 'INR').toString();
+    }
     return Mantra(
       name: json['name'] ?? '',
       mantraFile: json['song_id'] ?? json['mantra_file'] ?? '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
-      price: _toDouble(json['price']),
-      currencyCode: (json['currency_code'] ?? 'INR').toString(),
+      price: price,
+      currencyCode: currencyCode,
       isBought: json['bought'] == 'Y', // Convert "Y"/"N" to boolean
+      purchasedCount: (json['available_count'] is int)
+          ? json['available_count'] as int
+          : int.tryParse(json['available_count']?.toString() ?? '') ??
+              (json['bought'] == 'Y' ? 1 : 0),
     );
   }
 
@@ -65,6 +111,7 @@ class Mantra {
       // 'playtime': playtime, // COMMENTED OUT
       'price': price,
       'currency_code': currencyCode,
+      'purchased_count': purchasedCount,
     };
   }
 
@@ -77,6 +124,7 @@ class Mantra {
     String? currencyCode,
     bool? isInCart,
     bool? isBought,
+    int? purchasedCount,
   }) {
     return Mantra(
       name: name ?? this.name,
@@ -87,6 +135,7 @@ class Mantra {
       currencyCode: currencyCode ?? this.currencyCode,
       isInCart: isInCart ?? this.isInCart,
       isBought: isBought ?? this.isBought,
+      purchasedCount: purchasedCount ?? this.purchasedCount,
     );
   }
 

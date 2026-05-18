@@ -301,62 +301,18 @@ class _HomeScreenState extends State<HomeScreen> {
       // Fetch purchased songs and mark mantras as bought
       try {
         print('Fetching purchased songs...');
-        final purchasedSongIds = await SongService.getPurchasedSongs();
-        print('Found ${purchasedSongIds.length} purchased songs');
+        final purchasedCounts = await SongService.getPurchasedSongCounts();
+        print('Found ${purchasedCounts.length} purchased song entries');
         
-        // Update mantras to mark purchased ones
+        // Update mantras with owned counts from API
         final updatedMantras = mantras.map((mantra) {
-          // Check if this mantra is in the purchased list
-          // Match by mantraFile (which could be song_id, file_name, or mantra_file)
-          // API returns mantra_ids like "M-RAM-001.mp3"
-          final isPurchased = purchasedSongIds.any((purchasedId) {
-            // Normalize both for comparison (case-insensitive, trim whitespace, remove .mp3 extension)
-            String normalizeId(String id) {
-              return id.toLowerCase().trim().replaceAll('.mp3', '').replaceAll('.MP3', '');
-            }
-
-            final purchasedIdNormalized = normalizeId(purchasedId);
-            final mantraSongId =
-                normalizeId(SongService.extractSongId(mantra.mantraFile));
-            if (mantraSongId.isNotEmpty &&
-                mantraSongId == purchasedIdNormalized) {
-              return true;
-            }
-
-            final mantraFileNormalized = normalizeId(mantra.mantraFile);
-            
-            // Exact match (after normalization)
-            if (mantraFileNormalized == purchasedIdNormalized) {
-              print('   ✓ Exact match: ${mantra.mantraFile} == $purchasedId');
-              return true;
-            }
-            
-            // Check if mantraFile contains purchasedId or vice versa (for partial matches)
-            if (mantraFileNormalized.contains(purchasedIdNormalized) || 
-                purchasedIdNormalized.contains(mantraFileNormalized)) {
-              print('   ✓ Partial match: ${mantra.mantraFile} <-> $purchasedId');
-              return true;
-            }
-            
-            // Also check if the name matches (in case the API returns names instead of IDs)
-            final mantraName = mantra.name.toLowerCase().trim();
-            final purchasedIdLower = purchasedId.toLowerCase().trim();
-            if (mantraName == purchasedIdLower || 
-                mantraName.contains(purchasedIdLower) ||
-                purchasedIdLower.contains(mantraName)) {
-              print('   ✓ Name match: ${mantra.name} <-> $purchasedId');
-              return true;
-            }
-            
-            return false;
-          });
-          
-          if (isPurchased) {
-            print('✅ Marking as purchased: ${mantra.name} (${mantra.mantraFile})');
-            return mantra.copyWith(isBought: true);
+          final n = SongService.resolvePurchasedCount(mantra, purchasedCounts);
+          if (n > 0) {
+            print(
+                '✅ Purchased inventory: ${mantra.name} (${mantra.mantraFile}) ×$n');
+            return mantra.copyWith(isBought: true, purchasedCount: n);
           }
-          
-          return mantra;
+          return mantra.copyWith(isBought: false, purchasedCount: 0);
         }).toList();
         
         setState(() {
@@ -427,7 +383,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Helper widget to load mantra icon with failsafe (tries .png, then .jpg)
+  /// Re-fetch GET purchase/songs and merge [purchasedCount] / [isBought] into [_mantras].
+  Future<void> _refreshPurchasedSongCountsFromApi() async {
+    if (!mounted) return;
+    try {
+      final purchasedCounts = await SongService.getPurchasedSongCounts();
+      if (!mounted) return;
+      final updated = _mantras.map((mantra) {
+        final n = SongService.resolvePurchasedCount(mantra, purchasedCounts);
+        if (n > 0) {
+          return mantra.copyWith(isBought: true, purchasedCount: n);
+        }
+        return mantra.copyWith(isBought: false, purchasedCount: 0);
+      }).toList();
+      setState(() {
+        _applyMantraList(updated);
+      });
+    } catch (e) {
+      print('⚠️  Error refreshing purchased song counts: $e');
+    }
+  }
+
+  // Helper widget to load mantra icon (network URL or local assets/Media).
   Widget _buildMantraIcon({
     required String iconName,
     required double size,
@@ -435,6 +412,19 @@ class _HomeScreenState extends State<HomeScreen> {
     BoxFit fit = BoxFit.cover,
     BorderRadius? borderRadius,
   }) {
+    final trimmed = iconName.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Image.network(
+        trimmed,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => Icon(
+          Icons.music_note,
+          size: size,
+          color: iconColor,
+        ),
+      );
+    }
+
     // Try to get base name without extension
     String baseName = iconName;
     if (iconName.contains('.')) {
@@ -2095,24 +2085,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _addAllNonPurchasedToCart() async {
-    // Get all non-purchased mantras that are not already in cart
-    final nonPurchasedMantras = _filteredMantras
-        .where((mantra) => !mantra.isBought && !mantra.isInCart)
-        .toList();
-    
-    if (nonPurchasedMantras.isEmpty) {
+    final notInCart = _filteredMantras.where((m) => !m.isInCart).toList();
+
+    if (notInCart.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('All non-purchased mantras are already in cart'),
+          content: Text('All visible mantras are already in cart'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
-    
-    // Add all non-purchased mantras to cart
+
     int addedCount = 0;
-    for (var mantra in nonPurchasedMantras) {
+    for (var mantra in notInCart) {
       await MantraService.addToCart(mantra);
       // Update the mantra in our local list
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
@@ -2147,6 +2133,74 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+
+  /// Shown on mantra rows when the purchase API reports `available_count` > 0.
+  Widget _buildPurchasedCountHint(
+    Mantra mantra, {
+    double fontSize = 12,
+    bool compact = false,
+    /// When [compact] is true, grid cards center the row; set false for list/dialog rows.
+    bool centerCompactRow = true,
+  }) {
+    if (mantra.purchasedCount <= 0) return const SizedBox.shrink();
+    final n = mantra.purchasedCount;
+    final circleSize = compact ? 24.0 : 30.0;
+    final cartSize = compact ? 20.0 : 24.0;
+
+    final countBadge = Container(
+      width: circleSize,
+      height: circleSize,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.green.shade700,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.withValues(alpha: 0.35),
+            blurRadius: compact ? 4 : 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            '$n',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: compact ? 11 : 14,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.shopping_cart_rounded,
+          size: cartSize,
+          color: Colors.green.shade800,
+        ),
+        SizedBox(width: compact ? 6 : 8),
+        countBadge,
+      ],
+    );
+
+    final child =
+        (compact && centerCompactRow) ? Center(child: row) : Align(alignment: Alignment.centerLeft, child: row);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: child,
+    );
+  }
 
   Widget _buildSongSelectionStep() {
     if (_isLoadingMantras) {
@@ -2311,6 +2365,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: AppColors.primarySaffron,
                         ),
                       ),
+                      _buildPurchasedCountHint(mantra),
                     ],
                   ),
                 ),
@@ -2327,40 +2382,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 
-                // Add to Cart Button (only show if not bought)
-                if (!mantra.isBought)
-                  ElevatedButton(
-                    onPressed: () => mantra.isInCart 
-                        ? _removeFromCart(mantra) 
-                        : _addToCart(mantra),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    child: Text(
-                      mantra.isInCart ? 'Remove' : 'Add',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                
-                // Show "Purchased" indicator if bought
-                if (mantra.isBought)
-                  Container(
+                ElevatedButton(
+                  onPressed: () => mantra.isInCart 
+                      ? _removeFromCart(mantra) 
+                      : _addToCart(mantra),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.green, width: 1),
-                    ),
-                    child: const Text(
-                      'Purchased',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
                   ),
+                  child: Text(
+                    mantra.isInCart ? 'Remove' : 'Add',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
               ],
             ),
           )).toList(),
@@ -2553,6 +2587,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: AppColors.primarySaffron,
                             ),
                           ),
+                          _buildPurchasedCountHint(mantra),
                         ],
                       ),
                     ),
@@ -2569,40 +2604,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     
-                    // Add to Cart Button (only show if not bought)
-                    if (!mantra.isBought)
-                      ElevatedButton(
-                        onPressed: () => mantra.isInCart 
-                            ? _removeFromCart(mantra) 
-                            : _addToCart(mantra),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        ),
-                        child: Text(
-                          mantra.isInCart ? 'Remove' : 'Add',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    
-                    // Show "Purchased" indicator if bought
-                    if (mantra.isBought)
-                      Container(
+                    ElevatedButton(
+                      onPressed: () => mantra.isInCart 
+                          ? _removeFromCart(mantra) 
+                          : _addToCart(mantra),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.green, width: 1),
-                        ),
-                        child: const Text(
-                          'Purchased',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                       ),
+                      child: Text(
+                        mantra.isInCart ? 'Remove' : 'Add',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ],
                 ),
               )).toList(),
@@ -2691,60 +2705,38 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.primarySaffron,
                 ),
               ),
+              _buildPurchasedCountHint(mantra, fontSize: 9, compact: true),
               
               const SizedBox(height: 6),
               
-              // Add to Cart Button (only show if not bought)
-              if (!mantra.isBought)
-                SizedBox(
-                  width: double.infinity,
-                  child: isInCart
-                      ? OutlinedButton(
-                          onPressed: () => _removeFromCart(mantra),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            side: const BorderSide(color: Colors.red),
-                            minimumSize: const Size(0, 24),
-                          ),
-                          child: const Text(
-                            'Remove',
-                            style: TextStyle(fontSize: 9),
-                          ),
-                        )
-                      : ElevatedButton(
-                          onPressed: () => _addToCart(mantra),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            backgroundColor: AppColors.primarySaffron,
-                            minimumSize: const Size(0, 24),
-                          ),
-                          child: const Text(
-                            'Add to Cart',
-                            style: TextStyle(fontSize: 9),
-                          ),
+              SizedBox(
+                width: double.infinity,
+                child: isInCart
+                    ? OutlinedButton(
+                        onPressed: () => _removeFromCart(mantra),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          side: const BorderSide(color: Colors.red),
+                          minimumSize: const Size(0, 24),
                         ),
-                ),
-              
-              // Show "Purchased" indicator if bought
-              if (mantra.isBought)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.green, width: 1),
-                  ),
-                  child: const Text(
-                    'Purchased',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+                        child: const Text(
+                          'Remove',
+                          style: TextStyle(fontSize: 9),
+                        ),
+                      )
+                    : ElevatedButton(
+                        onPressed: () => _addToCart(mantra),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          backgroundColor: AppColors.primarySaffron,
+                          minimumSize: const Size(0, 24),
+                        ),
+                        child: const Text(
+                          'Add to Cart',
+                          style: TextStyle(fontSize: 9),
+                        ),
+                      ),
+              ),
             ],
           ),
         ),
@@ -4203,12 +4195,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                 }
                               });
                             },
-                            title: Text(
-                              mantra.name,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                            title: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  mantra.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                _buildPurchasedCountHint(
+                                  mantra,
+                                  compact: true,
+                                  centerCompactRow: false,
+                                ),
+                              ],
                             ),
                             // subtitle: Text(
                             //   mantra.formattedPlaytime, // COMMENTED OUT
@@ -4307,6 +4311,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (success) {
+        await _refreshPurchasedSongCountsFromApi();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

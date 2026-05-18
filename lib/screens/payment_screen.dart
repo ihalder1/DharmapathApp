@@ -113,6 +113,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (first.mantraFile.isEmpty) {
       throw Exception('Invalid mantra file name');
     }
+    final expectedCurrency = widget.currencyCode.toUpperCase();
+    for (final item in widget.cartItems) {
+      if (item.currencyCode.toUpperCase() != expectedCurrency) {
+        throw Exception(
+          'Cart contains mixed currencies. Please clear the cart and add items again.',
+        );
+      }
+    }
   }
 
   Future<({
@@ -622,14 +630,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               ),
                       ),
                       const SizedBox(height: 12),
-                      OutlinedButton(
+                      ElevatedButton(
                         onPressed: _isLoading ? null : _goToCardDetails,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primarySaffron,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isLoading
+                              ? Colors.grey
+                              : AppColors.primarySaffron,
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(
-                            color: AppColors.primarySaffron,
-                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -637,7 +645,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         child: Text(
                           'Pay with Card $_currencySymbol$_formattedAmount',
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

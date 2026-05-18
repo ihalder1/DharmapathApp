@@ -8,13 +8,9 @@ import 'package:path/path.dart' as path;
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
+import 'location_pricing_service.dart';
 
 class MantraSyncService {
-  static double _parsePrice(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   /// Unwrap metadata where `mantras` is nested like `[ [ {...}, {...} ] ]`.
   static List<Map<String, dynamic>> flattenMantrasToMaps(dynamic raw) {
     final result = <Map<String, dynamic>>[];
@@ -320,19 +316,28 @@ class MantraSyncService {
         }
       }
 
-      // Temporarily always use API `price_in` + INR (see SongService.getSongs).
-      const String currencyCode = 'INR';
+      final pricingRegion = await LocationPricingService.getPricingRegion();
+      final currencyCode =
+          LocationPricingService.currencyCodeForRegion(pricingRegion);
+      print('   Pricing region: $pricingRegion ($currencyCode)');
 
       // 4. Process each API song
       final List<Map<String, dynamic>> updatedMantras = [];
       final Set<String> apiFileNames = {};
 
       for (var apiSong in apiSongs) {
-        final String fileName = apiSong['file_name'] ?? '';
-        final String id = apiSong['id'] ?? '';
-        final double selectedPrice = _parsePrice(apiSong['price_in']);
-        final String iconUrl = apiSong['icon'] ?? '';
-        final String? songLastUpdated = apiSong['last_updated'];
+        final Map<String, dynamic> apiMap =
+            Map<String, dynamic>.from(apiSong as Map);
+        final String fileName = apiMap['file_name'] ?? '';
+        final String id = apiMap['id'] ?? '';
+        final resolved = LocationPricingService.resolveSongPricing(
+          apiMap,
+          pricingRegion,
+        );
+        final double selectedPrice = resolved.price;
+        final String iconUrl = apiMap['icon'] ?? '';
+        final String? songLastUpdated =
+            apiMap['last_updated'] ?? apiMap['created_at'];
         
         apiFileNames.add(fileName);
 
@@ -385,8 +390,11 @@ class MantraSyncService {
           if (needsUpdate) {
             // Update the record
             final updatedMantra = Map<String, dynamic>.from(localMantra);
-            updatedMantra['price'] = selectedPrice;
-            updatedMantra['currency_code'] = currencyCode;
+            LocationPricingService.applyApiPricingToMetadata(
+              updatedMantra,
+              apiMap,
+              pricingRegion,
+            );
             // Save in ISO 8601 format (UTC) for accurate comparison
             updatedMantra['last_modified'] = songLastUpdatedDate.toUtc().toIso8601String();
             
@@ -412,8 +420,11 @@ class MantraSyncService {
           } else {
             // Keep existing record but always refresh price/currency fields.
             final updatedMantra = Map<String, dynamic>.from(localMantra);
-            updatedMantra['price'] = selectedPrice;
-            updatedMantra['currency_code'] = currencyCode;
+            LocationPricingService.applyApiPricingToMetadata(
+              updatedMantra,
+              apiMap,
+              pricingRegion,
+            );
             updatedMantras.add(updatedMantra);
           }
         } else {
@@ -430,15 +441,17 @@ class MantraSyncService {
           }
 
           // Create new mantra entry
-          final newMantra = {
+          final newMantra = <String, dynamic>{
             'name': _generateNameFromId(id),
             'mantra_file': fileName,
             'icon': iconName,
-            'price': selectedPrice,
-            'currency_code': currencyCode,
-            // Save in ISO 8601 format (UTC) for accurate comparison
             'last_modified': songLastUpdatedDate.toUtc().toIso8601String(),
           };
+          LocationPricingService.applyApiPricingToMetadata(
+            newMantra,
+            apiMap,
+            pricingRegion,
+          );
 
           updatedMantras.add(newMantra);
 

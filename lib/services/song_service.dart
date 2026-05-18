@@ -4,13 +4,9 @@ import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
 import 'payment_http_log.dart';
+import 'location_pricing_service.dart';
 
 class SongService {
-  static double _parsePrice(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
   // Fetch songs from API
   static Future<List<Mantra>> getSongs() async {
     try {
@@ -51,12 +47,15 @@ class SongService {
         print('   Songs count: ${songs.length}');
         print('═══════════════════════════════════════════════════════════');
         
-        // Temporarily always use API `price_in` (Indian list price) + INR for display/checkout.
-        const String currencyCode = 'INR';
+        final pricingRegion = await LocationPricingService.getPricingRegion();
 
         // Convert API response to Mantra objects
         final List<Mantra> mantras = songs.map((song) {
-          final double selectedPrice = _parsePrice(song['price_in']);
+          final songMap = Map<String, dynamic>.from(song as Map);
+          final resolved = LocationPricingService.resolveSongPricing(
+            songMap,
+            pricingRegion,
+          );
 
           // Map API response to Mantra format
           return Mantra(
@@ -64,9 +63,10 @@ class SongService {
             mantraFile: song['file_name'] ?? '',
             icon: song['icon'] ?? '',
             // playtime: 0, // COMMENTED OUT
-            price: selectedPrice,
-            currencyCode: currencyCode,
-            isBought: false, // API doesn't provide this, will be set from local state
+            price: resolved.price,
+            currencyCode: resolved.currencyCode,
+            isBought: false,
+            purchasedCount: 0,
           );
         }).toList();
         
@@ -102,8 +102,12 @@ class SongService {
     return nameMap[id] ?? id.replaceAll('M-', '').replaceAll('-001', ' Mantra');
   }
 
-  // Fetch purchased songs from API
-  static Future<List<String>> getPurchasedSongs() async {
+  static String _normalizeSongIdKey(String id) {
+    return id.toLowerCase().trim().replaceAll('.mp3', '');
+  }
+
+  /// Per-song owned license count from GET purchase/songs (`available_count`, etc.).
+  static Future<Map<String, int>> getPurchasedSongCounts() async {
     try {
       print('═══════════════════════════════════════════════════════════');
       print('🛒 FETCHING PURCHASED SONGS FROM API');
@@ -115,7 +119,7 @@ class SongService {
       if (token == null) {
         print('❌ ERROR: No authentication token found');
         print('═══════════════════════════════════════════════════════════');
-        return [];
+        return {};
       }
 
       final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
@@ -139,10 +143,16 @@ class SongService {
         print('   Response data type: ${responseData.runtimeType}');
         print('   Response data: $responseData');
         
-        final List<String> purchasedIdentifiers = [];
+        final Map<String, int> counts = {};
+
+        void addCount(String rawId, int delta) {
+          final k = _normalizeSongIdKey(rawId);
+          if (k.isEmpty || delta <= 0) return;
+          counts[k] = (counts[k] ?? 0) + delta;
+        }
         
         // Handle different response formats:
-        // - available_songs: [{"song_id":"F-AARATI-001","available_count":2}, ...] (ignore counts)
+        // - available_songs: [{"song_id":"F-AARATI-001","available_count":2}, ...]
         // - songs_ids / song_ids on root or nested under `data`
         // - List of objects with mantra_ids (legacy)
         
@@ -156,10 +166,17 @@ class SongService {
               final row = Map<String, dynamic>.from(item);
               final songId =
                   (row['song_id'] ?? row['songId'])?.toString().trim() ?? '';
-              if (songId.isNotEmpty) {
-                purchasedIdentifiers.add(songId);
-                print('     → Purchased song_id: $songId');
+              if (songId.isEmpty) continue;
+              final dynamic ac = row['available_count'];
+              int n = 1;
+              if (ac is int) {
+                n = ac;
+              } else if (ac != null) {
+                n = int.tryParse(ac.toString()) ?? 1;
               }
+              if (n < 1) n = 1;
+              addCount(songId, n);
+              print('     → song_id: $songId  available_count: $n');
             }
           }
 
@@ -176,7 +193,7 @@ class SongService {
             for (var songId in songsIds) {
               final songIdString = songId.toString().trim();
               if (songIdString.isNotEmpty) {
-                purchasedIdentifiers.add(songIdString);
+                addCount(songIdString, 1);
                 print('     → Purchased song: $songIdString');
               }
             }
@@ -187,7 +204,7 @@ class SongService {
             for (var songId in songsIds) {
               final songIdString = songId.toString().trim();
               if (songIdString.isNotEmpty) {
-                purchasedIdentifiers.add(songIdString);
+                addCount(songIdString, 1);
                 print('     → Purchased song: $songIdString');
               }
             }
@@ -205,7 +222,7 @@ class SongService {
               for (var mantraId in mantraIds) {
                 final mantraIdString = mantraId.toString().trim();
                 if (mantraIdString.isNotEmpty) {
-                  purchasedIdentifiers.add(mantraIdString);
+                  addCount(mantraIdString, 1);
                   print('     → Purchased mantra: $mantraIdString');
                 }
               }
@@ -213,31 +230,64 @@ class SongService {
           }
         }
         
-        final unique = purchasedIdentifiers.toSet().toList();
-        print('   Total purchased song IDs (deduped): ${unique.length}');
+        print('   Total distinct purchased song IDs: ${counts.length}');
         print('═══════════════════════════════════════════════════════════');
-        return unique;
+        return counts;
       } else if (response.statusCode == 404) {
         // 404 means no songs have been purchased yet - this is a normal case, not an error
         print('ℹ️  NO PURCHASED SONGS FOUND (404)');
         print('   Status: ${response.statusCode}');
         print('   Message: No songs have been purchased yet');
         print('═══════════════════════════════════════════════════════════');
-        return [];
+        return {};
       } else {
         print('❌ FETCH PURCHASED SONGS FAILED');
         print('   Status: ${response.statusCode}');
         print('   Body: ${response.body}');
         print('═══════════════════════════════════════════════════════════');
-        return [];
+        return {};
       }
     } catch (e, stackTrace) {
       print('❌ FETCH PURCHASED SONGS ERROR:');
       print('   Error: $e');
       print('   StackTrace: $stackTrace');
       print('═══════════════════════════════════════════════════════════');
-      return [];
+      return {};
     }
+  }
+
+  /// Resolves [Mantra.mantraFile] / name to an entry in [counts] (normalized keys).
+  static int resolvePurchasedCount(Mantra mantra, Map<String, int> counts) {
+    if (counts.isEmpty) return 0;
+
+    String normalizeId(String id) {
+      return id.toLowerCase().trim().replaceAll('.mp3', '');
+    }
+
+    final mantraSongId = normalizeId(extractSongId(mantra.mantraFile));
+    if (mantraSongId.isNotEmpty && counts.containsKey(mantraSongId)) {
+      return counts[mantraSongId]!;
+    }
+
+    final mantraFileNorm = normalizeId(mantra.mantraFile);
+    if (mantraFileNorm.isNotEmpty && counts.containsKey(mantraFileNorm)) {
+      return counts[mantraFileNorm]!;
+    }
+
+    for (final e in counts.entries) {
+      final purchasedIdNormalized = e.key;
+      if (mantraFileNorm.contains(purchasedIdNormalized) ||
+          purchasedIdNormalized.contains(mantraFileNorm)) {
+        return e.value;
+      }
+      final mantraName = mantra.name.toLowerCase().trim();
+      if (mantraName == purchasedIdNormalized ||
+          mantraName.contains(purchasedIdNormalized) ||
+          purchasedIdNormalized.contains(mantraName)) {
+        return e.value;
+      }
+    }
+    return 0;
   }
 
   /// PUT purchase after payment — logged with [PaymentHttpLog] (same shape as payment APIs).

@@ -5,6 +5,7 @@ import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'mantra_sync_service.dart';
 import 'authenticated_http.dart';
+import 'location_pricing_service.dart';
 
 class MantraService {
   static List<Mantra> _mantras = [];
@@ -51,8 +52,12 @@ class MantraService {
         throw Exception('metadata mantras missing or empty');
       }
 
+      final pricingRegion = await LocationPricingService.getPricingRegion();
       _mantras = raw
-          .map((json) => Mantra.fromJson(json as Map<String, dynamic>))
+          .map((json) => Mantra.fromJson(
+                json as Map<String, dynamic>,
+                region: pricingRegion,
+              ))
           .toList();
 
       print('Successfully created ${_mantras.length} mantra objects');
@@ -67,26 +72,8 @@ class MantraService {
       print('Error loading mantras from local JSON: $e');
       print('Error type: ${e.runtimeType}');
       
-      // Return some mock data for testing
-      print('Returning mock data for testing');
-      _mantras = [
-        Mantra(
-          name: 'Test Mantra 1',
-          mantraFile: 'test1.mp3',
-          icon: 'test1.jpg',
-          // playtime: 300, // COMMENTED OUT
-          price: 299.0,
-          currencyCode: 'INR',
-        ),
-        Mantra(
-          name: 'Test Mantra 2',
-          mantraFile: 'test2.mp3',
-          icon: 'test2.jpg',
-          // playtime: 240, // COMMENTED OUT
-          price: 249.0,
-          currencyCode: 'INR',
-        ),
-      ];
+      _mantras = [];
+      _cart = [];
       return _mantras;
     }
   }
@@ -139,7 +126,11 @@ class MantraService {
     if (_mantras.isNotEmpty) {
       return _mantras.first.currencyCode;
     }
-    return 'INR';
+    final region = LocationPricingService.cachedRegion;
+    if (region != null) {
+      return LocationPricingService.currencyCodeForRegion(region);
+    }
+    return 'USD';
   }
 
   // Clear cart
@@ -183,7 +174,7 @@ class MantraService {
       _cart.clear();
       for (final name in cartNames) {
         final mantra = _mantras.firstWhere(
-          (m) => m.name == name && !m.isBought, // Only add if not purchased
+          (m) => m.name == name,
           orElse: () => Mantra(
             name: name,
             mantraFile: '',
@@ -192,8 +183,7 @@ class MantraService {
           ),
         );
         
-        // Only add if mantra exists and is not purchased
-        if (mantra.mantraFile.isNotEmpty && !mantra.isBought) {
+        if (mantra.mantraFile.isNotEmpty) {
           _cart.add(mantra.copyWith(isInCart: true));
           // Update the main list to reflect cart status
           final index = _mantras.indexWhere((item) => item.name == mantra.name);
@@ -201,7 +191,7 @@ class MantraService {
             _mantras[index] = _mantras[index].copyWith(isInCart: true);
           }
         } else {
-          print('⚠️ Skipping cart item "$name" - not found or already purchased');
+          print('⚠️ Skipping cart item "$name" - mantra not found in catalog');
         }
       }
       
@@ -253,6 +243,7 @@ class MantraService {
       _mantras[index] = _mantras[index].copyWith(
         isBought: true,
         isInCart: false,
+        purchasedCount: _mantras[index].purchasedCount + 1,
       );
       
       // Remove from cart if present
