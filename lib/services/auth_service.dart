@@ -770,6 +770,7 @@ class AuthService extends ChangeNotifier {
       // Save cart before clearing SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final cartItems = prefs.getStringList('cart_items') ?? [];
+      final cartQuantities = prefs.getString('cart_quantities');
       
       // Clear local data (but preserve cart)
       await prefs.clear();
@@ -777,6 +778,9 @@ class AuthService extends ChangeNotifier {
       // Restore cart after clearing
       if (cartItems.isNotEmpty) {
         await prefs.setStringList('cart_items', cartItems);
+        if (cartQuantities != null && cartQuantities.isNotEmpty) {
+          await prefs.setString('cart_quantities', cartQuantities);
+        }
         debugPrint('Cart preserved after logout: ${cartItems.length} items');
       }
       
@@ -793,11 +797,15 @@ class AuthService extends ChangeNotifier {
       // Even if logout fails, clear local state (but preserve cart)
       final prefs = await SharedPreferences.getInstance();
       final cartItems = prefs.getStringList('cart_items') ?? [];
+      final cartQuantities = prefs.getString('cart_quantities');
       await prefs.clear();
       
       // Restore cart after clearing
       if (cartItems.isNotEmpty) {
         await prefs.setStringList('cart_items', cartItems);
+        if (cartQuantities != null && cartQuantities.isNotEmpty) {
+          await prefs.setString('cart_quantities', cartQuantities);
+        }
         debugPrint('Cart preserved after logout error: ${cartItems.length} items');
       }
       

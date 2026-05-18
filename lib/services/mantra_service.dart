@@ -88,18 +88,67 @@ class MantraService {
     return _cart;
   }
 
-  // Add mantra to cart
+  // Add mantra to cart (quantity 1)
   static Future<void> addToCart(Mantra mantra) async {
-    if (!_cart.any((item) => item.name == mantra.name)) {
-      _cart.add(mantra.copyWith(isInCart: true));
-      // Update the main list to reflect cart status
+    final existingIndex = _cart.indexWhere((item) => item.name == mantra.name);
+    if (existingIndex != -1) {
+      _cart[existingIndex] = _cart[existingIndex].copyWith(
+        cartQuantity: _cart[existingIndex].cartQuantity + 1,
+      );
+    } else {
+      _cart.add(mantra.copyWith(isInCart: true, cartQuantity: 1));
       final index = _mantras.indexWhere((item) => item.name == mantra.name);
       if (index != -1) {
         _mantras[index] = _mantras[index].copyWith(isInCart: true);
       }
-      // Save cart to SharedPreferences
+    }
+    await _saveCart();
+  }
+
+  static Future<void> incrementCartQuantity(Mantra mantra) async {
+    final index = _cart.indexWhere((item) => item.name == mantra.name);
+    if (index == -1) {
+      await addToCart(mantra);
+      return;
+    }
+    _cart[index] = _cart[index].copyWith(
+      cartQuantity: _cart[index].cartQuantity + 1,
+    );
+    await _saveCart();
+  }
+
+  static Future<void> decrementCartQuantity(Mantra mantra) async {
+    final index = _cart.indexWhere((item) => item.name == mantra.name);
+    if (index == -1) return;
+    final qty = _cart[index].cartQuantity;
+    if (qty <= 1) {
+      await removeFromCart(mantra);
+    } else {
+      _cart[index] = _cart[index].copyWith(cartQuantity: qty - 1);
       await _saveCart();
     }
+  }
+
+  static int getCartQuantity(Mantra mantra) {
+    final index = _cart.indexWhere((item) => item.name == mantra.name);
+    if (index == -1) return 0;
+    return _cart[index].cartQuantity;
+  }
+
+  /// Total units across all cart lines (e.g. 2 mantras × 3 each = 6).
+  static int getCartTotalQuantity() {
+    return _cart.fold(0, (sum, m) => sum + m.cartQuantity);
+  }
+
+  /// One entry per purchased unit (for payment APIs and song_ids).
+  static List<Mantra> expandCartForCheckout() {
+    final expanded = <Mantra>[];
+    for (final m in _cart) {
+      for (var i = 0; i < m.cartQuantity; i++) {
+        expanded.add(m);
+      }
+    }
+    return expanded;
   }
 
   // Remove mantra from cart
@@ -116,7 +165,7 @@ class MantraService {
 
   // Get cart total
   static double getCartTotal() {
-    return _cart.fold(0.0, (total, mantra) => total + mantra.price);
+    return _cart.fold(0.0, (total, mantra) => total + mantra.lineTotal);
   }
 
   static String getCartCurrencyCode() {
@@ -148,12 +197,34 @@ class MantraService {
   static Future<void> _saveCart() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Save cart as list of mantra names (simple and reliable)
       final cartNames = _cart.map((m) => m.name).toList();
       await prefs.setStringList('cart_items', cartNames);
-      print('✅ Cart saved to SharedPreferences: ${cartNames.length} items');
+      final quantities = <String, int>{
+        for (final m in _cart) m.name: m.cartQuantity,
+      };
+      await prefs.setString('cart_quantities', jsonEncode(quantities));
+      print(
+        '✅ Cart saved: ${cartNames.length} line(s), ${getCartTotalQuantity()} unit(s)',
+      );
     } catch (e) {
       print('⚠️ Error saving cart to SharedPreferences: $e');
+    }
+  }
+
+  static Map<String, int> _readSavedQuantities(SharedPreferences prefs) {
+    final raw = prefs.getString('cart_quantities');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry(
+          key.toString(),
+          value is int ? value : int.tryParse(value.toString()) ?? 1,
+        ),
+      );
+    } catch (_) {
+      return {};
     }
   }
 
@@ -162,15 +233,15 @@ class MantraService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cartNames = prefs.getStringList('cart_items') ?? [];
-      
+      final savedQuantities = _readSavedQuantities(prefs);
+
       if (cartNames.isEmpty) {
         print('📦 No saved cart found');
         return;
       }
-      
+
       print('📦 Loading cart from SharedPreferences: ${cartNames.length} items');
-      
-      // Rebuild cart from mantra names
+
       _cart.clear();
       for (final name in cartNames) {
         final mantra = _mantras.firstWhere(
@@ -182,10 +253,12 @@ class MantraService {
             price: 0.0,
           ),
         );
-        
+
         if (mantra.mantraFile.isNotEmpty) {
-          _cart.add(mantra.copyWith(isInCart: true));
-          // Update the main list to reflect cart status
+          final qty = savedQuantities[name] ?? 1;
+          _cart.add(
+            mantra.copyWith(isInCart: true, cartQuantity: qty < 1 ? 1 : qty),
+          );
           final index = _mantras.indexWhere((item) => item.name == mantra.name);
           if (index != -1) {
             _mantras[index] = _mantras[index].copyWith(isInCart: true);
@@ -194,11 +267,10 @@ class MantraService {
           print('⚠️ Skipping cart item "$name" - mantra not found in catalog');
         }
       }
-      
-      // Save cart again to remove any invalid items
+
       await _saveCart();
-      
-      print('✅ Cart loaded: ${_cart.length} items');
+
+      print('✅ Cart loaded: ${_cart.length} line(s), ${getCartTotalQuantity()} unit(s)');
     } catch (e) {
       print('⚠️ Error loading cart from SharedPreferences: $e');
     }

@@ -391,6 +391,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return out;
   }
 
+  int get _checkoutUnitCount => widget.cartItems.length;
+
   Future<void> _handleUpiCheckout() async {
     setState(() {
       _isLoading = true;
@@ -781,7 +783,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${widget.cartItems.length} item${widget.cartItems.length != 1 ? 's' : ''}',
+            '$_checkoutUnitCount item${_checkoutUnitCount != 1 ? 's' : ''}',
             style: TextStyle(
               fontSize: 14,
               color: AppColors.textSecondary,

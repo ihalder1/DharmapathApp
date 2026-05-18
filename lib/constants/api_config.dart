@@ -1,9 +1,9 @@
 class ApiConfig {
   // Base API URL
-  static const String baseUrl = 'https://288k0b3tlh.execute-api.ap-south-1.amazonaws.com/stage';
+  static const String baseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/stage';
   
   // Payment Base URL
-  static const String paymentBaseUrl = 'https://fmnyguo7ch.execute-api.ap-south-1.amazonaws.com/stage';
+  static const String paymentBaseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/stage';
   
   // API Key
   static const String apiKey = 'UWVdx2LDoX7xK4ue7u6oOalK0qDT0YY91CAlwOoS';
@@ -29,7 +29,7 @@ class ApiConfig {
 
   /// Async mantra generation job (prod). Headers: `x-api-key` only ([createJobApiKey]); no Bearer.
   static const String createJobBaseUrl =
-      'https://ing22b4cv7.execute-api.ap-south-1.amazonaws.com/prod';
+      'https://d2d52ldvp3fzee.cloudfront.net/prod';
   static const String createJobEndpoint = '/create-job';
   static const String createJobApiKey =
       'Fh2ObHGSPm9uejJvEoBfz14e9wLDX7is4c88IbJ1';

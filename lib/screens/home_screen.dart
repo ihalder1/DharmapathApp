@@ -2084,6 +2084,94 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _incrementCartQuantity(Mantra mantra) async {
+    await MantraService.incrementCartQuantity(mantra);
+    setState(() {
+      final index = _mantras.indexWhere((m) => m.name == mantra.name);
+      if (index != -1 && !_mantras[index].isInCart) {
+        _mantras[index] = _mantras[index].copyWith(isInCart: true);
+      }
+    });
+  }
+
+  Future<void> _decrementCartQuantity(Mantra mantra) async {
+    final wasInCart = MantraService.isInCart(mantra);
+    await MantraService.decrementCartQuantity(mantra);
+    setState(() {
+      final index = _mantras.indexWhere((m) => m.name == mantra.name);
+      if (index != -1 && wasInCart && !MantraService.isInCart(mantra)) {
+        _mantras[index] = _mantras[index].copyWith(isInCart: false);
+      }
+    });
+  }
+
+  Widget _buildCartQuantityStepper(Mantra mantra, int quantity) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _decrementCartQuantity(mantra),
+              borderRadius: const BorderRadius.horizontal(
+                left: Radius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Icon(
+                  Icons.remove,
+                  size: 18,
+                  color: AppColors.errorRed,
+                ),
+              ),
+            ),
+          ),
+          Container(
+            constraints: const BoxConstraints(minWidth: 24),
+            alignment: Alignment.center,
+            child: Text(
+              '$quantity',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _incrementCartQuantity(mantra),
+              borderRadius: const BorderRadius.horizontal(
+                right: Radius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Icon(
+                  Icons.add,
+                  size: 18,
+                  color: AppColors.successGreen,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addAllNonPurchasedToCart() async {
     final notInCart = _filteredMantras.where((m) => !m.isInCart).toList();
 
@@ -3798,6 +3886,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCartStep() {
     final cartItems = MantraService.getCart();
+    final cartUnitCount = MantraService.getCartTotalQuantity();
     final total = MantraService.getCartTotal();
     final cartCurrencyCode = MantraService.getCartCurrencyCode();
     final totalAmountText = cartCurrencyCode.toUpperCase() == 'USD'
@@ -3828,7 +3917,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 1),
             Text(
-              '${cartItems.length} mantra${cartItems.length != 1 ? 's' : ''} selected',
+              cartUnitCount == 0
+                  ? 'No mantras selected'
+                  : '$cartUnitCount mantra${cartUnitCount != 1 ? 's' : ''} selected',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.white.withOpacity(0.9),
@@ -3895,6 +3986,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemCount: cartItems.length,
                         itemBuilder: (context, index) {
                           final mantra = cartItems[index];
+                          final quantity = mantra.cartQuantity;
                           return Container(
                             margin: const EdgeInsets.only(bottom: 4),
                             padding: const EdgeInsets.all(6),
@@ -3941,34 +4033,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      if (quantity > 1)
+                                        Text(
+                                          '${mantra.formattedPrice} each',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: AppColors.white.withOpacity(0.75),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
-                                
-                                // Price
+
+                                _buildCartQuantityStepper(mantra, quantity),
+
+                                const SizedBox(width: 6),
+
+                                // Line total
                                 Text(
-                                  mantra.formattedPrice,
+                                  mantra.formattedLineTotal(),
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.white,
-                                  ),
-                                ),
-                                
-                                const SizedBox(width: 4),
-                                
-                                // Remove Button
-                                IconButton(
-                                  onPressed: () => _removeFromCart(mantra),
-                                  icon: const Icon(
-                                    Icons.remove_circle_outline,
-                                    color: Colors.red,
-                                    size: 18,
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 28,
-                                    minHeight: 28,
                                   ),
                                 ),
                               ],
@@ -4022,7 +4109,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               builder: (context) => PaymentScreen(
                                 totalAmount: total,
                                 currencyCode: cartCurrencyCode,
-                                cartItems: List<Mantra>.from(cartItems),
+                                cartItems: MantraService.expandCartForCheckout(),
                               ),
                             ),
                           );

@@ -11,6 +11,8 @@ class Mantra {
   final bool isBought; // whether user has purchased this mantra
   /// Licenses owned for this song (from purchase API `available_count`).
   final int purchasedCount;
+  /// How many units of this mantra are in the cart (≥ 1 when [isInCart]).
+  final int cartQuantity;
 
   Mantra({
     required this.name,
@@ -22,6 +24,7 @@ class Mantra {
     this.isInCart = false,
     this.isBought = false,
     this.purchasedCount = 0,
+    this.cartQuantity = 1,
   });
 
   static double _toDouble(dynamic value) {
@@ -125,6 +128,7 @@ class Mantra {
     bool? isInCart,
     bool? isBought,
     int? purchasedCount,
+    int? cartQuantity,
   }) {
     return Mantra(
       name: name ?? this.name,
@@ -136,7 +140,18 @@ class Mantra {
       isInCart: isInCart ?? this.isInCart,
       isBought: isBought ?? this.isBought,
       purchasedCount: purchasedCount ?? this.purchasedCount,
+      cartQuantity: cartQuantity ?? this.cartQuantity,
     );
+  }
+
+  double get lineTotal => price * cartQuantity;
+
+  String formattedLineTotal() {
+    if (currencyCode.toUpperCase() == 'USD') {
+      return '${currencySymbolFor(currencyCode)}${lineTotal.toStringAsFixed(2)}';
+    }
+    final whole = lineTotal % 1 == 0;
+    return '${currencySymbolFor(currencyCode)}${whole ? lineTotal.toInt() : lineTotal.toStringAsFixed(2)}';
   }
 
   // Helper method to format playtime as MM:SS - COMMENTED OUT
