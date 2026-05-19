@@ -1066,9 +1066,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     _buildHeader(),
                     _buildPersonalInfoCard(),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     _buildStepIndicator(),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                   ],
                 ),
               ),
@@ -1109,16 +1109,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
       child: Column(
         children: [
-          const SizedBox(height: 8),
-          
           // User Info Row
           Consumer<AuthService>(
             builder: (context, authService, child) {
               final user = authService.currentUser;
               return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // User Avatar with Notification Badge
                   GestureDetector(
@@ -1136,7 +1135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       clipBehavior: Clip.none,
                       children: [
                         CircleAvatar(
-                          radius: 25,
+                          radius: 20,
                           backgroundColor: AppColors.primarySaffron,
                           backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
                               ? NetworkImage(user!.photoUrl!) 
@@ -1145,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? const Icon(
                                   Icons.person,
                                   color: AppColors.white,
-                                  size: 30,
+                                  size: 24,
                                 )
                               : null,
                         ),
@@ -1181,40 +1180,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   
                   const SizedBox(width: 12),
                   
-                  // User details, logout, and Contact Us
+                  // Welcome, email, Contact Us
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Welcome, ${_personalInfo['fullName']}',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            Transform.translate(
-                              offset: const Offset(0, -6),
-                              child: IconButton(
-                                onPressed: () => _showLogoutDialog(context),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 36,
-                                  minHeight: 36,
-                                ),
-                                icon: const Icon(
-                                  Icons.logout,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ],
+                        Text(
+                          'Welcome, ${_personalInfo['fullName']}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                            height: 1.2,
+                          ),
                         ),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1225,6 +1204,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
+                                  height: 1.2,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1244,6 +1224,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   fontSize: 12,
                                   color: AppColors.primarySaffron,
                                   fontWeight: FontWeight.w600,
+                                  height: 1.2,
                                 ),
                               ),
                             ),
@@ -1252,29 +1233,44 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    onPressed: () => _showLogoutDialog(context),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    icon: const Icon(
+                      Icons.logout,
+                      color: AppColors.textSecondary,
+                      size: 22,
+                    ),
+                  ),
                 ],
               );
             },
           ),
           
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
           
           // App title
           const Text(
             'MantraSutra - मन्त्रसूत्र',
             style: TextStyle(
-              fontSize: 32,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
+              height: 1.15,
             ),
           ),
-          const SizedBox(height: 8),
           Text(
             'The Science of Sacred Sounds',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 13,
               color: AppColors.textSecondary,
               fontStyle: FontStyle.italic,
+              height: 1.2,
             ),
           ),
         ],
@@ -1310,8 +1306,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 34,
+                    height: 34,
                     decoration: BoxDecoration(
                       color: isActive ? AppColors.primarySaffron : AppColors.lightSaffron,
                       shape: BoxShape.circle,
@@ -1323,14 +1319,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Icon(
                       step['icon'],
                       color: isActive ? AppColors.white : AppColors.textSecondary,
-                      size: 20,
+                      size: 17,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Text(
                     step['title'],
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
                     ),
@@ -1348,7 +1344,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildPersonalInfoCard() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1363,17 +1359,10 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Profile Picture Section - Compact
-          _buildProfilePictureSection(),
-          
+          Center(child: _buildProfilePictureSection()),
           const SizedBox(height: 4),
-          
-          // Nested Personal Info Card - Compact
           _buildNestedPersonalInfoCard(),
-          
           const SizedBox(height: 4),
-          
-          // Statistics Row
           _buildStatisticsRow(),
         ],
       ),
@@ -1429,8 +1418,8 @@ class _HomeScreenState extends State<HomeScreen> {
           bottom: 0,
           right: 0,
           child: Container(
-            width: 24,
-            height: 24,
+            width: 22,
+            height: 22,
             decoration: BoxDecoration(
               color: AppColors.primarySaffron,
               shape: BoxShape.circle,
@@ -1442,7 +1431,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Icon(
               Icons.camera_alt,
               color: AppColors.white,
-              size: 12,
+              size: 11,
             ),
           ),
         ),
@@ -1474,12 +1463,12 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           value,
           style: const TextStyle(
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.bold,
             color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         Text(
           label,
           style: TextStyle(
@@ -1507,7 +1496,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         // Row 2: Steps 3 and 4
         Row(
           children: [
@@ -1526,7 +1515,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStepBox(int number, String title, String description) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: AppColors.primarySaffron,
         borderRadius: BorderRadius.circular(10),
@@ -1540,51 +1529,56 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Number badge
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.3),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withOpacity(0.5),
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                '$number',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.3),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$number',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          // Title
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-              letterSpacing: 0.2,
-            ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                    letterSpacing: 0.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
-          // Description
           Text(
             description,
             style: TextStyle(
               fontSize: 10,
               color: Colors.black.withOpacity(0.8),
-              height: 1.3,
+              height: 1.25,
             ),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -2249,11 +2243,13 @@ class _HomeScreenState extends State<HomeScreen> {
     bool compact = false,
     /// When [compact] is true, grid cards center the row; set false for list/dialog rows.
     bool centerCompactRow = true,
+    /// Inline with price/actions row — no extra top padding.
+    bool inline = false,
   }) {
     if (mantra.purchasedCount <= 0) return const SizedBox.shrink();
     final n = mantra.purchasedCount;
-    final circleSize = compact ? 24.0 : 30.0;
-    final cartSize = compact ? 20.0 : 24.0;
+    final circleSize = inline ? 20.0 : (compact ? 24.0 : 30.0);
+    final cartSize = inline ? 16.0 : (compact ? 20.0 : 24.0);
 
     final countBadge = Container(
       width: circleSize,
@@ -2302,11 +2298,125 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     final child =
-        (compact && centerCompactRow) ? Center(child: row) : Align(alignment: Alignment.centerLeft, child: row);
+        (compact && centerCompactRow && !inline)
+            ? Center(child: row)
+            : Align(alignment: Alignment.centerLeft, child: row);
+
+    if (inline) return child;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: child,
+    );
+  }
+
+  Widget _buildMantraListTile(Mantra mantra) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primarySaffron.withOpacity(0.1),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _buildMantraIcon(
+                iconName: mantra.icon,
+                size: 26,
+                iconColor: AppColors.primarySaffron,
+                fit: BoxFit.cover,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  mantra.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      mantra.formattedPrice,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primarySaffron,
+                        height: 1.2,
+                      ),
+                    ),
+                    if (mantra.purchasedCount > 0) const SizedBox(width: 6),
+                    _buildPurchasedCountHint(
+                      mantra,
+                      compact: true,
+                      inline: true,
+                      centerCompactRow: false,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => _playMantra(mantra),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 30,
+                        minHeight: 30,
+                      ),
+                      icon: Icon(
+                        _currentlyPlaying == mantra && _isPlaying
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_filled,
+                        color: AppColors.primarySaffron,
+                        size: 26,
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => mantra.isInCart
+                          ? _removeFromCart(mantra)
+                          : _addToCart(mantra),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: mantra.isInCart
+                            ? Colors.red
+                            : AppColors.primarySaffron,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        mantra.isInCart ? 'Remove' : 'Add',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2317,199 +2427,113 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
-                child: Text(
-                  'Choose Your Mantras',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Choose Your Mantras',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              IconButton(
-                onPressed: () {
-                  setState(() {
-                    _isMantraSelectionExpanded = true;
-                  });
-                },
-                icon: const Icon(
-                  Icons.fullscreen,
-                  color: AppColors.primarySaffron,
-                ),
-                tooltip: 'Expand to full screen',
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          
-          // Search Bar
-          Container(
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Search mantras...',
-                prefixIcon: Icon(Icons.search, size: 16),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                isDense: true,
-              ),
-              style: const TextStyle(fontSize: 13),
-            ),
-          ),
-          const SizedBox(height: 6),
-          
-          // Purchase All Button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _addAllNonPurchasedToCart,
-              icon: const Icon(Icons.shopping_cart, size: 16),
-              label: const Text(
-                'Purchase All',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primarySaffron,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                minimumSize: const Size(0, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          
-          // Mantra count info
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.blue,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          // Mantras List
-          ..._filteredMantras.map((mantra) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                // Icon
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: AppColors.primarySaffron.withOpacity(0.1),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _isMantraSelectionExpanded = true;
+                      });
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    icon: const Icon(
+                      Icons.fullscreen,
+                      color: AppColors.primarySaffron,
+                      size: 22,
+                    ),
+                    tooltip: 'Expand to full screen',
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: _buildMantraIcon(
-                      iconName: mantra.icon,
-                      size: 30,
-                      iconColor: AppColors.primarySaffron,
-                      fit: BoxFit.cover,
+                ],
+              ),
+              Container(
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Search mantras...',
+                    prefixIcon: Icon(Icons.search, size: 15),
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                    isDense: true,
+                  ),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _addAllNonPurchasedToCart,
+                  icon: const Icon(Icons.shopping_cart, size: 15),
+                  label: const Text(
+                    'Purchase All',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primarySaffron,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    minimumSize: const Size(0, 32),
+                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
-                
-                // Details
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        mantra.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // Text(
-                      //   mantra.formattedPlaytime, // COMMENTED OUT
-                      //   style: const TextStyle(
-                      //     fontSize: 12,
-                      //     color: AppColors.textSecondary,
-                      //   ),
-                      // ),
-                      // const SizedBox(height: 4),
-                      Text(
-                        mantra.formattedPrice,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primarySaffron,
-                        ),
-                      ),
-                      _buildPurchasedCountHint(mantra),
-                    ],
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.blue,
                   ),
                 ),
-                
-                // Play Button
-                IconButton(
-                  onPressed: () => _playMantra(mantra),
-                  icon: Icon(
-                    _currentlyPlaying == mantra && _isPlaying 
-                        ? Icons.pause_circle_filled 
-                        : Icons.play_circle_filled,
-                    color: AppColors.primarySaffron,
-                    size: 32,
-                  ),
-                ),
-                
-                ElevatedButton(
-                  onPressed: () => mantra.isInCart 
-                      ? _removeFromCart(mantra) 
-                      : _addToCart(mantra),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  child: Text(
-                    mantra.isInCart ? 'Remove' : 'Add',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
-          
-          const SizedBox(height: 20),
-        ],
-      ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            itemCount: _filteredMantras.length,
+            itemBuilder: (context, index) =>
+                _buildMantraListTile(_filteredMantras[index]),
+          ),
+        ),
+      ],
     );
   }
 
