@@ -47,11 +47,17 @@ class AuthService extends ChangeNotifier {
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
+  Future<bool>? _refreshInFlight;
+  bool _lastRefreshWasAuthRejection = false;
+
+  static const Duration _accessRefreshLeeway = Duration(minutes: 2);
 
   // Getters
   User? get currentUser => _currentUser;
   String? get accessToken => _accessToken;
   bool get isLoggedIn => _currentUser != null && _accessToken != null;
+  /// True when `/auth/refresh` returned 401/403 — safe to clear session.
+  bool get shouldLogoutAfterRefreshFailure => _lastRefreshWasAuthRejection;
 
   // Initialize auth service
   Future<void> initialize() async {
@@ -506,29 +512,142 @@ class AuthService extends ChangeNotifier {
 
   bool _statusUnauthorized(int code) => code == 401 || code == 403;
 
-  /// Exchange [refresh_token] for a new access token (same path as `/auth/refresh`).
-  /// Returns false if refresh token is missing or server rejects — caller may [logout].
+  void _syncTokenExpiryFromJwtIfNeeded() {
+    if (_tokenExpiry != null || _accessToken == null || _accessToken!.isEmpty) {
+      return;
+    }
+    final claims = decodeJwtPayload(_accessToken!);
+    final exp = claims?['exp'];
+    if (exp == null) return;
+    final expSec = exp is int ? exp : int.tryParse(exp.toString());
+    if (expSec == null) return;
+    _tokenExpiry = DateTime.fromMillisecondsSinceEpoch(expSec * 1000);
+  }
+
+  void _updateAccessTokenExpiry({int? expiresInSeconds}) {
+    if (expiresInSeconds != null && expiresInSeconds > 0) {
+      _tokenExpiry = DateTime.now().add(Duration(seconds: expiresInSeconds));
+      return;
+    }
+    _tokenExpiry = null;
+    _syncTokenExpiryFromJwtIfNeeded();
+    _tokenExpiry ??= DateTime.now().add(const Duration(minutes: 15));
+  }
+
+  bool _isAccessTokenNearExpiry() {
+    _syncTokenExpiryFromJwtIfNeeded();
+    if (_tokenExpiry == null) return true;
+    return DateTime.now().isAfter(_tokenExpiry!.subtract(_accessRefreshLeeway));
+  }
+
+  bool _applyTokensFromAuthResponse(Map<String, dynamic> root) {
+    Map<String, dynamic> payload = root;
+    if (root['data'] is Map<String, dynamic>) {
+      payload = Map<String, dynamic>.from(root['data'] as Map);
+    }
+    if (root['tokens'] is Map) {
+      payload = Map<String, dynamic>.from(root['tokens'] as Map);
+    }
+
+    final newAccess = payload['access_token'] ??
+        payload['accessToken'] ??
+        root['access_token'] ??
+        root['accessToken'];
+    final newRefresh = payload['refresh_token'] ??
+        payload['refreshToken'] ??
+        root['refresh_token'] ??
+        root['refreshToken'];
+
+    if (newAccess == null || newAccess.toString().isEmpty) {
+      return false;
+    }
+
+    _accessToken = newAccess.toString();
+    if (newRefresh != null && newRefresh.toString().isNotEmpty) {
+      _refreshToken = newRefresh.toString();
+    }
+
+    final expRaw =
+        payload['expires_in'] ?? payload['expiresIn'] ?? root['expires_in'] ?? root['expiresIn'];
+    if (expRaw != null) {
+      final sec =
+          expRaw is int ? expRaw : int.tryParse(expRaw.toString()) ?? 0;
+      _updateAccessTokenExpiry(expiresInSeconds: sec > 0 ? sec : null);
+    } else {
+      _updateAccessTokenExpiry();
+    }
+    return true;
+  }
+
+  /// Refreshes the access token when it is near expiry. Keeps the user signed in
+  /// across multi-day sessions as long as the refresh token remains valid.
+  Future<bool> ensureValidAccessToken() async {
+    if (_accessToken == null || _accessToken!.isEmpty) return false;
+    if (_refreshToken == null || _refreshToken!.isEmpty) {
+      return !_isAccessTokenNearExpiry();
+    }
+    if (!_isAccessTokenNearExpiry()) return true;
+    return refreshAccessToken();
+  }
+
+  /// POST `/auth/refresh` with `Authorization: Bearer <refresh_token>` (Postman).
   Future<bool> refreshAccessToken() async {
     if (_refreshToken == null || _refreshToken!.isEmpty) {
       debugPrint('refreshAccessToken: no refresh token stored');
       return false;
     }
+    if (_refreshInFlight != null) return _refreshInFlight!;
 
+    final future = _performRefreshAccessToken();
+    _refreshInFlight = future;
+    try {
+      return await future;
+    } finally {
+      _refreshInFlight = null;
+    }
+  }
+
+  Future<bool> _performRefreshAccessToken() async {
+    _lastRefreshWasAuthRejection = false;
     final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.refreshTokenEndpoint}');
-    final headers = ApiConfig.getHeaders();
 
-    Future<http.Response> postBody(String jsonBody) =>
-        http.post(url, headers: headers, body: jsonBody).timeout(const Duration(seconds: 30));
+    Future<http.Response> post(
+      Map<String, String> headers, [
+      String? body,
+    ]) =>
+        http.post(url, headers: headers, body: body).timeout(const Duration(seconds: 30));
 
     try {
-      http.Response response =
-          await postBody(json.encode({'refresh_token': _refreshToken}));
+      // Primary: Bearer refresh_token (matches Postman collection).
+      var response = await post(
+        ApiConfig.getHeaders(accessToken: _refreshToken),
+        json.encode({}),
+      );
+
       if (!(response.statusCode == 200 || response.statusCode == 201)) {
-        response =
-            await postBody(json.encode({'refreshToken': _refreshToken}));
+        response = await post(
+          ApiConfig.getHeaders(accessToken: _refreshToken),
+        );
+      }
+
+      // Fallbacks for older API shapes.
+      if (!(response.statusCode == 200 || response.statusCode == 201)) {
+        response = await post(
+          ApiConfig.getHeaders(),
+          json.encode({'refresh_token': _refreshToken}),
+        );
+      }
+      if (!(response.statusCode == 200 || response.statusCode == 201)) {
+        response = await post(
+          ApiConfig.getHeaders(),
+          json.encode({'refreshToken': _refreshToken}),
+        );
       }
 
       if (!(response.statusCode == 200 || response.statusCode == 201)) {
+        if (_statusUnauthorized(response.statusCode)) {
+          _lastRefreshWasAuthRejection = true;
+        }
         debugPrint(
           'refreshAccessToken failed: ${response.statusCode} ${response.body}',
         );
@@ -536,41 +655,11 @@ class AuthService extends ChangeNotifier {
       }
 
       final decoded = json.decode(response.body);
-      Map<String, dynamic> root =
+      final root =
           decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
-      Map<String, dynamic> payload = root;
-      if (root['data'] is Map<String, dynamic>) {
-        payload = Map<String, dynamic>.from(root['data'] as Map);
-      }
-
-      final newAccess = payload['access_token'] ??
-          payload['accessToken'] ??
-          root['access_token'] ??
-          root['accessToken'];
-      final newRefresh = payload['refresh_token'] ??
-          payload['refreshToken'] ??
-          root['refresh_token'] ??
-          root['refreshToken'];
-
-      if (newAccess == null || newAccess.toString().isEmpty) {
+      if (!_applyTokensFromAuthResponse(root)) {
         debugPrint('refreshAccessToken: response had no access token');
         return false;
-      }
-
-      _accessToken = newAccess.toString();
-      if (newRefresh != null && newRefresh.toString().isNotEmpty) {
-        _refreshToken = newRefresh.toString();
-      }
-
-      final expRaw =
-          payload['expires_in'] ?? payload['expiresIn'] ?? root['expires_in'];
-      if (expRaw != null) {
-        final sec = expRaw is int
-            ? expRaw
-            : int.tryParse(expRaw.toString()) ?? 3600;
-        _tokenExpiry = DateTime.now().add(Duration(seconds: sec));
-      } else {
-        _tokenExpiry = DateTime.now().add(const Duration(days: 30));
       }
 
       await _saveSession();
@@ -584,13 +673,19 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _refreshTokenIfNeeded() async {
-    if (_refreshToken == null || _tokenExpiry == null) return;
+    if (_accessToken == null || _accessToken!.isEmpty) return;
 
-    if (DateTime.now().isAfter(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
-      final ok = await refreshAccessToken();
-      if (!ok) {
+    if (_refreshToken == null || _refreshToken!.isEmpty) {
+      if (_isAccessTokenNearExpiry()) {
+        debugPrint('_refreshTokenIfNeeded: access token expired, no refresh token');
         await logout();
       }
+      return;
+    }
+
+    final ok = await ensureValidAccessToken();
+    if (!ok && shouldLogoutAfterRefreshFailure) {
+      await logout();
     }
   }
 
@@ -598,13 +693,16 @@ class AuthService extends ChangeNotifier {
     Uri url, {
     Duration timeout = const Duration(seconds: 30),
   }) async {
+    await ensureValidAccessToken();
     var headers = ApiConfig.getHeaders(accessToken: _accessToken);
     var resp = await http.get(url, headers: headers).timeout(timeout);
     if (!_statusUnauthorized(resp.statusCode)) return resp;
 
     final ok = await refreshAccessToken();
     if (!ok) {
-      await logout();
+      if (shouldLogoutAfterRefreshFailure) {
+        await logout();
+      }
       return resp;
     }
 
@@ -703,6 +801,11 @@ class AuthService extends ChangeNotifier {
 
   // Save session to local storage
   Future<void> _saveSession() async {
+    if (_refreshToken == null || _refreshToken!.isEmpty) {
+      debugPrint(
+        'WARNING: No refresh token stored — user may be logged out when the access token expires (~15 min)',
+      );
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', _currentUser?.id ?? '');
     await prefs.setString('user_name', _currentUser?.name ?? '');
@@ -738,6 +841,7 @@ class AuthService extends ChangeNotifier {
         if (expiryString != null && expiryString.isNotEmpty) {
           _tokenExpiry = DateTime.parse(expiryString);
         }
+        _syncTokenExpiryFromJwtIfNeeded();
       }
     } catch (e) {
       debugPrint('Load session error: $e');

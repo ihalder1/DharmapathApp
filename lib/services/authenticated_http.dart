@@ -10,16 +10,23 @@ class AuthenticatedHttp {
 
   static bool _isUnauthorized(int code) => code == 401 || code == 403;
 
+  static Future<void> _logoutIfRefreshRejected() async {
+    if (_auth.shouldLogoutAfterRefreshFailure) {
+      await _auth.logout();
+    }
+  }
+
   static Future<http.Response> _withMainAuth(
     Future<http.Response> Function(Map<String, String> h) run,
   ) async {
+    await _auth.ensureValidAccessToken();
     var h = ApiConfig.getHeaders(accessToken: _auth.accessToken);
     var resp = await run(h);
     if (!_isUnauthorized(resp.statusCode)) return resp;
 
     final refreshed = await _auth.refreshAccessToken();
     if (!refreshed) {
-      await _auth.logout();
+      await _logoutIfRefreshRejected();
       return resp;
     }
 
@@ -30,13 +37,14 @@ class AuthenticatedHttp {
   static Future<http.Response> _withPaymentAuth(
     Future<http.Response> Function(Map<String, String> h) run,
   ) async {
+    await _auth.ensureValidAccessToken();
     var h = ApiConfig.getPaymentHeaders(accessToken: _auth.accessToken);
     var resp = await run(h);
     if (!_isUnauthorized(resp.statusCode)) return resp;
 
     final refreshed = await _auth.refreshAccessToken();
     if (!refreshed) {
-      await _auth.logout();
+      await _logoutIfRefreshRejected();
       return resp;
     }
 
@@ -122,7 +130,7 @@ class AuthenticatedHttp {
 
     final refreshed = await _auth.refreshAccessToken();
     if (!refreshed) {
-      await _auth.logout();
+      await _logoutIfRefreshRejected();
       return resp;
     }
 
