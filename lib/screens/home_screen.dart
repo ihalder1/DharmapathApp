@@ -98,6 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
       'description': 'Choose your Mantras'
     },
     {
+      'title': 'Cart',
+      'icon': Icons.shopping_cart_outlined,
+      'description': 'Complete your purchase'
+    },
+    {
       'title': 'Record Voice',
       'icon': Icons.mic_outlined,
       'description': 'Record your voice'
@@ -106,11 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
       'title': 'My Mantra',
       'icon': Icons.person_outline,
       'description': 'View your mantras'
-    },
-    {
-      'title': 'Cart',
-      'icon': Icons.shopping_cart_outlined,
-      'description': 'Complete your purchase'
     },
   ];
 
@@ -1017,10 +1017,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Whenever user switches to "Record your voice" (step 1), refresh list from GET .../voice/recordings
-    if (_currentStep == 1) {
-      if (_prevStepForVoiceRefresh != 1) {
-        _prevStepForVoiceRefresh = 1;
+    // Whenever user switches to "Record your voice" (step 2), refresh list from GET .../voice/recordings
+    if (_currentStep == 2) {
+      if (_prevStepForVoiceRefresh != 2) {
+        _prevStepForVoiceRefresh = 2;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           await _voiceService.processPendingUploadsInBackground();
           await _loadRecordings();
@@ -1047,7 +1047,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     
     // If we're on the voice recording step, return it as a full screen
-    if (_currentStep == 1) {
+    if (_currentStep == 2) {
       return _buildVoiceRecordingStep();
     }
     
@@ -1181,36 +1181,75 @@ class _HomeScreenState extends State<HomeScreen> {
                   
                   const SizedBox(width: 12),
                   
-                  // User Details
+                  // User details, logout, and Contact Us
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Welcome, ${_personalInfo['fullName']}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Welcome, ${_personalInfo['fullName']}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            Transform.translate(
+                              offset: const Offset(0, -6),
+                              child: IconButton(
+                                onPressed: () => _showLogoutDialog(context),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 36,
+                                  minHeight: 36,
+                                ),
+                                icon: const Icon(
+                                  Icons.logout,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          _personalInfo['email'],
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _personalInfo['email'],
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const ContactUsScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text(
+                                'Contact Us',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.primarySaffron,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ),
-                  
-                  // Logout Button
-                  IconButton(
-                    onPressed: () => _showLogoutDialog(context),
-                    icon: const Icon(
-                      Icons.logout,
-                      color: AppColors.textSecondary,
                     ),
                   ),
                 ],
@@ -1238,25 +1277,6 @@ class _HomeScreenState extends State<HomeScreen> {
               fontStyle: FontStyle.italic,
             ),
           ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ContactUsScreen(),
-                ),
-              );
-            },
-            child: Text(
-              'Contact Us',
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.primarySaffron,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1280,7 +1300,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 setState(() {
                   _currentStep = index;
                 });
-                if (index == 2) {
+                if (index == 3) {
                   _loadInferredSongs();
                 }
                 if (index == 0 && prevStep != 0) {
@@ -2211,11 +2231,11 @@ class _HomeScreenState extends State<HomeScreen> {
       case 0:
         return _buildSongSelectionStep();
       case 1:
-        return _buildVoiceRecordingStep();
-      case 2:
-        return _buildMyMantraStep();
-      case 3:
         return _buildCartStep();
+      case 2:
+        return _buildVoiceRecordingStep();
+      case 3:
+        return _buildMyMantraStep();
       default:
         return _buildSongSelectionStep();
     }
