@@ -16,6 +16,9 @@ class ApiConfig {
   static const String facebookSignInEndpoint = '/auth/facebook-signin';
   static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndpoint = '/auth/profile';
+  static const String notificationsEndpoint = '/auth/profile/notifications';
+  static String notificationByIdEndpoint(String notificationId) =>
+      '/auth/profile/notifications/$notificationId';
   static const String listRecordingAndSongsEndpoint =
       '/auth/profile/list-recording-and-songs';
   static const String logoutEndpoint = '/auth/logout';

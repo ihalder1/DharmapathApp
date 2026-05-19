@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -43,11 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Notifications
   int _unreadNotificationCount = 0;
   
-  // Profile Image
-  File? _profileImage;
   String? _photoUrl;
-  final ImagePicker _picker = ImagePicker();
-  
+
   // Mantra System
   List<Mantra> _mantras = [];
   List<Mantra> _filteredMantras = [];
@@ -486,10 +482,11 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
-  // Load unread notification count
+  // Load unread notification count (GET /auth/profile/notifications).
   Future<void> _loadUnreadNotificationCount() async {
     try {
-      final count = await NotificationService.getUnreadCount();
+      await NotificationService.refresh();
+      final count = NotificationService.unreadCount;
       if (mounted) {
         setState(() {
           _unreadNotificationCount = count;
@@ -1128,8 +1125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           builder: (context) => const NotificationScreen(),
                         ),
                       );
-                      // Reload unread count when returning from notification screen
-                      _loadUnreadNotificationCount();
+                      if (mounted) _loadUnreadNotificationCount();
                     },
                     child: Stack(
                       clipBehavior: Clip.none,
@@ -1370,72 +1366,39 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfilePictureSection() {
-    return Stack(
-      children: [
-        // Profile Picture - Smaller
-        GestureDetector(
-          onTap: _pickProfileImage,
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: AppColors.primarySaffron,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: CircleAvatar(
+        radius: 24,
+        backgroundColor: AppColors.lightSaffron,
+        backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
+            ? NetworkImage(_photoUrl!)
+            : null,
+        child: (_photoUrl == null || _photoUrl!.isEmpty)
+            ? Icon(
+                _personalInfo['gender'] == 'Female'
+                    ? Icons.person_2
+                    : Icons.person,
+                size: 24,
                 color: AppColors.primarySaffron,
-                width: 1.5,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-          child: CircleAvatar(
-            radius: 24,
-            backgroundColor: AppColors.lightSaffron,
-            backgroundImage: _profileImage != null 
-                ? FileImage(_profileImage!) 
-                : (_photoUrl != null && _photoUrl!.isNotEmpty)
-                    ? NetworkImage(_photoUrl!)
-                    : null,
-            child: _profileImage == null && (_photoUrl == null || _photoUrl!.isEmpty)
-                ? Icon(
-                    _personalInfo['gender'] == 'Female' 
-                        ? Icons.person_2 
-                        : Icons.person,
-                    size: 24,
-                    color: AppColors.primarySaffron,
-                  )
-                : null,
-          ),
-          ),
-        ),
-        
-        // Edit Icon
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: AppColors.primarySaffron,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.white,
-                width: 2,
-              ),
-            ),
-            child: const Icon(
-              Icons.camera_alt,
-              color: AppColors.white,
-              size: 11,
-            ),
-          ),
-        ),
-      ],
+              )
+            : null,
+      ),
     );
   }
 
@@ -1738,70 +1701,6 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
-  }
-
-
-  Future<void> _pickProfileImage() async {
-    try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 512,
-        maxHeight: 512,
-        imageQuality: 80,
-      );
-      
-      if (image != null) {
-        setState(() {
-          _isLoading = true;
-        });
-
-        final imageFile = File(image.path);
-        
-        // Upload to backend
-        final photoUrl = await ProfileService.uploadProfilePhoto(imageFile);
-        
-        if (photoUrl != null) {
-          setState(() {
-            _profileImage = imageFile;
-            _photoUrl = photoUrl;
-          });
-          
-          // Show success message
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Profile photo updated successfully'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        } else {
-          // Show error message
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to upload photo'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      print('Error picking image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking image: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   Future<void> _loadInferredSongs() async {
@@ -2460,7 +2359,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     icon: const Icon(
                       Icons.fullscreen,
-                      color: AppColors.primarySaffron,
+                      color: Colors.black,
                       size: 22,
                     ),
                     tooltip: 'Expand to full screen',
@@ -2993,7 +2892,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
                       style: const TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 14.5,
                         color: Colors.black,
                         height: 1.5,
                       ),
@@ -4164,6 +4063,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               _currentStep = 0; // Go to Select Mantra screen
                             });
                             await _loadMantras();
+                            await _loadUnreadNotificationCount();
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -4443,7 +4343,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (success) {
         await _refreshPurchasedSongCountsFromApi();
+        await NotificationService.refresh();
         if (mounted) {
+          _loadUnreadNotificationCount();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('The Mantra is getting generated and you will be notified shortly'),

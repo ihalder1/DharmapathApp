@@ -1,69 +1,73 @@
 class NotificationItem {
   final String id;
-  final String title;
   final String message;
   final DateTime createdAt;
   final bool isRead;
-  final String? type; // e.g., 'mantra_generated', 'purchase', 'system'
-  final Map<String, dynamic>? data; // Additional data
+  final String? type;
+  final String? status;
 
   NotificationItem({
     required this.id,
-    required this.title,
     required this.message,
     required this.createdAt,
     this.isRead = false,
     this.type,
-    this.data,
+    this.status,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
     return NotificationItem(
-      id: json['id'] ?? json['notification_id'] ?? '',
-      title: json['title'] ?? '',
-      message: json['message'] ?? json['body'] ?? '',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : DateTime.now(),
-      isRead: json['is_read'] ?? json['read'] ?? false,
-      type: json['type'],
-      data: json['data'],
+      id: (json['notificationId'] ?? json['id'] ?? '').toString(),
+      message: (json['notification'] ?? json['message'] ?? json['body'] ?? '')
+          .toString(),
+      createdAt: _parseDateTime(
+        json['created_at'] ?? json['sent_at'] ?? json['timestamp'],
+      ),
+      isRead: _parseReadFlag(json['read_flag'] ?? json['is_read'] ?? json['read']),
+      type: json['type']?.toString(),
+      status: json['status']?.toString(),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'title': title,
-      'message': message,
-      'created_at': createdAt.toIso8601String(),
-      'is_read': isRead,
-      'type': type,
-      'data': data,
-    };
+  static bool _parseReadFlag(dynamic value) {
+    if (value is bool) return value;
+    if (value is String) {
+      final s = value.toLowerCase();
+      return s == 'true' || s == '1';
+    }
+    return false;
+  }
+
+  static DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is int) {
+      // Epoch ms (e.g. timestamp / sent_timestamp).
+      if (value > 1e12) return DateTime.fromMillisecondsSinceEpoch(value);
+      if (value > 1e9) return DateTime.fromMillisecondsSinceEpoch(value * 1000);
+    }
+    final s = value.toString();
+    if (s.isEmpty) return DateTime.now();
+    return DateTime.tryParse(s) ?? DateTime.now();
   }
 
   NotificationItem copyWith({
     String? id,
-    String? title,
     String? message,
     DateTime? createdAt,
     bool? isRead,
     String? type,
-    Map<String, dynamic>? data,
+    String? status,
   }) {
     return NotificationItem(
       id: id ?? this.id,
-      title: title ?? this.title,
       message: message ?? this.message,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
       type: type ?? this.type,
-      data: data ?? this.data,
+      status: status ?? this.status,
     );
   }
 
-  // Helper method to format date
   String get formattedDate {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
@@ -85,4 +89,3 @@ class NotificationItem {
     }
   }
 }
-

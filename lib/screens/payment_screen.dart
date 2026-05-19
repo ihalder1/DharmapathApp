@@ -6,6 +6,7 @@ import '../constants/app_colors.dart';
 import '../services/payment_service.dart';
 import '../services/auth_service.dart';
 import '../services/mantra_service.dart';
+import '../services/notification_service.dart';
 import '../services/song_service.dart';
 import '../models/mantra.dart';
 import 'stripe_checkout_webview_screen.dart';
@@ -173,17 +174,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Future<void> _ensurePaymentIntentForCard() async {
     if (_clientSecret != null && _paymentIntentId != null) return;
 
-    final ctx = await _orderContext();
+    final products = _checkoutProducts();
+    if (products.isEmpty) {
+      throw Exception(
+        'No valid items to checkout. Each item needs a song id and price.',
+      );
+    }
+
     final paymentIntentData = await PaymentService.createPaymentIntent(
-      amount: (widget.totalAmount * 100).round(),
-      currency: widget.currencyCode.toLowerCase(),
-      productId: ctx.productId,
-      productName: ctx.productName,
-      customerEmail: ctx.customerEmail,
-      metadata: {
-        'orderId': ctx.orderId,
-        'userId': ctx.userId,
-      },
+      currency: widget.currencyCode,
+      products: products,
       paymentMethodTypes: const ['card'],
     );
 
@@ -263,6 +263,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
 
     await MantraService.clearCart();
+    await NotificationService.refresh();
 
     if (mounted && context.mounted) {
       Navigator.of(context).pop(true);
@@ -374,8 +375,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  /// One line item per cart mantra: song id, display name, amount in smallest currency unit (e.g. paise).
-  List<Map<String, dynamic>> _upiCheckoutProducts() {
+  /// One line item per cart unit: song id, display name, amount in smallest currency unit (e.g. cents).
+  List<Map<String, dynamic>> _checkoutProducts() {
     final out = <Map<String, dynamic>>[];
     for (final m in widget.cartItems) {
       final productId = SongService.extractSongId(m.mantraFile);
@@ -403,7 +404,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     try {
       await _validateCartAndUser();
 
-      final products = _upiCheckoutProducts();
+      final products = _checkoutProducts();
       if (products.isEmpty) {
         if (mounted) {
           setState(() {

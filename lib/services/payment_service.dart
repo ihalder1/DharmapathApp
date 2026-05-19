@@ -5,14 +5,17 @@ import 'authenticated_http.dart';
 import 'payment_http_log.dart';
 
 class PaymentService {
-  // Create Payment Intent
+  static const String _createIntentInstructions =
+      'Set currency to: usd, aud, eur, or gbp. unitAmount in smallest unit (cents). Each song is one product. Minimum: usd/aud/eur = 50 cents, gbp = 30p, inr = 5000 paise.';
+
+  static const String _checkoutSessionInstructions =
+      'UPI is INR only. Minimum 5000 paise (\u20b950). Open checkout_url in Flutter WebView.';
+
+  /// Create Payment Intent (card).
+  /// Body: `{ "_instructions", "currency", "products": [ { "productId", "productName", "unitAmount" } ] }`.
   static Future<Map<String, dynamic>?> createPaymentIntent({
-    required int amount,
     required String currency,
-    required String productId,
-    required String productName,
-    required String customerEmail,
-    Map<String, dynamic>? metadata,
+    required List<Map<String, dynamic>> products,
 
     /// When set (e.g. `['card']`), the server should create the Stripe PaymentIntent
     /// with only these `payment_method_types` so PaymentSheet does not list UPI, etc.
@@ -35,12 +38,9 @@ class PaymentService {
 
       headers = ApiConfig.getPaymentHeaders(accessToken: token);
       final requestBody = <String, dynamic>{
-        'amount': amount,
-        'currency': currency,
-        'productId': productId,
-        'productName': productName,
-        'customerEmail': customerEmail,
-        if (metadata != null) 'metadata': metadata,
+        '_instructions': _createIntentInstructions,
+        'currency': currency.toLowerCase(),
+        'products': products,
         if (paymentMethodTypes != null && paymentMethodTypes.isNotEmpty) ...{
           'paymentMethodTypes': paymentMethodTypes,
           'payment_method_types': paymentMethodTypes,
@@ -194,7 +194,7 @@ class PaymentService {
   }
 
   /// Stripe Checkout Session for UPI (hosted Checkout URL in WebView).
-  /// Body: `{ "currency": "inr", "products": [ { "productId", "productName", "unitAmount" } ] }`.
+  /// Body: `{ "_instructions", "currency", "products": [ { "productId", "productName", "unitAmount" } ] }`.
   static Future<Map<String, dynamic>?> createCheckoutSession({
     required String currency,
     required List<Map<String, dynamic>> products,
@@ -216,6 +216,7 @@ class PaymentService {
 
       headers = ApiConfig.getPaymentHeaders(accessToken: token);
       final requestBody = <String, dynamic>{
+        '_instructions': _checkoutSessionInstructions,
         'currency': currency.toLowerCase(),
         'products': products,
       };
