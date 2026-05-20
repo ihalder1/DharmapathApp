@@ -6,37 +6,98 @@ import 'auth_service.dart';
 import 'mantra_sync_service.dart';
 import 'authenticated_http.dart';
 import 'location_pricing_service.dart';
+import 'song_service.dart';
 
 class MantraService {
   static List<Mantra> _mantras = [];
   static List<Mantra> _cart = [];
 
-  // Load mantras: Always sync with API first, then load from local metadata.json
-  static Future<List<Mantra>> loadMantras({bool syncFirst = true}) async {
+  /// Merges GET purchase/songs counts into [source] (does not mutate input list).
+  static List<Mantra> applyPurchasedCounts(
+    List<Mantra> source,
+    Map<String, int> purchasedCounts,
+  ) {
+    return source.map((mantra) {
+      final n = SongService.resolvePurchasedCount(mantra, purchasedCounts);
+      if (n > 0) {
+        return mantra.copyWith(isBought: true, purchasedCount: n);
+      }
+      return mantra.copyWith(isBought: false, purchasedCount: 0);
+    }).toList();
+  }
+
+  /// Re-fetch purchased counts only and update in-memory catalog (no songs sync).
+  static Future<List<Mantra>> refreshPurchasedCountsOnly() async {
+    print('═══════════════════════════════════════════════════════════');
+    print('🛒 MANTRA SERVICE: refresh purchased counts only');
+    print('═══════════════════════════════════════════════════════════');
+    final purchasedCounts = await SongService.getPurchasedSongCounts();
+    _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
+    print('✅ Updated ${_mantras.length} mantras with purchase counts');
+    print('═══════════════════════════════════════════════════════════');
+    return List<Mantra>.from(_mantras);
+  }
+
+  /// Load catalog from local metadata, optionally syncing with API first.
+  ///
+  /// When [syncCatalog] is true (initial / pull full refresh): runs **in parallel**
+  /// `GET` songs catalog sync and `GET` purchased counts, then loads metadata and
+  /// merges purchase state.
+  ///
+  /// When [syncCatalog] is false (after checkout or similar): only
+  /// [refreshPurchasedCountsOnly].
+  static Future<List<Mantra>> loadMantras({bool syncCatalog = true}) async {
+    if (!syncCatalog) {
+      return refreshPurchasedCountsOnly();
+    }
+
     try {
-      // Always sync with API first to update local metadata.json
       print('═══════════════════════════════════════════════════════════');
-      print('🔄 MANTRA SERVICE: Starting load process');
+      print('🔄 MANTRA SERVICE: parallel catalog sync + purchased counts');
       print('═══════════════════════════════════════════════════════════');
-      print('🔄 Syncing mantras with API first...');
-      
-      final syncResult = await MantraSyncService.syncMantras();
-      print('🔄 Sync completed. Result: $syncResult');
-      
-      // Always load from local JSON after sync (never load directly from API)
+
+      final syncFuture = MantraSyncService.syncMantras().catchError(
+        (Object e, StackTrace st) {
+          print('❌ Sync error: $e');
+          print('Stack trace: $st');
+          return false;
+        },
+      );
+      final purchasedFuture = SongService.getPurchasedSongCounts().catchError(
+        (Object e, StackTrace st) {
+          print('⚠️ Purchased counts error: $e');
+          return <String, int>{};
+        },
+      );
+
+      final wait = await Future.wait<Object>([syncFuture, purchasedFuture]);
+      final syncResult = wait[0] as bool;
+      final purchasedCounts = wait[1] as Map<String, int>;
+      print('🔄 Sync completed: $syncResult');
+      print('🛒 Purchased distinct song keys: ${purchasedCounts.length}');
+
       print('═══════════════════════════════════════════════════════════');
       print('📂 Loading mantras from local metadata.json...');
       print('═══════════════════════════════════════════════════════════');
-      final mantras = await _loadFromLocalJson();
-      print('✅ Successfully loaded ${mantras.length} mantras from LOCAL metadata.json');
+      await _loadFromLocalJson();
+      _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
+      print(
+        '✅ Loaded ${_mantras.length} mantras with purchase state from LOCAL metadata',
+      );
       print('═══════════════════════════════════════════════════════════');
-      return mantras;
+      return List<Mantra>.from(_mantras);
     } catch (e, stackTrace) {
       print('❌ Error during sync or loading: $e');
       print('Stack trace: $stackTrace');
       print('Falling back to local JSON...');
-      // Even if sync fails, try to load from local
-      return await _loadFromLocalJson();
+      await _loadFromLocalJson();
+      try {
+        final purchasedCounts = await SongService.getPurchasedSongCounts();
+        _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
+      } catch (_) {
+        // keep mantras without purchase merge
+      }
+      return List<Mantra>.from(_mantras);
     }
   }
 

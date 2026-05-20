@@ -16,7 +16,6 @@ import '../services/profile_service.dart';
 import '../services/mantra_service.dart';
 import '../services/voice_recording_service.dart';
 import '../services/notification_service.dart';
-import '../services/song_service.dart';
 import '../services/inferred_mantras_service.dart';
 import '../models/mantra.dart';
 import '../models/inferred_song.dart';
@@ -312,46 +311,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Load mantras from JSON metadata
-  Future<void> _loadMantras() async {
-    setState(() {
-      _isLoadingMantras = true;
-    });
+  // Load mantras from JSON metadata (full: parallel catalog sync + purchased counts).
+  Future<void> _loadMantras({bool syncCatalog = true}) async {
+    if (syncCatalog) {
+      setState(() {
+        _isLoadingMantras = true;
+      });
+    }
 
     try {
-      print('Loading mantras...');
-      final mantras = await MantraService.loadMantras();
-      // Allow icons written during sync to be resolved on disk (avoid stale memoized misses).
-      _mantraLocalIconPathFutures.clear();
-      print('Loaded ${mantras.length} mantras');
-      
-      // Fetch purchased songs and mark mantras as bought
-      try {
-        print('Fetching purchased songs...');
-        final purchasedCounts = await SongService.getPurchasedSongCounts();
-        print('Found ${purchasedCounts.length} purchased song entries');
-        
-        // Update mantras with owned counts from API
-        final updatedMantras = mantras.map((mantra) {
-          final n = SongService.resolvePurchasedCount(mantra, purchasedCounts);
-          if (n > 0) {
-            print(
-                '✅ Purchased inventory: ${mantra.name} (${mantra.mantraFile}) ×$n');
-            return mantra.copyWith(isBought: true, purchasedCount: n);
-          }
-          return mantra.copyWith(isBought: false, purchasedCount: 0);
-        }).toList();
-        
-        setState(() {
-          _applyMantraList(updatedMantras);
-        });
-      } catch (e) {
-        print('⚠️  Error fetching purchased songs: $e');
-        // Continue with mantras even if purchased songs fetch fails
-        setState(() {
-          _applyMantraList(mantras);
-        });
+      print('Loading mantras... (syncCatalog=$syncCatalog)');
+      final mantras = await MantraService.loadMantras(syncCatalog: syncCatalog);
+      if (syncCatalog) {
+        // Allow icons written during sync to be resolved on disk (avoid stale memoized misses).
+        _mantraLocalIconPathFutures.clear();
       }
+      print('Loaded ${mantras.length} mantras');
+
+      if (!mounted) return;
+      setState(() {
+        _applyMantraList(mantras);
+      });
     } catch (e) {
       print('Error loading mantras: $e');
       if (mounted) {
@@ -363,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && syncCatalog) {
         setState(() {
           _isLoadingMantras = false;
         });
@@ -407,27 +387,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _filteredMantras = sorted.where((mantra) {
         return mantra.name.toLowerCase().contains(query);
       }).toList();
-    }
-  }
-
-  /// Re-fetch GET purchase/songs and merge [purchasedCount] / [isBought] into [_mantras].
-  Future<void> _refreshPurchasedSongCountsFromApi() async {
-    if (!mounted) return;
-    try {
-      final purchasedCounts = await SongService.getPurchasedSongCounts();
-      if (!mounted) return;
-      final updated = _mantras.map((mantra) {
-        final n = SongService.resolvePurchasedCount(mantra, purchasedCounts);
-        if (n > 0) {
-          return mantra.copyWith(isBought: true, purchasedCount: n);
-        }
-        return mantra.copyWith(isBought: false, purchasedCount: 0);
-      }).toList();
-      setState(() {
-        _applyMantraList(updated);
-      });
-    } catch (e) {
-      print('⚠️  Error refreshing purchased song counts: $e');
     }
   }
 
@@ -1152,7 +1111,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                child: _isLoading 
+                child: (_isLoading && _currentStep != 0)
                     ? const Center(
                         child: CircularProgressIndicator(
                           valueColor: AlwaysStoppedAnimation<Color>(AppColors.primarySaffron),
@@ -4128,7 +4087,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             setState(() {
                               _currentStep = 0; // Go to Select Mantra screen
                             });
-                            await _loadMantras();
+                            await _loadMantras(syncCatalog: false);
                             await _loadUnreadNotificationCount();
                           }
                         },
@@ -4408,7 +4367,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (success) {
-        await _refreshPurchasedSongCountsFromApi();
+        await _loadMantras(syncCatalog: false);
         await NotificationService.refresh();
         if (mounted) {
           _loadUnreadNotificationCount();
