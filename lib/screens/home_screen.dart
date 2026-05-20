@@ -8,6 +8,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:path_provider/path_provider.dart';
 import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/profile_service.dart';
@@ -23,6 +25,33 @@ import 'notification_screen.dart';
 import 'login_screen.dart';
 import 'payment_screen.dart';
 import 'contact_us_screen.dart';
+
+/// Synced mantra icons are stored under Documents/Media; resolve once per filename.
+final Map<String, Future<String?>> _mantraLocalIconPathFutures = {};
+
+Future<String?> _mantraLocalIconPathIfExists(String iconName) {
+  if (kIsWeb) return Future<String?>.value(null);
+  return _mantraLocalIconPathFutures.putIfAbsent(iconName, () async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final mediaDir = '${appDir.path}/Media';
+      final primary = '$mediaDir/$iconName';
+      if (await File(primary).exists()) return primary;
+      if (iconName.endsWith('.png')) {
+        final alt =
+            '$mediaDir/${iconName.substring(0, iconName.length - 4)}.jpg';
+        if (await File(alt).exists()) return alt;
+      } else if (iconName.endsWith('.jpg')) {
+        final alt =
+            '$mediaDir/${iconName.substring(0, iconName.length - 4)}.png';
+        if (await File(alt).exists()) return alt;
+      }
+    } catch (_) {
+      // Fall back to assets
+    }
+    return null;
+  });
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -292,6 +321,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       print('Loading mantras...');
       final mantras = await MantraService.loadMantras();
+      // Allow icons written during sync to be resolved on disk (avoid stale memoized misses).
+      _mantraLocalIconPathFutures.clear();
       print('Loaded ${mantras.length} mantras');
       
       // Fetch purchased songs and mark mantras as bought
@@ -400,7 +431,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Helper widget to load mantra icon (network URL or local assets/Media).
+  // Helper widget to load mantra icon (network URL with disk cache, Documents/Media,
+  // or bundled assets/Media).
   Widget _buildMantraIcon({
     required String iconName,
     required double size,
@@ -410,10 +442,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     final trimmed = iconName.trim();
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return Image.network(
-        trimmed,
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final px = (size * dpr).round().clamp(48, 1024);
+      return CachedNetworkImage(
+        imageUrl: trimmed,
+        width: size,
+        height: size,
         fit: fit,
-        errorBuilder: (context, error, stackTrace) => Icon(
+        memCacheWidth: px,
+        memCacheHeight: px,
+        fadeInDuration: const Duration(milliseconds: 150),
+        placeholder: (context, url) => Icon(
+          Icons.music_note,
+          size: size * 0.85,
+          color: iconColor.withValues(alpha: 0.35),
+        ),
+        errorWidget: (context, url, error) => Icon(
           Icons.music_note,
           size: size,
           color: iconColor,
@@ -427,51 +471,73 @@ class _HomeScreenState extends State<HomeScreen> {
       baseName = iconName.substring(0, iconName.lastIndexOf('.'));
     }
 
-    return Image.asset(
-      'assets/Media/$iconName',
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) {
-        // If original failed and it's .png, try .jpg
-        if (iconName.endsWith('.png')) {
-          final jpgName = '$baseName.jpg';
-          print('Image loading error for $iconName, trying $jpgName');
-          return Image.asset(
-            'assets/Media/$jpgName',
-            fit: fit,
-            errorBuilder: (context, error2, stackTrace2) {
-              print('Image loading error for both $iconName and $jpgName: $error2');
-              return Icon(
-                Icons.music_note,
-                size: size,
-                color: iconColor,
-              );
-            },
+    Widget assetIcon() {
+      return Image.asset(
+        'assets/Media/$iconName',
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) {
+          if (iconName.endsWith('.png')) {
+            final jpgName = '$baseName.jpg';
+            print('Image loading error for $iconName, trying $jpgName');
+            return Image.asset(
+              'assets/Media/$jpgName',
+              fit: fit,
+              errorBuilder: (context, error2, stackTrace2) {
+                print('Image loading error for both $iconName and $jpgName: $error2');
+                return Icon(
+                  Icons.music_note,
+                  size: size,
+                  color: iconColor,
+                );
+              },
+            );
+          } else if (iconName.endsWith('.jpg')) {
+            final pngName = '$baseName.png';
+            print('Image loading error for $iconName, trying $pngName');
+            return Image.asset(
+              'assets/Media/$pngName',
+              fit: fit,
+              errorBuilder: (context, error2, stackTrace2) {
+                print('Image loading error for both $iconName and $pngName: $error2');
+                return Icon(
+                  Icons.music_note,
+                  size: size,
+                  color: iconColor,
+                );
+              },
+            );
+          }
+          print('Image loading error for $iconName: $error');
+          return Icon(
+            Icons.music_note,
+            size: size,
+            color: iconColor,
+          );
+        },
+      );
+    }
+
+    return FutureBuilder<String?>(
+      future: _mantraLocalIconPathIfExists(iconName),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Icon(
+            Icons.music_note,
+            size: size * 0.85,
+            color: iconColor.withValues(alpha: 0.35),
           );
         }
-        // If original failed and it's .jpg, try .png
-        else if (iconName.endsWith('.jpg')) {
-          final pngName = '$baseName.png';
-          print('Image loading error for $iconName, trying $pngName');
-          return Image.asset(
-            'assets/Media/$pngName',
+        final path = snapshot.data;
+        if (path != null) {
+          return Image.file(
+            File(path),
+            width: size,
+            height: size,
             fit: fit,
-            errorBuilder: (context, error2, stackTrace2) {
-              print('Image loading error for both $iconName and $pngName: $error2');
-              return Icon(
-                Icons.music_note,
-                size: size,
-                color: iconColor,
-              );
-            },
+            errorBuilder: (context, error, stackTrace) => assetIcon(),
           );
         }
-        // If no extension or other extension, just show icon
-        print('Image loading error for $iconName: $error');
-        return Icon(
-          Icons.music_note,
-          size: size,
-          color: iconColor,
-        );
+        return assetIcon();
       },
     );
   }

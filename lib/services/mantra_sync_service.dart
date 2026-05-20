@@ -203,34 +203,38 @@ class MantraSyncService {
     }
   }
 
-  // Download icon image
+  // Download icon image (only if not already present under Documents/Media).
   static Future<bool> downloadIcon(String iconUrl, String localIconName) async {
     try {
-      print('📥 Downloading icon: $iconUrl -> $localIconName');
-      
       // Skip file operations on web
       if (kIsWeb) {
         print('Web platform detected, skipping icon download');
         return false;
       }
-      
+
+      final Directory appDir = await getApplicationDocumentsDirectory();
+      final String mediaPath = path.join(appDir.path, 'Media');
+      final Directory mediaDir = Directory(mediaPath);
+
+      if (!await mediaDir.exists()) {
+        await mediaDir.create(recursive: true);
+      }
+
+      final File iconFile = File(path.join(mediaPath, localIconName));
+      if (await iconFile.exists()) {
+        print('⏭️ Icon already on disk, skipping download: ${iconFile.path}');
+        return true;
+      }
+
+      print('📥 Downloading icon: $iconUrl -> $localIconName');
+
       final response = await http.get(Uri.parse(iconUrl)).timeout(
         const Duration(seconds: 30),
       );
 
       if (response.statusCode == 200) {
-        // Get the app's documents directory (writable location)
-        final Directory appDir = await getApplicationDocumentsDirectory();
-        final String mediaPath = path.join(appDir.path, 'Media');
-        final Directory mediaDir = Directory(mediaPath);
-        
-        if (!await mediaDir.exists()) {
-          await mediaDir.create(recursive: true);
-        }
-        
-        final File iconFile = File(path.join(mediaPath, localIconName));
         await iconFile.writeAsBytes(response.bodyBytes);
-        
+
         print('✅ Downloaded icon to: ${iconFile.path}');
         return true;
       } else {
