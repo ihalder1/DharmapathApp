@@ -79,6 +79,18 @@ class InferredMantrasService {
       if (song.inferredId.isEmpty || song.songId.isEmpty) continue;
       out.add(song);
     }
+    out.sort((a, b) {
+      int ms(String iso) {
+        if (iso.isEmpty) return 0;
+        try {
+          return DateTime.parse(iso).millisecondsSinceEpoch;
+        } catch (_) {
+          return 0;
+        }
+      }
+
+      return ms(b.completedAt).compareTo(ms(a.completedAt));
+    });
     return out;
   }
 

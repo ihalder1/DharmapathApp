@@ -1135,142 +1135,100 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         children: [
           // User Info Row
-          Consumer<AuthService>(
-            builder: (context, authService, child) {
-              final user = authService.currentUser;
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // User Avatar with Notification Badge
-                  GestureDetector(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const NotificationScreen(),
-                        ),
-                      );
-                      if (mounted) _loadUnreadNotificationCount();
-                    },
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: AppColors.primarySaffron,
-                          backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
-                              ? NetworkImage(user!.photoUrl!) 
-                              : null,
-                          child: user?.photoUrl == null || user!.photoUrl!.isEmpty
-                              ? const Icon(
-                                  Icons.person,
-                                  color: AppColors.white,
-                                  size: 24,
-                                )
-                              : null,
-                        ),
-                        // Notification Badge
-                        if (_unreadNotificationCount > 0)
-                          Positioned(
-                            right: -2,
-                            top: -2,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              constraints: const BoxConstraints(
-                                minWidth: 18,
-                                minHeight: 18,
-                              ),
-                              child: Text(
-                                _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                      ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // App logo — tap for About (notifications: profile photo in card below)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _showAboutAppDialog,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Tooltip(
+                    message: 'About this app',
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        'assets/icon/app_icon.png',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
-                  
-                  const SizedBox(width: 12),
-                  
-                  // Welcome, email, Contact Us
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Welcome, email, Contact Us
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Welcome, ${_personalInfo['fullName']}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                        height: 1.2,
+                      ),
+                    ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          'Welcome, ${_personalInfo['fullName']}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                            height: 1.2,
+                        Expanded(
+                          child: Text(
+                            _personalInfo['email'],
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              height: 1.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _personalInfo['email'],
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                  height: 1.2,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ContactUsScreen(),
                               ),
+                            );
+                          },
+                          child: const Text(
+                            'Contact Us',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primarySaffron,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
                             ),
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const ContactUsScreen(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                'Contact Us',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.primarySaffron,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => _showLogoutDialog(context),
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    icon: const Icon(
-                      Icons.logout,
-                      color: AppColors.textSecondary,
-                      size: 22,
-                    ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _showLogoutDialog(context),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                icon: const Icon(
+                  Icons.logout,
+                  color: AppColors.textSecondary,
+                  size: 22,
+                ),
+              ),
+            ],
           ),
           
           const SizedBox(height: 6),
@@ -1391,38 +1349,80 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildProfilePictureSection() {
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: AppColors.primarySaffron,
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const NotificationScreen(),
           ),
-        ],
-      ),
-      child: CircleAvatar(
-        radius: 24,
-        backgroundColor: AppColors.lightSaffron,
-        backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
-            ? NetworkImage(_photoUrl!)
-            : null,
-        child: (_photoUrl == null || _photoUrl!.isEmpty)
-            ? Icon(
-                _personalInfo['gender'] == 'Female'
-                    ? Icons.person_2
-                    : Icons.person,
-                size: 24,
+        );
+        if (mounted) _loadUnreadNotificationCount();
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
                 color: AppColors.primarySaffron,
-              )
-            : null,
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: 24,
+              backgroundColor: AppColors.lightSaffron,
+              backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
+                  ? NetworkImage(_photoUrl!)
+                  : null,
+              child: (_photoUrl == null || _photoUrl!.isEmpty)
+                  ? Icon(
+                      _personalInfo['gender'] == 'Female'
+                          ? Icons.person_2
+                          : Icons.person,
+                      size: 24,
+                      color: AppColors.primarySaffron,
+                    )
+                  : null,
+            ),
+          ),
+          if (_unreadNotificationCount > 0)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 18,
+                  minHeight: 18,
+                ),
+                child: Text(
+                  _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1857,6 +1857,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Placeholder until DELETE inferred-song API is wired.
+  void _deleteInferredSong(InferredSong song) {
+    // TODO: Call delete API for [song.inferredId], then remove from _inferredSongs,
+    // clear local file / prefs via InferredMantrasService, and refresh list.
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Delete is not available yet (${song.songId}). '
+          'This will use your delete API when it is ready.',
+        ),
+        duration: const Duration(seconds: 3),
+        backgroundColor: AppColors.textSecondary,
+      ),
+    );
+  }
+
   Future<void> _playInferredMantra(InferredSong song) async {
     final path = _inferredLocalPaths[song.inferredId];
     if (path == null || path.isEmpty) return;
@@ -1986,8 +2003,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showCartLimitSnackBar() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'You can add up to ${MantraService.maxCartTotalQuantity} mantras to your cart.',
+        ),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
   Future<void> _addToCart(Mantra mantra) async {
-    await MantraService.addToCart(mantra);
+    final added = await MantraService.addToCart(mantra);
+    if (!added) {
+      _showCartLimitSnackBar();
+      return;
+    }
     setState(() {
       // Update the mantra in our local list
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
@@ -1995,7 +2028,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _mantras[index] = _mantras[index].copyWith(isInCart: true);
       }
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${mantra.name} added to cart'),
@@ -2023,7 +2056,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _incrementCartQuantity(Mantra mantra) async {
-    await MantraService.incrementCartQuantity(mantra);
+    final incremented = await MantraService.incrementCartQuantity(mantra);
+    if (!incremented) {
+      _showCartLimitSnackBar();
+      return;
+    }
     setState(() {
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
       if (index != -1 && !_mantras[index].isInCart) {
@@ -2043,7 +2080,25 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Widget _buildCartLimitNote() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        'Note: You can add up to ${MantraService.maxCartTotalQuantity} items to your cart.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 10,
+          height: 1.3,
+          color: AppColors.white.withValues(alpha: 0.7),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCartQuantityStepper(Mantra mantra, int quantity) {
+    final atCartLimit =
+        MantraService.getCartTotalQuantity() >= MantraService.maxCartTotalQuantity;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -2091,7 +2146,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () => _incrementCartQuantity(mantra),
+              onTap: atCartLimit ? null : () => _incrementCartQuantity(mantra),
               borderRadius: const BorderRadius.horizontal(
                 right: Radius.circular(20),
               ),
@@ -2100,7 +2155,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Icon(
                   Icons.add,
                   size: 18,
-                  color: AppColors.successGreen,
+                  color: atCartLimit
+                      ? AppColors.textSecondary.withValues(alpha: 0.4)
+                      : AppColors.successGreen,
                 ),
               ),
             ),
@@ -2124,18 +2181,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     int addedCount = 0;
+    var hitLimit = false;
     for (var mantra in notInCart) {
-      await MantraService.addToCart(mantra);
-      // Update the mantra in our local list
+      final added = await MantraService.addToCart(mantra);
+      if (!added) {
+        hitLimit = true;
+        break;
+      }
       final index = _mantras.indexWhere((m) => m.name == mantra.name);
       if (index != -1) {
         _mantras[index] = _mantras[index].copyWith(isInCart: true);
       }
       addedCount++;
     }
-    
+
     setState(() {});
-    
+
+    if (hitLimit && addedCount == 0) {
+      _showCartLimitSnackBar();
+      return;
+    }
+    if (hitLimit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$addedCount mantra(s) added. Cart limit is '
+            '${MantraService.maxCartTotalQuantity} items.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$addedCount mantra(s) added to cart'),
@@ -2843,7 +2921,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 textAlign: TextAlign.center,
               ),
               
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               
               // Language Selection
               Row(
@@ -2897,14 +2975,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               
               // Text Display Box
               Expanded(
                 flex: 1,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   decoration: BoxDecoration(
                     color: Colors.grey[50],
                     borderRadius: BorderRadius.circular(12),
@@ -2914,10 +2992,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
                       style: const TextStyle(
-                        fontSize: 14.5,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
                         color: Colors.black,
                         height: 1.5,
                       ),
@@ -2926,7 +3006,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               
               // Recording Controls
               Row(
@@ -3369,6 +3449,150 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// My Mantras list row: line 1 name, line 2 thumbnail + actions, line 3 status (tight vertical spacing).
+  Widget _buildInferredSongCardContent({
+    required InferredSong song,
+    required bool hasLocal,
+    required bool downloading,
+    required bool compact,
+  }) {
+    final thumb = compact ? 36.0 : 42.0;
+    final innerIcon = compact ? 22.0 : 26.0;
+    final actionIcon = compact ? 20.0 : 22.0;
+    final playIcon = compact ? 24.0 : 28.0;
+    final deleteIcon = compact ? 20.0 : 22.0;
+    final btnConstraints = BoxConstraints(
+      minWidth: compact ? 30 : 32,
+      minHeight: compact ? 30 : 32,
+    );
+
+    final nameStyle = TextStyle(
+      fontSize: compact ? 14 : 15,
+      fontWeight: FontWeight.w600,
+      color: AppColors.textPrimary,
+      height: 1.05,
+    );
+    final statusStyle = TextStyle(
+      fontSize: compact ? 10.5 : 11,
+      fontWeight: FontWeight.w600,
+      height: 1.05,
+      color: hasLocal ? AppColors.successGreen : AppColors.textSecondary,
+    );
+    final statusText = hasLocal ? 'On device' : 'Tap to download';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          song.myMantrasCardTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: nameStyle,
+        ),
+        SizedBox(height: compact ? 2 : 3),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: thumb,
+              height: thumb,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: AppColors.white.withOpacity(0.55),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _buildMantraIcon(
+                  iconName: song.iconAssetFileName,
+                  size: innerIcon,
+                  iconColor: AppColors.textPrimary,
+                  fit: BoxFit.cover,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (downloading)
+              SizedBox(
+                width: compact ? 28 : 30,
+                height: compact ? 28 : 30,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primarySaffron,
+                  ),
+                ),
+              )
+            else
+              IconButton(
+                onPressed: () => _downloadInferredSong(song),
+                icon: Icon(
+                  Icons.download,
+                  color: AppColors.textPrimary,
+                  size: actionIcon,
+                ),
+                tooltip: 'Download to app',
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: btnConstraints,
+              ),
+            IconButton(
+              onPressed: hasLocal ? () => _shareInferredSong(song) : null,
+              icon: Icon(
+                Icons.share,
+                color: hasLocal
+                    ? AppColors.textPrimary
+                    : AppColors.textPrimary.withOpacity(0.3),
+                size: actionIcon,
+              ),
+              tooltip: 'Save or share (Files, Drive…)',
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: btnConstraints,
+            ),
+            IconButton(
+              onPressed: hasLocal ? () => _playInferredMantra(song) : null,
+              icon: Icon(
+                _currentInferredPlaying == song && _isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
+                color: hasLocal
+                    ? AppColors.primarySaffron
+                    : AppColors.textPrimary.withOpacity(0.3),
+                size: playIcon,
+              ),
+              tooltip: 'Play',
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: btnConstraints,
+            ),
+            IconButton(
+              onPressed: () => _deleteInferredSong(song),
+              icon: Icon(
+                Icons.delete_outline,
+                color: AppColors.errorRed,
+                size: deleteIcon,
+              ),
+              tooltip: 'Delete',
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: btnConstraints,
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 2 : 3),
+        Text(
+          statusText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: statusStyle,
+        ),
+      ],
+    );
+  }
+
   Widget _buildMyMantraStep() {
     return Container(
       width: double.infinity,
@@ -3493,125 +3717,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 10),
+                                      horizontal: 10, vertical: 6),
                                   decoration: BoxDecoration(
                                     color: AppColors.white.withOpacity(0.4),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(8),
-                                          color: AppColors.white.withOpacity(0.55),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: _buildMantraIcon(
-                                            iconName: song.iconAssetFileName,
-                                            size: 28,
-                                            iconColor: AppColors.textPrimary,
-                                            fit: BoxFit.cover,
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              song.displayTitle,
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w600,
-                                                color: AppColors.textPrimary,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              hasLocal
-                                                  ? 'On device'
-                                                  : 'Tap ↓ to download',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: hasLocal
-                                                    ? AppColors.successGreen
-                                                    : AppColors.textSecondary,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (downloading)
-                                        const SizedBox(
-                                          width: 28,
-                                          height: 28,
-                                          child: Padding(
-                                            padding: EdgeInsets.all(4),
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: AppColors.primarySaffron,
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        IconButton(
-                                          onPressed: () =>
-                                              _downloadInferredSong(song),
-                                          icon: const Icon(
-                                            Icons.download,
-                                            color: AppColors.textPrimary,
-                                            size: 22,
-                                          ),
-                                          tooltip: 'Download to app',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                        ),
-                                      IconButton(
-                                        onPressed: hasLocal
-                                            ? () => _shareInferredSong(song)
-                                            : null,
-                                        icon: Icon(
-                                          Icons.share,
-                                          color: hasLocal
-                                              ? AppColors.textPrimary
-                                              : AppColors.textPrimary
-                                                  .withOpacity(0.3),
-                                          size: 20,
-                                        ),
-                                        tooltip:
-                                            'Save or share (Files, Drive…)',
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                      ),
-                                      IconButton(
-                                        onPressed: hasLocal
-                                            ? () => _playInferredMantra(song)
-                                            : null,
-                                        icon: Icon(
-                                          _currentInferredPlaying == song &&
-                                                  _isPlaying
-                                              ? Icons.pause_circle_filled
-                                              : Icons.play_circle_filled,
-                                          color: hasLocal
-                                              ? AppColors.primarySaffron
-                                              : AppColors.textPrimary
-                                                  .withOpacity(0.3),
-                                          size: 28,
-                                        ),
-                                        tooltip: 'Play',
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                      ),
-                                    ],
+                                  child: _buildInferredSongCardContent(
+                                    song: song,
+                                    hasLocal: hasLocal,
+                                    downloading: downloading,
+                                    compact: true,
                                   ),
                                 );
                               },
@@ -3727,119 +3842,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                       .contains(song.inferredId);
                                   return Container(
                                     margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.all(16),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: AppColors.white.withOpacity(0.4),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 50,
-                                          height: 50,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(8),
-                                            color: AppColors.white.withOpacity(0.55),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            child: _buildMantraIcon(
-                                              iconName: song.iconAssetFileName,
-                                              size: 30,
-                                              iconColor: AppColors.textPrimary,
-                                              fit: BoxFit.cover,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                song.displayTitle,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: AppColors.textPrimary,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                hasLocal
-                                                    ? 'On device'
-                                                    : 'Tap ↓ to download',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: hasLocal
-                                                      ? AppColors.successGreen
-                                                      : AppColors.textSecondary,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (downloading)
-                                          const SizedBox(
-                                            width: 36,
-                                            height: 36,
-                                            child: Padding(
-                                              padding: EdgeInsets.all(6),
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppColors.primarySaffron,
-                                              ),
-                                            ),
-                                          )
-                                        else
-                                          IconButton(
-                                            onPressed: () =>
-                                                _downloadInferredSong(song),
-                                            icon: const Icon(
-                                              Icons.download,
-                                              color: AppColors.textPrimary,
-                                              size: 26,
-                                            ),
-                                            tooltip: 'Download to app',
-                                          ),
-                                        IconButton(
-                                          onPressed: hasLocal
-                                              ? () => _shareInferredSong(song)
-                                              : null,
-                                          icon: Icon(
-                                            Icons.share,
-                                            color: hasLocal
-                                                ? AppColors.textPrimary
-                                                : AppColors.textPrimary
-                                                    .withOpacity(0.3),
-                                            size: 26,
-                                          ),
-                                          tooltip:
-                                              'Save or share (Files, Drive…)',
-                                        ),
-                                        IconButton(
-                                          onPressed: hasLocal
-                                              ? () => _playInferredMantra(song)
-                                              : null,
-                                          icon: Icon(
-                                            _currentInferredPlaying == song &&
-                                                    _isPlaying
-                                                ? Icons.pause_circle_filled
-                                                : Icons.play_circle_filled,
-                                            color: hasLocal
-                                                ? AppColors.primarySaffron
-                                                : AppColors.textPrimary
-                                                    .withOpacity(0.3),
-                                            size: 32,
-                                          ),
-                                          tooltip: 'Play',
-                                        ),
-                                      ],
+                                    child: _buildInferredSongCardContent(
+                                      song: song,
+                                      hasLocal: hasLocal,
+                                      downloading: downloading,
+                                      compact: false,
                                     ),
                                   );
                                 },
@@ -3887,7 +3900,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               cartUnitCount == 0
                   ? 'No mantras selected'
-                  : '$cartUnitCount mantra${cartUnitCount != 1 ? 's' : ''} selected',
+                  : '$cartUnitCount / ${MantraService.maxCartTotalQuantity} '
+                      'mantra${cartUnitCount != 1 ? 's' : ''} selected',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.white.withOpacity(0.9),
@@ -3939,6 +3953,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                     ),
+                    _buildCartLimitNote(),
                   ],
                 ),
               )
@@ -4105,12 +4120,118 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    _buildCartLimitNote(),
                   ],
                 ),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showAboutAppDialog() {
+    const bodyStyle = TextStyle(
+      fontSize: 14,
+      height: 1.45,
+      color: AppColors.textSecondary,
+    );
+    const headingStyle = TextStyle(
+      fontSize: 14,
+      height: 1.45,
+      fontWeight: FontWeight.bold,
+      color: AppColors.textPrimary,
+    );
+    const brandStyle = TextStyle(
+      fontSize: 16,
+      height: 1.45,
+      fontWeight: FontWeight.bold,
+      color: AppColors.textPrimary,
+    );
+
+    Widget sectionHeading(String text) => Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(text, style: headingStyle),
+        );
+
+    Widget sectionBody(String text) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(text, style: bodyStyle),
+        );
+
+    Widget benefitItem(String label, String description) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text.rich(
+            TextSpan(
+              style: bodyStyle,
+              children: [
+                TextSpan(text: label, style: headingStyle),
+                TextSpan(text: description),
+              ],
+            ),
+          ),
+        );
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final dialogWidth = MediaQuery.sizeOf(ctx).width - 24;
+
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+          constraints: BoxConstraints(maxWidth: dialogWidth),
+          title: const Text('About MantraSutra'),
+          content: SizedBox(
+            width: dialogWidth,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                const Text('MantraSutra', style: brandStyle),
+                sectionHeading('What is MantraSutra?'),
+                sectionBody(
+                  'MantraSutra is an innovative digital platform that allows you to '
+                  'chant—even without any prior experience—and record sacred Hindu '
+                  'mantras in your very own voice.',
+                ),
+                sectionHeading('Why MantraSutra?'),
+                sectionBody(
+                  'Ever wondered how a powerful mantra resonates when spoken by you? '
+                  'MantraSutra bridges the gap between technology and spirituality, '
+                  'giving you a deeply personal experience of hearing divine verses in '
+                  'your unique voice.',
+                ),
+                sectionHeading('Key Benefits:'),
+                benefitItem(
+                  'Learn & Practice: ',
+                  'It doesn\'t just inspire you to chant; it guides you on how to '
+                  'pronounce and recite mantras correctly.',
+                ),
+                benefitItem(
+                  'Personalized Spiritual Ringtone: ',
+                  'Save your recorded mantras as your mobile ringtone. Every time your '
+                  'phone rings, your own voice chanting a sacred mantra will purify the '
+                  'ambiance, inspire those around you, and bring positivity to your day.',
+                ),
+                sectionHeading('Important Note:'),
+                sectionBody(
+                  'This AI-driven tool depends entirely on your voice quality. For best '
+                  'results, please record in a completely quiet room, speaking at a '
+                  'normal pace with clear pronunciation. Accuracy may vary based on '
+                  'your input.',
+                ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 

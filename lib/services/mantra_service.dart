@@ -9,8 +9,16 @@ import 'location_pricing_service.dart';
 import 'song_service.dart';
 
 class MantraService {
+  static const int maxCartTotalQuantity = 30;
+
   static List<Mantra> _mantras = [];
   static List<Mantra> _cart = [];
+
+  /// Whether [additional] more unit(s) can be added without exceeding [maxCartTotalQuantity].
+  static bool canAddCartUnits([int additional = 1]) {
+    if (additional < 1) return false;
+    return getCartTotalQuantity() + additional <= maxCartTotalQuantity;
+  }
 
   /// Merges GET purchase/songs counts into [source] (does not mutate input list).
   static List<Mantra> applyPurchasedCounts(
@@ -149,8 +157,10 @@ class MantraService {
     return _cart;
   }
 
-  // Add mantra to cart (quantity 1)
-  static Future<void> addToCart(Mantra mantra) async {
+  // Add mantra to cart (quantity 1). Returns false if cart is at [maxCartTotalQuantity].
+  static Future<bool> addToCart(Mantra mantra) async {
+    if (!canAddCartUnits(1)) return false;
+
     final existingIndex = _cart.indexWhere((item) => item.name == mantra.name);
     if (existingIndex != -1) {
       _cart[existingIndex] = _cart[existingIndex].copyWith(
@@ -164,18 +174,21 @@ class MantraService {
       }
     }
     await _saveCart();
+    return true;
   }
 
-  static Future<void> incrementCartQuantity(Mantra mantra) async {
+  static Future<bool> incrementCartQuantity(Mantra mantra) async {
+    if (!canAddCartUnits(1)) return false;
+
     final index = _cart.indexWhere((item) => item.name == mantra.name);
     if (index == -1) {
-      await addToCart(mantra);
-      return;
+      return addToCart(mantra);
     }
     _cart[index] = _cart[index].copyWith(
       cartQuantity: _cart[index].cartQuantity + 1,
     );
     await _saveCart();
+    return true;
   }
 
   static Future<void> decrementCartQuantity(Mantra mantra) async {
@@ -272,6 +285,24 @@ class MantraService {
     }
   }
 
+  /// Drops units from the end of the cart until total ≤ [maxCartTotalQuantity].
+  static void _trimCartToMaxLimit() {
+    while (getCartTotalQuantity() > maxCartTotalQuantity && _cart.isNotEmpty) {
+      final last = _cart.length - 1;
+      final qty = _cart[last].cartQuantity;
+      if (qty <= 1) {
+        final name = _cart[last].name;
+        _cart.removeAt(last);
+        final index = _mantras.indexWhere((item) => item.name == name);
+        if (index != -1) {
+          _mantras[index] = _mantras[index].copyWith(isInCart: false);
+        }
+      } else {
+        _cart[last] = _cart[last].copyWith(cartQuantity: qty - 1);
+      }
+    }
+  }
+
   static Map<String, int> _readSavedQuantities(SharedPreferences prefs) {
     final raw = prefs.getString('cart_quantities');
     if (raw == null || raw.isEmpty) return {};
@@ -329,6 +360,7 @@ class MantraService {
         }
       }
 
+      _trimCartToMaxLimit();
       await _saveCart();
 
       print('✅ Cart loaded: ${_cart.length} line(s), ${getCartTotalQuantity()} unit(s)');

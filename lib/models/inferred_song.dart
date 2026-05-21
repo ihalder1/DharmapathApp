@@ -1,9 +1,13 @@
+import 'package:intl/intl.dart';
+
 class InferredSong {
   final String inferredId;
   final String songId;
   final String? outputPath;
   final String completedAt;
   final String recordingId;
+  /// From API `recording_name` (user's recording label).
+  final String recordingName;
 
   const InferredSong({
     required this.inferredId,
@@ -11,6 +15,7 @@ class InferredSong {
     this.outputPath,
     required this.completedAt,
     required this.recordingId,
+    this.recordingName = '',
   });
 
   factory InferredSong.fromJson(Map<String, dynamic> json) {
@@ -20,7 +25,21 @@ class InferredSong {
       outputPath: json['output_path']?.toString(),
       completedAt: json['completed_at']?.toString() ?? '',
       recordingId: json['recording_id']?.toString() ?? '',
+      recordingName: json['recording_name']?.toString() ??
+          json['recordingName']?.toString() ??
+          '',
     );
+  }
+
+  /// `YYYY-MM-DD` from [completedAt], or empty if unparseable.
+  String get completedDateShort {
+    try {
+      final d = DateTime.parse(completedAt).toLocal();
+      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      if (completedAt.length >= 10) return completedAt.substring(0, 10);
+      return '';
+    }
   }
 
   /// e.g. `M-MAHAKALI-001` → middle segment(s) title-cased → `Mahakali`
@@ -43,23 +62,32 @@ class InferredSong {
     return lower[0].toUpperCase() + lower.substring(1);
   }
 
-  /// `Mahakali 2026-04-17` from song_id + completed_at
-  String get displayTitle {
-    final date = _dateFromCompletedAt(completedAt);
+  /// My Mantras card line 1: `recording_name Middle yyyy-MM-dd h:mm AM/PM` (spaces, local time).
+  String get myMantrasCardTitle {
+    final rec = recordingName.trim();
     final mid = middleLabelFromSongId(songId);
-    if (date.isEmpty) return mid;
-    return '$mid $date';
-  }
-
-  static String _dateFromCompletedAt(String iso) {
     try {
-      final d = DateTime.parse(iso).toLocal();
-      return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final dt = DateTime.parse(completedAt).toLocal();
+      final datePart = DateFormat('yyyy-MM-dd').format(dt);
+      final timePart = DateFormat('hh:mm a').format(dt);
+      final parts = <String>[];
+      if (rec.isNotEmpty) parts.add(rec);
+      parts.add(mid);
+      parts.add(datePart);
+      parts.add(timePart);
+      return parts.join(' ');
     } catch (_) {
-      if (iso.length >= 10) return iso.substring(0, 10);
-      return '';
+      final parts = <String>[];
+      if (rec.isNotEmpty) parts.add(rec);
+      if (mid.isNotEmpty) parts.add(mid);
+      final d = completedDateShort;
+      if (d.isNotEmpty) parts.add(d);
+      return parts.join(' ');
     }
   }
+
+  /// Share / snackbar caption — same as [myMantrasCardTitle].
+  String get displayTitle => myMantrasCardTitle;
 
   /// Asset key: `M-MAHAKALI-001.png`
   String get iconAssetFileName => '$songId.png';
