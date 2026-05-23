@@ -76,7 +76,11 @@ class InferredMantrasService {
     for (final e in raw) {
       if (e is! Map<String, dynamic>) continue;
       final song = InferredSong.fromJson(Map<String, dynamic>.from(e));
-      if (song.inferredId.isEmpty || song.songId.isEmpty) continue;
+      if (song.inferredId.isEmpty ||
+          song.transactionId.isEmpty ||
+          song.songId.isEmpty) {
+        continue;
+      }
       out.add(song);
     }
     out.sort((a, b) {
@@ -131,5 +135,40 @@ class InferredMantrasService {
     if (!await file.exists() || await file.length() == 0) return null;
     await _rememberPath(inferredId, path);
     return path;
+  }
+
+  /// DELETE `/auth/profile/inferred/songs/{transactionId}?song_id=...`
+  Future<bool> deleteInferredSong({
+    required String transactionId,
+    required String songId,
+  }) async {
+    if (transactionId.isEmpty || songId.isEmpty) return false;
+
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.inferredSongsEndpoint}/'
+      '${Uri.encodeComponent(transactionId)}',
+    ).replace(queryParameters: {'song_id': songId});
+
+    final response = await AuthenticatedHttp.delete(
+      url,
+      timeout: const Duration(seconds: 45),
+    );
+    return response.statusCode == 200 || response.statusCode == 204;
+  }
+
+  /// Removes cached MP3 and prefs entry for [inferredId].
+  Future<void> removeLocalCache(String inferredId) async {
+    if (inferredId.isEmpty) return;
+    final m = await _loadPathMap();
+    final path = m.remove(inferredId);
+    await _persistPathMap(m);
+    if (path != null && path.isNotEmpty) {
+      final file = File(path);
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+    }
   }
 }

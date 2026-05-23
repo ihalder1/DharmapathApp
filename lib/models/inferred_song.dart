@@ -2,6 +2,8 @@ import 'package:intl/intl.dart';
 
 class InferredSong {
   final String inferredId;
+  /// DELETE `/auth/profile/inferred/songs/{transaction_id}` path segment.
+  final String transactionId;
   final String songId;
   final String? outputPath;
   final String completedAt;
@@ -11,6 +13,7 @@ class InferredSong {
 
   const InferredSong({
     required this.inferredId,
+    required this.transactionId,
     required this.songId,
     this.outputPath,
     required this.completedAt,
@@ -19,8 +22,11 @@ class InferredSong {
   });
 
   factory InferredSong.fromJson(Map<String, dynamic> json) {
+    final inferredId = json['inferred_id']?.toString() ?? '';
+    final transactionId = json['transaction_id']?.toString() ?? inferredId;
     return InferredSong(
-      inferredId: json['inferred_id']?.toString() ?? '',
+      inferredId: inferredId,
+      transactionId: transactionId,
       songId: json['song_id']?.toString() ?? '',
       outputPath: json['output_path']?.toString(),
       completedAt: json['completed_at']?.toString() ?? '',

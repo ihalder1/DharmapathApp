@@ -1857,21 +1857,82 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Placeholder until DELETE inferred-song API is wired.
-  void _deleteInferredSong(InferredSong song) {
-    // TODO: Call delete API for [song.inferredId], then remove from _inferredSongs,
-    // clear local file / prefs via InferredMantrasService, and refresh list.
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+  Future<void> _deleteInferredSong(InferredSong song) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Mantra'),
         content: Text(
-          'Delete is not available yet (${song.songId}). '
-          'This will use your delete API when it is ready.',
+          'Are you sure you want to delete "${song.myMantrasCardTitle}"? '
+          'This action cannot be undone.',
         ),
-        duration: const Duration(seconds: 3),
-        backgroundColor: AppColors.textSecondary,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+
+    if (confirmed != true || !mounted) return;
+
+    if (_currentInferredPlaying == song && _isPlaying) {
+      await _audioPlayer.stop();
+      setState(() {
+        _isPlaying = false;
+        _currentInferredPlaying = null;
+      });
+    }
+
+    try {
+      final success = await _inferredMantrasService.deleteInferredSong(
+        transactionId: song.transactionId,
+        songId: song.songId,
+      );
+
+      if (!success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete mantra'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      await _inferredMantrasService.removeLocalCache(song.inferredId);
+
+      if (!mounted) return;
+      setState(() {
+        _inferredSongs.removeWhere((s) => s.inferredId == song.inferredId);
+        _inferredLocalPaths.remove(song.inferredId);
+        _inferredDownloadingIds.remove(song.inferredId);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mantra deleted successfully'),
+          backgroundColor: AppColors.successGreen,
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete mantra: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _playInferredMantra(InferredSong song) async {

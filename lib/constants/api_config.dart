@@ -1,9 +1,9 @@
 class ApiConfig {
   // Base API URL
-  static const String baseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/stage';
+  static const String baseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/v1';
   
   // Payment Base URL
-  static const String paymentBaseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/stage';
+  static const String paymentBaseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/v1';
   
   // API Key
   static const String apiKey = 'UWVdx2LDoX7xK4ue7u6oOalK0qDT0YY91CAlwOoS';
