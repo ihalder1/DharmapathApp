@@ -316,7 +316,6 @@ class SongService {
 
       headers = {
         'Content-Type': 'application/json',
-        'x-api-key': ApiConfig.apiKey,
         'Authorization': 'Bearer $token',
       };
 

@@ -50,16 +50,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   final CardFormEditController _cardFormController = CardFormEditController();
   bool _cardDetailsComplete = false;
 
-  String get _currencySymbol => Mantra.currencySymbolFor(widget.currencyCode);
-  String get _formattedAmount {
-    if (widget.currencyCode.toUpperCase() == 'USD') {
-      return widget.totalAmount.toStringAsFixed(2);
-    }
-    final whole = widget.totalAmount % 1 == 0;
-    return whole
-        ? widget.totalAmount.toInt().toString()
-        : widget.totalAmount.toStringAsFixed(2);
-  }
+  String get _formattedAmountDisplay =>
+      Mantra.formatMoney(widget.totalAmount, widget.currencyCode);
 
   bool get _isInr => widget.currencyCode.toUpperCase() == 'INR';
 
@@ -625,7 +617,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 ),
                               )
                             : Text(
-                                'Pay with UPI $_currencySymbol$_formattedAmount',
+                                'Pay with UPI $_formattedAmountDisplay',
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -646,7 +638,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           ),
                         ),
                         child: Text(
-                          'Pay with Card $_currencySymbol$_formattedAmount',
+                          'Pay with Card $_formattedAmountDisplay',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -749,7 +741,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                                 ),
                               )
                             : Text(
-                                'Pay $_currencySymbol$_formattedAmount',
+                                'Pay $_formattedAmountDisplay',
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -803,7 +795,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ),
               ),
               Text(
-                '$_currencySymbol$_formattedAmount',
+                _formattedAmountDisplay,
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,

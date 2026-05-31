@@ -146,37 +146,30 @@ class Mantra {
 
   double get lineTotal => price * cartQuantity;
 
-  String formattedLineTotal() {
-    if (currencyCode.toUpperCase() == 'USD') {
-      return '${currencySymbolFor(currencyCode)}${lineTotal.toStringAsFixed(2)}';
-    }
-    final whole = lineTotal % 1 == 0;
-    return '${currencySymbolFor(currencyCode)}${whole ? lineTotal.toInt() : lineTotal.toStringAsFixed(2)}';
-  }
-
-  // Helper method to format playtime as MM:SS - COMMENTED OUT
-  // String get formattedPlaytime {
-  //   final minutes = playtime ~/ 60;
-  //   final seconds = playtime % 60;
-  //   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  // }
+  String formattedLineTotal() => formatMoney(lineTotal, currencyCode);
 
   // Helper method to format price
-  String get formattedPrice {
-    if (currencyCode.toUpperCase() == 'USD') {
-      return '${currencySymbolFor(currencyCode)}${price.toStringAsFixed(2)}';
+  String get formattedPrice => formatMoney(price, currencyCode);
+
+  /// e.g. `USD 2.00`, `INR 99`
+  static String formatMoney(double amount, String currencyCode) {
+    final code = currencyCode.toUpperCase();
+    if (code == 'USD') {
+      return 'USD ${amount.toStringAsFixed(2)}';
     }
-    final whole = price % 1 == 0;
-    return '${currencySymbolFor(currencyCode)}${whole ? price.toInt() : price.toStringAsFixed(2)}';
+    final whole = amount % 1 == 0;
+    final value =
+        whole ? amount.toInt().toString() : amount.toStringAsFixed(2);
+    return 'INR $value';
   }
 
   static String currencySymbolFor(String code) {
     switch (code.toUpperCase()) {
       case 'USD':
-        return r'$';
+        return 'USD';
       case 'INR':
       default:
-        return '₹';
+        return 'INR';
     }
   }
 }

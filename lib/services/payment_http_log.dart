@@ -3,7 +3,7 @@ import 'dart:convert';
 /// Shared verbose HTTP logging for payment and post-payment purchase APIs.
 /// Uses [print] so everything appears in the **console** (stdout), not throttled like [debugPrint].
 /// Request/response bodies are logged **exactly** as sent/received. Sensitive
-/// header values are redacted (`Authorization`, `x-api-key`).
+/// header values are redacted (`Authorization`).
 class PaymentHttpLog {
   static const String _sep =
       '═══════════════════════════════════════════════════════════';
@@ -14,8 +14,6 @@ class PaymentHttpLog {
       final k = e.key;
       if (k.toLowerCase() == 'authorization') {
         out[k] = 'Bearer <REDACTED>';
-      } else if (k.toLowerCase() == 'x-api-key') {
-        out[k] = '<REDACTED>';
       } else {
         out[k] = e.value;
       }

@@ -146,7 +146,7 @@ class FirebaseMessagingService {
     }
   }
 
-  /// Registers device with backend: `PUT /auth/put-device-info` (Bearer + x-api-key).
+  /// Registers device with backend: `PUT /auth/put-device-info` (Bearer).
   /// [payload] keys: user_id, device_id, platform, fcm_token.
   static Future<void> sendDeviceToBackend(Map payload) async {
     try {

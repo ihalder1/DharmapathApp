@@ -453,6 +453,16 @@ class MantraService {
     try {
       final authService = AuthService();
 
+      await authService.ensureValidAccessToken();
+      final accessToken = authService.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        print(
+          '❌ ERROR: No access token for create-job; '
+          'Authorization Bearer cannot be sent',
+        );
+        return false;
+      }
+
       final userFields = authService.getCreateJobUserFields();
       if (userFields == null) {
         print('❌ ERROR: Could not resolve userId from JWT / session for create-job');
@@ -480,12 +490,15 @@ class MantraService {
       print('📤 REQUEST JSON (verification):');
       print(prettyBody);
       print('📤 URL: $url');
-      print('   Method: POST (x-api-key only; no Authorization header)');
+      print('   Method: POST with Authorization: Bearer <access_token>');
       print('═══════════════════════════════════════════════════════════');
 
-      final response = await AuthenticatedHttp.postCreateJob(
+      final response = await AuthenticatedHttp.post(
         url,
         body: json.encode(bodyMap),
+        mergeHeaders: {
+          'Authorization': 'Bearer $accessToken',
+        },
       );
 
       print('═══════════════════════════════════════════════════════════');

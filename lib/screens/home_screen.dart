@@ -3931,11 +3931,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final cartUnitCount = MantraService.getCartTotalQuantity();
     final total = MantraService.getCartTotal();
     final cartCurrencyCode = MantraService.getCartCurrencyCode();
-    final totalAmountText = cartCurrencyCode.toUpperCase() == 'USD'
-        ? total.toStringAsFixed(2)
-        : (total % 1 == 0 ? total.toInt().toString() : total.toStringAsFixed(2));
-    final totalDisplay =
-        '${Mantra.currencySymbolFor(cartCurrencyCode)}$totalAmountText';
+    final totalDisplay = Mantra.formatMoney(total, cartCurrencyCode);
     
     return Container(
       width: double.infinity,

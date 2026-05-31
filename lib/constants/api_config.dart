@@ -5,12 +5,6 @@ class ApiConfig {
   // Payment Base URL
   static const String paymentBaseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/v1';
   
-  // API Key
-  static const String apiKey = 'UWVdx2LDoX7xK4ue7u6oOalK0qDT0YY91CAlwOoS';
-  
-  // Payment API Key
-  static const String paymentApiKey = 'UPOQ0Vkmnz8ig4GgMwavL1V06b3i2WzZ5rQygFfV';
-  
   // Auth endpoints
   static const String googleSignInEndpoint = '/auth/google-signin';
   static const String facebookSignInEndpoint = '/auth/facebook-signin';
@@ -30,12 +24,10 @@ class ApiConfig {
   // Generate Mantra endpoint (legacy; voice job uses [createJobBaseUrl])
   static const String generateMantraEndpoint = '/auth/profile/generate-mantra';
 
-  /// Async mantra generation job (prod). Headers: `x-api-key` only ([createJobApiKey]); no Bearer.
+  /// Async mantra generation job (prod).
   static const String createJobBaseUrl =
       'https://d2d52ldvp3fzee.cloudfront.net/prod';
   static const String createJobEndpoint = '/create-job';
-  static const String createJobApiKey =
-      'Fh2ObHGSPm9uejJvEoBfz14e9wLDX7is4c88IbJ1';
   
   // Voice Recording endpoint
   static const String voiceRecordingsEndpoint = '/auth/profile/voice/recordings';
@@ -69,27 +61,25 @@ class ApiConfig {
   static Map<String, String> getHeaders({String? accessToken}) {
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
     };
-    
+
     if (accessToken != null) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
-    
+
     return headers;
   }
-  
+
   // Payment Headers
   static Map<String, String> getPaymentHeaders({String? accessToken}) {
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'x-api-key': paymentApiKey,
     };
-    
+
     if (accessToken != null) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
-    
+
     return headers;
   }
 }
