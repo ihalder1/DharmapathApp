@@ -1820,27 +1820,74 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _shareInferredSong(InferredSong song) async {
+  String _inferredSongExportFileName(InferredSong song) {
+    final base = song.songId.trim().isNotEmpty
+        ? song.songId.trim()
+        : song.inferredId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-.]'), '_');
+    return base.toLowerCase().endsWith('.mp3') ? base : '$base.mp3';
+  }
+
+  Future<String?> _resolveInferredSongLocalPath(InferredSong song) async {
     final path = _inferredLocalPaths[song.inferredId] ??
         await _inferredMantrasService.localPathIfExists(song.inferredId);
-    if (path == null || !await File(path).exists()) {
-      if (mounted) {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (!await file.exists() || await file.length() == 0) return null;
+    return path;
+  }
+
+  Future<void> _saveInferredSongToDevice(InferredSong song, String path) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      final fileName = _inferredSongExportFileName(song);
+      final dialogTitle = Platform.isIOS
+          ? 'Save to Files'
+          : 'Save mantra to device';
+
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: dialogTitle,
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const ['mp3'],
+        bytes: bytes,
+      );
+
+      if (!mounted) return;
+      if (savedPath != null && savedPath.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Download the mantra in the app first, then use Share.'),
-            backgroundColor: Colors.orange,
+          SnackBar(
+            content: Text(
+              Platform.isIOS
+                  ? 'Mantra saved to Files.'
+                  : 'Mantra saved to your device.',
+            ),
+            backgroundColor: AppColors.successGreen,
           ),
         );
       }
-      return;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Save failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
+  }
+
+  Future<void> _openSystemShareForInferredSong(
+    InferredSong song,
+    String path,
+  ) async {
     try {
       await Share.shareXFiles(
         [
           XFile(
             path,
             mimeType: 'audio/mpeg',
-            name: '${song.songId}.mp3',
+            name: _inferredSongExportFileName(song),
           ),
         ],
         text: song.displayTitle,
@@ -1855,6 +1902,97 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+  }
+
+  Future<void> _shareInferredSong(InferredSong song) async {
+    final path = await _resolveInferredSongLocalPath(song);
+    if (path == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Download the mantra in the app first, then use Share.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    final saveTitle = Platform.isIOS ? 'Save to Files' : 'Save to device';
+    final saveSubtitle = Platform.isIOS
+        ? 'Save this mantra in the Files app'
+        : 'Save this mantra to your phone storage';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  song.displayTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  Platform.isIOS ? Icons.folder_outlined : Icons.save_alt,
+                  color: AppColors.primarySaffron,
+                ),
+                title: Text(
+                  saveTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(saveSubtitle),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _saveInferredSongToDevice(song, path);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.share_outlined,
+                  color: AppColors.primarySaffron,
+                ),
+                title: const Text(
+                  'Share to other apps',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text('Google Drive, Messages, Bluetooth, etc.'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _openSystemShareForInferredSong(song, path);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _deleteInferredSong(InferredSong song) async {
