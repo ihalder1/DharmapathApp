@@ -5,7 +5,6 @@ class ContactUsScreen extends StatelessWidget {
   const ContactUsScreen({super.key});
 
   static const String _dummyEmail = 'support@dharmapath.com';
-  static const String _dummyPhone = '+1 (555) 123-4567';
 
   @override
   Widget build(BuildContext context) {
@@ -47,14 +46,6 @@ class ContactUsScreen extends StatelessWidget {
                 icon: Icons.email_outlined,
                 label: 'Email',
                 value: _dummyEmail,
-                onTap: () {},
-              ),
-              const SizedBox(height: 20),
-              _buildContactRow(
-                context,
-                icon: Icons.phone_outlined,
-                label: 'Phone',
-                value: _dummyPhone,
                 onTap: () {},
               ),
             ],

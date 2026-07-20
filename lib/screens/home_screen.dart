@@ -636,77 +636,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _pickAudioFileForTesting() async {
-    try {
-      if (_isRecording) {
-        return;
-      }
-
-      // Stop playback if any
-      if (_isPlayingRecording) {
-        await _recordingPlayer.stop();
-        if (mounted) {
-          setState(() {
-            _isPlayingRecording = false;
-            _currentlyPlayingPath = null;
-          });
-        }
-      }
-
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowMultiple: false,
-        allowedExtensions: const ['m4a', 'mp3', 'wav', 'aac', 'mp4', 'amr'],
-        withData: false,
-      );
-
-      final pickedPath = result?.files.single.path;
-      if (pickedPath == null || pickedPath.isEmpty) {
-        return;
-      }
-
-      final importedPath = await _voiceService.setCurrentRecordingFromFile(
-        sourcePath: pickedPath,
-      );
-
-      if (importedPath == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to import audio file.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _currentRecordingPath = importedPath;
-        _recordingSeconds = 0;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Imported: ${pickedPath.split('/').last}'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('Error picking audio file: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   String _formatRecordingTime(int seconds) {
     final m = seconds ~/ 60;
     final s = seconds % 60;
@@ -3107,7 +3036,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
           child: Column(
             children: [
               // Instructions
@@ -3181,24 +3110,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 flex: 1,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: Colors.grey[300]!,
                       width: 1,
                     ),
                   ),
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.only(bottom: 12),
+                    padding: EdgeInsets.zero,
                     child: Text(
                       VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
                       style: const TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.bold,
                         color: Colors.black,
-                        height: 1.5,
+                        height: 1.35,
                       ),
                     ),
                   ),
@@ -3209,7 +3138,7 @@ class _HomeScreenState extends State<HomeScreen> {
               
               // Recording Controls
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // When recording: show timer + stop button. When not: show record button
                   if (_isRecording)
@@ -3264,32 +3193,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       enabled: _hasPurchasedMantras(),
                     ),
 
-                  // QA/testing-only: Upload audio instead of recording
-                  if (kDebugMode && !_isRecording)
-                    _buildRecordingButton(
-                      icon: Icons.upload_file,
-                      onPressed: _pickAudioFileForTesting,
-                      isPrimary: false,
-                      enabled: true,
-                    ),
-                  
-                  // Preview Button (only show if recording exists)
-                  if (_currentRecordingPath != null)
+                  // Preview / Save (only show if recording exists)
+                  if (_currentRecordingPath != null) ...[
+                    const SizedBox(width: 16),
                     _buildRecordingButton(
                           icon: (_isPlayingRecording && _currentlyPlayingPath == _currentRecordingPath) 
                               ? Icons.pause 
                               : Icons.play_arrow,
                       onPressed: () => _playRecording(_currentRecordingPath!),
                       isPrimary: false,
+                      label: (_isPlayingRecording &&
+                              _currentlyPlayingPath == _currentRecordingPath)
+                          ? 'Pause'
+                          : 'Play',
                     ),
-                  
-                  // Save Button (only show if recording exists)
-                  if (_currentRecordingPath != null)
+                    const SizedBox(width: 12),
                     _buildRecordingButton(
                       icon: Icons.save,
                       onPressed: _showSaveDialog,
                       isPrimary: false,
+                      label: 'Save',
                     ),
+                  ],
                 ],
               ),
               
@@ -3590,8 +3515,9 @@ class _HomeScreenState extends State<HomeScreen> {
     required bool isPrimary,
     bool isRecording = false,
     bool enabled = true,
+    String? label,
   }) {
-    return Container(
+    final button = Container(
       width: isPrimary ? 60 : 40,
       height: isPrimary ? 60 : 40,
       decoration: BoxDecoration(
@@ -3615,6 +3541,24 @@ class _HomeScreenState extends State<HomeScreen> {
           size: isPrimary ? 24 : 20,
         ),
       ),
+    );
+
+    if (label == null || label.isEmpty) return button;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        button,
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: enabled ? AppColors.textPrimary : Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 
