@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +8,7 @@ import '../services/mantra_service.dart';
 import '../services/notification_service.dart';
 import '../services/song_service.dart';
 import '../models/mantra.dart';
+import '../security/payment_identifiers.dart';
 import 'stripe_checkout_webview_screen.dart';
 
 enum _PaymentPhase {
@@ -41,11 +41,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isLoading = false;
   bool _paymentScreenReady = false;
   _PaymentPhase _phase = _PaymentPhase.selectMethod;
+
   /// `upi` | `card` | `verify` — which control shows a spinner.
   String? _busyAction;
   String? _errorMessage;
   String? _clientSecret;
   String? _paymentIntentId;
+  final PaymentAttemptContext _cardAttempt = PaymentAttemptContext();
+  PaymentAttemptContext _upiAttempt = PaymentAttemptContext();
 
   final CardFormEditController _cardFormController = CardFormEditController();
   bool _cardDetailsComplete = false;
@@ -116,51 +119,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  Future<({
-    String orderId,
-    String productId,
-    String productName,
-    String customerEmail,
-    String userId,
-  })> _orderContext() async {
+  String _customerEmail() {
     final authService = Provider.of<AuthService>(context, listen: false);
     final currentUser = authService.currentUser;
     if (currentUser == null) {
       throw Exception('User not authenticated');
     }
-
-    final random = Random();
-    final orderId =
-        'order_${DateTime.now().millisecondsSinceEpoch}_${random.nextInt(10000)}';
-
-    Mantra firstMantra = widget.cartItems.first;
-    String productId = firstMantra.mantraFile;
-    if (productId.toLowerCase().endsWith('.mp3')) {
-      productId = productId.substring(0, productId.length - 4);
-    }
-
-    String productName = firstMantra.mantraFile;
-    if (!productName.toLowerCase().endsWith('.mp3')) {
-      productName = '$productName.mp3';
-    }
-
-    if (widget.cartItems.length > 1) {
-      productName = widget.cartItems.map((m) {
-        String fileName = m.mantraFile;
-        if (!fileName.toLowerCase().endsWith('.mp3')) {
-          fileName = '$fileName.mp3';
-        }
-        return fileName;
-      }).join(', ');
-    }
-
-    return (
-      orderId: orderId,
-      productId: productId,
-      productName: productName,
-      customerEmail: currentUser.email,
-      userId: currentUser.id,
-    );
+    return currentUser.email;
   }
 
   Future<void> _ensurePaymentIntentForCard() async {
@@ -177,6 +142,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       currency: widget.currencyCode,
       products: products,
       paymentMethodTypes: const ['card'],
+      idempotencyKey: _cardAttempt.idempotencyKey,
     );
 
     if (paymentIntentData == null ||
@@ -199,8 +165,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _paymentIntentStatusSucceeded(Map<String, dynamic>? statusBody) {
     if (statusBody == null) return false;
     final nested = statusBody['data'];
-    final Map<String, dynamic> map =
-        nested is Map<String, dynamic> ? nested : statusBody;
+    final Map<String, dynamic> map = nested is Map<String, dynamic>
+        ? nested
+        : statusBody;
     final s = map['status']?.toString().toLowerCase();
     return s == 'succeeded' || s == 'paid';
   }
@@ -216,7 +183,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       throw Exception('Backend payment verification failed');
     }
 
-    final statusBody = await PaymentService.getPaymentStatus(paymentIntentId: id);
+    final statusBody = await PaymentService.getPaymentStatus(
+      paymentIntentId: id,
+    );
     if (!_paymentIntentStatusSucceeded(statusBody)) {
       throw Exception('Payment is not completed on the server yet');
     }
@@ -245,9 +214,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         currency: currency,
         songIds: songIds,
       );
-    } catch (e) {
-      debugPrint('Warning: purchase data sync failed after payment: $e');
-    }
+    } catch (e) {}
 
     final purchasedItems = List<Mantra>.from(widget.cartItems);
     for (final mantra in purchasedItems) {
@@ -285,7 +252,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     try {
       await _validateCartAndUser();
-      final ctx = await _orderContext();
+      final customerEmail = _customerEmail();
 
       if (!_cardDetailsComplete) {
         if (mounted) {
@@ -308,7 +275,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         paymentIntentClientSecret: secret,
         data: PaymentMethodParams.card(
           paymentMethodData: PaymentMethodData(
-            billingDetails: BillingDetails(email: ctx.customerEmail),
+            billingDetails: BillingDetails(email: customerEmail),
           ),
         ),
       );
@@ -352,11 +319,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
         setState(() {
           _isLoading = false;
           _busyAction = null;
-          _errorMessage = e.error.message ?? 'Payment failed. Please try again.';
+          _errorMessage =
+              e.error.message ?? 'Payment failed. Please try again.';
         });
       }
     } catch (e, stackTrace) {
-      debugPrint('Payment error: $e\n$stackTrace');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -412,6 +379,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final session = await PaymentService.createCheckoutSession(
         currency: widget.currencyCode,
         products: products,
+        idempotencyKey: _upiAttempt.idempotencyKey,
       );
 
       if (session == null) {
@@ -434,11 +402,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         throw Exception('Invalid checkout session response from server');
       }
 
-      final orderId = _stringFrom(session, [
-            'orderId',
-            'order_id',
-          ]) ??
-          checkoutSessionId;
+      final orderId = PaymentIdentifierPolicy.resolveAuthoritativeId(
+        backendOrderId: _stringFrom(session, ['orderId', 'order_id']),
+        backendPaymentId: checkoutSessionId,
+      );
 
       if (mounted) {
         setState(() {
@@ -449,23 +416,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       if (!mounted) return;
 
-      final result = await Navigator.of(context).push<StripeCheckoutWebViewResult>(
-        MaterialPageRoute(
-          builder: (context) => StripeCheckoutWebViewScreen(
-            checkoutUrl: checkoutUrl,
-            checkoutSessionId: checkoutSessionId,
-          ),
-        ),
-      );
+      final result = await Navigator.of(context)
+          .push<StripeCheckoutWebViewResult>(
+            MaterialPageRoute(
+              builder: (context) => StripeCheckoutWebViewScreen(
+                checkoutUrl: checkoutUrl,
+                checkoutSessionId: checkoutSessionId,
+              ),
+            ),
+          );
 
       if (!mounted) return;
 
       if (result == null || result.cancelled || !result.completedRedirect) {
+        _upiAttempt = PaymentAttemptContext();
         return;
       }
 
-      final sessionIdForVerify =
-          result.sessionIdForVerify ?? checkoutSessionId;
+      final sessionIdForVerify = result.sessionIdForVerify ?? checkoutSessionId;
 
       setState(() {
         _isLoading = true;
@@ -485,15 +453,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
       });
 
       if (outcome != CheckoutSessionVerifyOutcome.paid) {
+        if (outcome == CheckoutSessionVerifyOutcome.failed ||
+            outcome == CheckoutSessionVerifyOutcome.unpaid) {
+          _upiAttempt = PaymentAttemptContext();
+        }
         final msg = switch (outcome) {
           CheckoutSessionVerifyOutcome.timeout =>
             'Payment is still processing. If you were charged, your purchase will appear shortly.',
           CheckoutSessionVerifyOutcome.pending =>
             'Payment is still processing. Please check again in a moment.',
-          CheckoutSessionVerifyOutcome.failed =>
-            'Payment was not completed.',
-          CheckoutSessionVerifyOutcome.unpaid =>
-            'Payment was not completed.',
+          CheckoutSessionVerifyOutcome.failed => 'Payment was not completed.',
+          CheckoutSessionVerifyOutcome.unpaid => 'Payment was not completed.',
           _ => 'Could not confirm payment with the server.',
         };
         setState(() {
@@ -516,7 +486,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
         });
       }
     } catch (e, stackTrace) {
-      debugPrint('UPI checkout error: $e\n$stackTrace');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -531,13 +500,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Widget build(BuildContext context) {
     final showBlockingLoader = !_paymentScreenReady && _isLoading;
 
-    final canSubmitCard = _paymentScreenReady &&
+    final canSubmitCard =
+        _paymentScreenReady &&
         !_isLoading &&
         _cardDetailsComplete &&
         _phase == _PaymentPhase.cardDetails;
 
-    final bool canPopRoute =
-        _phase == _PaymentPhase.selectMethod || !_isInr;
+    final bool canPopRoute = _phase == _PaymentPhase.selectMethod || !_isInr;
 
     return PopScope(
       canPop: canPopRoute,
@@ -554,17 +523,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: Text(
-            _phase == _PaymentPhase.cardDetails
-                ? 'Card payment'
-                : 'Payment',
+            _phase == _PaymentPhase.cardDetails ? 'Card payment' : 'Payment',
           ),
           backgroundColor: AppColors.primarySaffron,
           foregroundColor: Colors.white,
         ),
         body: showBlockingLoader
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
+            ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -603,7 +568,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: _isLoading &&
+                        child:
+                            _isLoading &&
                                 (_busyAction == 'upi' ||
                                     _busyAction == 'verify')
                             ? const SizedBox(
@@ -683,8 +649,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: AppColors.textSecondary
-                                  .withValues(alpha: 0.25),
+                              color: AppColors.textSecondary.withValues(
+                                alpha: 0.25,
+                              ),
                             ),
                           ),
                           padding: const EdgeInsets.symmetric(
@@ -719,10 +686,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                             ? null
                             : _handleCardPayment,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              (_isLoading || !canSubmitCard)
-                                  ? Colors.grey
-                                  : AppColors.primarySaffron,
+                          backgroundColor: (_isLoading || !canSubmitCard)
+                              ? Colors.grey
+                              : AppColors.primarySaffron,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -777,10 +743,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SizedBox(height: 8),
           Text(
             '$_checkoutUnitCount item${_checkoutUnitCount != 1 ? 's' : ''}',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 4),
           Row(
@@ -833,4 +796,3 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 }
-

@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
@@ -13,56 +12,6 @@ import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
 
-/// Writes one flat JSON per upload (full base64). Prefers **Downloads** so it is visible on device;
-/// `flutter run -d macos` writes under **~/Downloads** on your Mac.
-Future<void> _writeDebugUploadPayload(String requestBody) async {
-  if (!kDebugMode) return;
-
-  try {
-    final downloads = await getDownloadsDirectory();
-    final baseDir = downloads ??
-        await getApplicationDocumentsDirectory();
-    final folder = Directory(
-      '${baseDir.path}/colab_voice_upload_debug',
-    );
-    if (!await folder.exists()) await folder.create(recursive: true);
-
-    final f = File(
-      '${folder.path}/payload_${DateTime.now().millisecondsSinceEpoch}.json',
-    );
-    await f.writeAsString(requestBody);
-
-    final p = f.path;
-    final segs = p.split(RegExp(r'[/\\]'));
-    final basename = segs.isNotEmpty ? segs.last : p;
-    print('VOICE_UPLOAD_DEBUG_JSON_FILENAME=$basename');
-    print('VOICE_UPLOAD_DEBUG_JSON_FULLPATH=$p');
-    print(
-      '📤 DEBUG VOICE UPLOAD JSON (${requestBody.length} chars)\n'
-      '   → $p',
-    );
-
-    if (Platform.isMacOS) {
-      print(
-        '   On Mac: open Downloads folder or run:\n'
-        '   open -R "$p"',
-      );
-    } else if (Platform.isAndroid) {
-      print(
-        '   Copy this file to your Mac (USB debugging on):\n'
-        '   adb pull "$p" ~/Desktop/',
-      );
-    } else if (Platform.isIOS && !kIsWeb) {
-      print(
-        '   iOS Simulator: path is on your Mac (paste into Finder → Go → Go to Folder…).\n'
-        '   Physical iPhone: use Xcode Window → Devices → download container, or share from app.',
-      );
-    }
-  } catch (e) {
-    print('Could not write debug payload file: $e');
-  }
-}
-
 String _stripDataUrlBase64(String raw) {
   final t = raw.trim();
   const marker = 'base64,';
@@ -72,7 +21,8 @@ String _stripDataUrlBase64(String raw) {
 }
 
 class VoiceRecordingService {
-  static final VoiceRecordingService _instance = VoiceRecordingService._internal();
+  static final VoiceRecordingService _instance =
+      VoiceRecordingService._internal();
   factory VoiceRecordingService() => _instance;
   VoiceRecordingService._internal();
 
@@ -81,7 +31,7 @@ class VoiceRecordingService {
 
   final Uuid _uuid = const Uuid();
   AudioRecorder? _audioRecorder;
-  
+
   bool _isRecording = false;
   String? _currentRecordingPath;
   List<VoiceRecording> _recordings = [];
@@ -117,7 +67,10 @@ class VoiceRecordingService {
     await prefs.setString(_prefsRecordingIdPaths, json.encode(paths));
   }
 
-  Future<void> _rememberPathForRecordingId(String recordingId, String path) async {
+  Future<void> _rememberPathForRecordingId(
+    String recordingId,
+    String path,
+  ) async {
     final m = await _loadRecordingIdPaths();
     m[recordingId] = path;
     await _persistRecordingIdPaths(m);
@@ -194,7 +147,10 @@ class VoiceRecordingService {
         createdAt: DateTime.now(),
       );
 
-      final outcome = await _uploadRecordingWithRetries(recording: rec, showLogs: false);
+      final outcome = await _uploadRecordingWithRetries(
+        recording: rec,
+        showLogs: false,
+      );
       if (outcome.ok) {
         await _removePendingUpload(path);
         if (outcome.recordingId != null && outcome.recordingId!.isNotEmpty) {
@@ -214,19 +170,16 @@ class VoiceRecordingService {
   }) async {
     try {
       if (_isRecording) {
-        print('Cannot import file while recording');
         return null;
       }
 
       final sourceFile = File(sourcePath);
       if (!await sourceFile.exists()) {
-        print('Import failed: source file does not exist: $sourcePath');
         return null;
       }
 
       final sourceSize = await sourceFile.length();
       if (sourceSize == 0) {
-        print('Import failed: source file is empty (0 bytes): $sourcePath');
         return null;
       }
 
@@ -273,12 +226,10 @@ class VoiceRecordingService {
         }
 
         if (!looksLikeAudio) {
-          print('Import failed: file header does not look like audio');
           return null;
         }
       } catch (e) {
         // If header sniff fails, don't block import, but log it
-        print('Warning: could not sniff file header: $e');
       }
 
       final directory = await getApplicationDocumentsDirectory();
@@ -297,7 +248,6 @@ class VoiceRecordingService {
       // Only allow known audio extensions; otherwise fail fast
       const allowed = <String>{'.m4a', '.mp4', '.mp3', '.wav', '.aac', '.amr'};
       if (ext.isEmpty || !allowed.contains(ext)) {
-        print('Import failed: unsupported extension "$ext" for $srcName');
         return null;
       }
 
@@ -305,63 +255,64 @@ class VoiceRecordingService {
       final destFile = await sourceFile.copy(destPath);
 
       final destSize = await destFile.length();
-      print('Imported recording file: $destPath ($destSize bytes)');
 
       _currentRecordingPath = destPath;
       return _currentRecordingPath;
     } catch (e, stackTrace) {
-      print('Error importing recording file: $e');
-      print('Stack trace: $stackTrace');
       return null;
     }
   }
 
   // Language content
   static const Map<String, String> languageContent = {
-    'English': '''The sacred practice of meditation quickly brings a calm joy to every human mind. Just by vocalizing ‘Om’, one can feel a bright, vivid resonance that zaps away all stress and anxiety. We must realize that big, quiet breaths help us excel in finding our inner peace. Every rhythmic hymn is a unique gift, providing a zest for life that few other things can match''',
-    
-    'Bengali': '''ঋষিদের মতে, বৈদিক মন্ত্রের গুঞ্জন আমাদের অন্তরাত্মাকে জাগ্রত করে। যখন কেউ শুদ্ধ উচ্চারণে ‘ওঁ’ কার ধ্বনি উচ্চারণ করে, তখন তার মস্তিষ্কের স্নায়ুতন্ত্রে এক অলৌকিক প্রশান্তি ছড়িয়ে পড়ে। এই পবিত্র শব্দতরঙ্গ কেবল আধ্যাত্মিক উন্নতির পথ দেখায় না, বরং রক্তচাপ নিয়ন্ত্রণ ও স্মৃতিশক্তি বৃদ্ধিতেও অভাবনীয় সাহায্য করে। মন্ত্রের প্রতিটি অক্ষর বা বর্ণ এমনভাবে বিন্যস্ত থাকে যা আমাদের শরীরের সূক্ষ্ম চক্রগুলোকে সক্রিয় করে তোলে। তাই প্রতিদিন নিয়ম করে স্তোত্র পাঠ করলে মানুষের জীবনে শৃঙ্খলা ও অখণ্ড আনন্দ ফিরে আসে। এটি প্রাচীন ধ্বনি বিজ্ঞানের এক সার্থক প্রয়োগ যা আজও বিস্ময়করভাবে কার্যকর''',
-    
-    'Hindi': '''मंत्रों की पवित्र शक्ति हमारे अंतर्मन को जागृत करती है। ऋषि-मुनियों के अनुसार, शुद्ध उच्चारण के साथ किया गया जप मस्तिष्क की कोशिकाओं में एक अद्भुत स्पंदन पैदा करता है। जब हम पूर्ण एकाग्रता से 'ॐ' का उच्चारण करते हैं, तो यह मानसिक तनाव को क्षण भर में दूर कर देता है। यह प्राचीन विज्ञान न केवल हृदय की गति को संतुलित रखता है, बल्कि व्यक्ति के आत्मज्ञान और बौद्धिक क्षमता को भी प्रखर बनाता है। मंत्र साधना जीवन में शांति, स्वास्थ्य और अटूट आनंद का संचार करने वाला एक अद्वितीय मार्ग है''',
+    'English':
+        '''The sacred practice of meditation quickly brings a calm joy to every human mind. Just by vocalizing ‘Om’, one can feel a bright, vivid resonance that zaps away all stress and anxiety. We must realize that big, quiet breaths help us excel in finding our inner peace. Every rhythmic hymn is a unique gift, providing a zest for life that few other things can match''',
 
-    'Telugu': '''మంత్రం యొక్క పవిత్రమైన ధ్వని మనస్సును ఉత్తేజపరుస్తుంది. ప్రతి మంత్రంలో ఒక ప్రత్యేకమైన శక్తి ఉంది, ఇది మన నాడీ వ్యవస్థను శాంతపరుస్తుంది. ఓంకార నాదం మనలోని ఒత్తిడిని తొలగించి, ఏకాగ్రతను పెంచుతుంది. రోజువారీ మంత్ర పఠనం వల్ల శారీరక ఆరోగ్యం మరియు మానసిక ప్రశాంతత లభిస్తాయి. ఇది పురాతన ధ్వని శాస్త్రం యొక్క గొప్ప అద్భుతం. క్రమం తప్పకుండా మంత్ర జపం చేయడం వల్ల జీవితంలో ఒక కొత్త ఉత్సాహం మరియు దివ్యమైన ఆనందం కలుగుతుంది''',
+    'Bengali':
+        '''ঋষিদের মতে, বৈদিক মন্ত্রের গুঞ্জন আমাদের অন্তরাত্মাকে জাগ্রত করে। যখন কেউ শুদ্ধ উচ্চারণে ‘ওঁ’ কার ধ্বনি উচ্চারণ করে, তখন তার মস্তিষ্কের স্নায়ুতন্ত্রে এক অলৌকিক প্রশান্তি ছড়িয়ে পড়ে। এই পবিত্র শব্দতরঙ্গ কেবল আধ্যাত্মিক উন্নতির পথ দেখায় না, বরং রক্তচাপ নিয়ন্ত্রণ ও স্মৃতিশক্তি বৃদ্ধিতেও অভাবনীয় সাহায্য করে। মন্ত্রের প্রতিটি অক্ষর বা বর্ণ এমনভাবে বিন্যস্ত থাকে যা আমাদের শরীরের সূক্ষ্ম চক্রগুলোকে সক্রিয় করে তোলে। তাই প্রতিদিন নিয়ম করে স্তোত্র পাঠ করলে মানুষের জীবনে শৃঙ্খলা ও অখণ্ড আনন্দ ফিরে আসে। এটি প্রাচীন ধ্বনি বিজ্ঞানের এক সার্থক প্রয়োগ যা আজও বিস্ময়করভাবে কার্যকর''',
 
-    'Tamil': '''மந்திரங்களின் புனிதமான ஓசை நம் ஆன்மாவைத் தட்டி எழுப்புகிறது. மந்திரங்களைச் சுத்தமான உச்சரிப்புடன் சொல்வது, நம் மூளையின் அலைகளைச் சீராக்கி அமைதியைத் தருகிறது. 'ஓம்' என்ற பிரணவ மந்திரம் மன அழுத்தத்தைப் போக்கி, கவனத்தை ஒருமுகப்படுத்த உதவுகிறது. இந்தத் தொன்மையான ஒலி அறிவியல், உடலையும் மனதையும் ஆரோக்கியமாக வைக்கிறது. தினமும் மந்திரங்களைச் சொல்வது, வாழ்க்கையில் புதிய ஆற்றலையும், தெளிவான சிந்தனையையும், உண்மையான மகிழ்ச்சியையும் கொண்டு வரும்.''',
+    'Hindi':
+        '''मंत्रों की पवित्र शक्ति हमारे अंतर्मन को जागृत करती है। ऋषि-मुनियों के अनुसार, शुद्ध उच्चारण के साथ किया गया जप मस्तिष्क की कोशिकाओं में एक अद्भुत स्पंदन पैदा करता है। जब हम पूर्ण एकाग्रता से 'ॐ' का उच्चारण करते हैं, तो यह मानसिक तनाव को क्षण भर में दूर कर देता है। यह प्राचीन विज्ञान न केवल हृदय की गति को संतुलित रखता है, बल्कि व्यक्ति के आत्मज्ञान और बौद्धिक क्षमता को भी प्रखर बनाता है। मंत्र साधना जीवन में शांति, स्वास्थ्य और अटूट आनंद का संचार करने वाला एक अद्वितीय मार्ग है''',
 
-    'Malayalam': '''മന്ത്രങ്ങളുടെ പരിശുദ്ധമായ ശബ്ദം നമ്മുടെ ആത്മാവിനെ ഉണർത്തുന്നു. മന്ത്രങ്ങൾ ശരിയായ ഉച്ചാരണത്തോടെ ജപിക്കുന്നത് തലച്ചോറിലെ നാഡീവ്യവസ്ഥയിൽ അത്ഭുതകരമായ മാറ്റങ്ങൾ വരുത്തുന്നു. ‘ഓം’ എന്ന മന്ത്രം മനസ്സിന്റെ സമ്മർദ്ദം കുറയ്ക്കാനും ഏകാഗ്രത വർദ്ധിപ്പിക്കാനും സഹായിക്കുന്നു. ഈ പുരാതന ശബ്ദശാസ്ത്രം നമ്മുടെ ശരീരത്തെയും മനസ്സിനെയും ആരോഗ്യകരമായി നിലനിർത്താൻ സഹായിക്കുന്നു. ദിവസവും മന്ത്രങ്ങൾ ജപിക്കുന്നത് നമ്മുടെ ജീവിതത്തിൽ സമാധാനവും, പുതിയ ഊർജ്ജവും, സന്തോഷവും നിറയ്ക്കുന്നു.''',
+    'Telugu':
+        '''మంత్రం యొక్క పవిత్రమైన ధ్వని మనస్సును ఉత్తేజపరుస్తుంది. ప్రతి మంత్రంలో ఒక ప్రత్యేకమైన శక్తి ఉంది, ఇది మన నాడీ వ్యవస్థను శాంతపరుస్తుంది. ఓంకార నాదం మనలోని ఒత్తిడిని తొలగించి, ఏకాగ్రతను పెంచుతుంది. రోజువారీ మంత్ర పఠనం వల్ల శారీరక ఆరోగ్యం మరియు మానసిక ప్రశాంతత లభిస్తాయి. ఇది పురాతన ధ్వని శాస్త్రం యొక్క గొప్ప అద్భుతం. క్రమం తప్పకుండా మంత్ర జపం చేయడం వల్ల జీవితంలో ఒక కొత్త ఉత్సాహం మరియు దివ్యమైన ఆనందం కలుగుతుంది''',
 
-    'Kannada': '''ಮಂತ್ರಗಳ ಪವಿತ್ರ ಧ್ವನಿಯು ನಮ್ಮ ಆತ್ಮವನ್ನು ಜಾಗೃತಗೊಳಿಸುತ್ತದೆ. ಶುದ್ಧ ಉಚ್ಚಾರಣೆಯೊಂದಿಗೆ ಮಂತ್ರಗಳನ್ನು ಪಠಿಸುವುದರಿಂದ ನಮ್ಮ ಮಿದುಳಿನ ನರಮಂಡಲದಲ್ಲಿ ಅಪೂರ್ವವಾದ ಕಂಪನ ಉಂಟಾಗುತ್ತದೆ. ‘ಓಂ’ಕಾರದ ನಾದವು ಮನಸ್ಸಿನ ಒತ್ತಡವನ್ನು ಕಡಿಮೆ ಮಾಡಿ, ಏಕಾಗ್ರತೆಯನ್ನು ಹೆಚ್ಚಿಸಲು ಸಹಕಾರಿಯಾಗಿದೆ. ಈ ಪ್ರಾಚೀನ ಧ್ವನಿ ವಿಜ್ಞಾನವು ನಮ್ಮ ಶರೀರ ಮತ್ತು ಮನಸ್ಸಿನ ಸಮತೋಲನವನ್ನು ಕಾಪಾಡುತ್ತದೆ. ಪ್ರತಿದಿನ ಮಂತ್ರಗಳನ್ನು ಪಠಿಸುವುದರಿಂದ ಜೀವನದಲ್ಲಿ ಶಾಂತಿ, ಆರೋಗ್ಯ ಮತ್ತು ಅಖಂಡ ಆನಂದವು ಲಭಿಸುತ್ತದೆ. ಇದು ಆಧ್ಯಾತ್ಮಿಕ ಶಕ್ತಿಯನ್ನು ವೃದ್ಧಿಸುವ ಒಂದು ಅದ್ಭುತ ಮಾರ್ಗವಾಗಿದೆ.''',
+    'Tamil':
+        '''மந்திரங்களின் புனிதமான ஓசை நம் ஆன்மாவைத் தட்டி எழுப்புகிறது. மந்திரங்களைச் சுத்தமான உச்சரிப்புடன் சொல்வது, நம் மூளையின் அலைகளைச் சீராக்கி அமைதியைத் தருகிறது. 'ஓம்' என்ற பிரணவ மந்திரம் மன அழுத்தத்தைப் போக்கி, கவனத்தை ஒருமுகப்படுத்த உதவுகிறது. இந்தத் தொன்மையான ஒலி அறிவியல், உடலையும் மனதையும் ஆரோக்கியமாக வைக்கிறது. தினமும் மந்திரங்களைச் சொல்வது, வாழ்க்கையில் புதிய ஆற்றலையும், தெளிவான சிந்தனையையும், உண்மையான மகிழ்ச்சியையும் கொண்டு வரும்.''',
 
-    'Gujarati': '''મંત્રોની પવિત્ર ધ્વનિ આપણા આત્માને જાગૃત કરે છે. ઋષિ-મુનિઓના જણાવ્યા અનુસાર, શુદ્ધ ઉચ્ચારણ સાથે કરવામાં આવેલો મંત્રોચ્ચાર મગજની કોશિકાઓમાં એક અદભૂત સ્પંદન પેદા કરે છે. જ્યારે આપણે પૂરી એકાગ્રતાથી 'ૐ' નો ઉચ્ચાર કરીએ છીએ, ત્યારે તે માનસિક તણાવને ક્ષણવારમાં દૂર કરી દે છે. આ પ્રાચીન વિજ્ઞાન માત્ર હૃદયના ધબકારાને સંતુલિત નથી રાખતું, પરંતુ વ્યક્તિના આત્મજ્ઞાન અને બૌદ્ધિક ક્ષમતાને પણ પ્રખર બનાવે છે. મંત્ર સાધના જીવનમાં શાંતિ, સ્વાસ્થ્ય અને અખંડ આનંદનો સંચાર કરનારો એક અદ્વિતીય માર્ગ છે''',
+    'Malayalam':
+        '''മന്ത്രങ്ങളുടെ പരിശുദ്ധമായ ശബ്ദം നമ്മുടെ ആത്മാവിനെ ഉണർത്തുന്നു. മന്ത്രങ്ങൾ ശരിയായ ഉച്ചാരണത്തോടെ ജപിക്കുന്നത് തലച്ചോറിലെ നാഡീവ്യവസ്ഥയിൽ അത്ഭുതകരമായ മാറ്റങ്ങൾ വരുത്തുന്നു. ‘ഓം’ എന്ന മന്ത്രം മനസ്സിന്റെ സമ്മർദ്ദം കുറയ്ക്കാനും ഏകാഗ്രത വർദ്ധിപ്പിക്കാനും സഹായിക്കുന്നു. ഈ പുരാതന ശബ്ദശാസ്ത്രം നമ്മുടെ ശരീരത്തെയും മനസ്സിനെയും ആരോഗ്യകരമായി നിലനിർത്താൻ സഹായിക്കുന്നു. ദിവസവും മന്ത്രങ്ങൾ ജപിക്കുന്നത് നമ്മുടെ ജീവിതത്തിൽ സമാധാനവും, പുതിയ ഊർജ്ജവും, സന്തോഷവും നിറയ്ക്കുന്നു.''',
 
-    'Punjabi': '''ਮੰਤਰਾਂ ਦੀ ਪਵਿੱਤਰ ਆਵਾਜ਼ ਸਾਡੀ ਆਤਮਾ ਨੂੰ ਜਾਗ੍ਰਿਤ ਕਰਦੀ ਹੈ। ਰਿਸ਼ੀਆਂ-ਮੁਨੀਆਂ ਅਨੁਸਾਰ, ਸ਼ੁੱਧ ਉਚਾਰਨ ਨਾਲ ਕੀਤਾ ਗਿਆ ਜਾਪ ਸਾਡੇ ਦਿਮਾਗ ਦੀਆਂ ਨਸਾਂ ਵਿੱਚ ਇੱਕ ਅਦਭੁਤ ਕੰਬਣੀ ਪੈਦਾ ਕਰਦਾ ਹੈ। ਜਦੋਂ ਅਸੀਂ ਪੂਰੀ ਇਕਾਗਰਤਾ ਨਾਲ 'ਓਂਕਾਰ' ਦਾ ਉਚਾਰਨ ਕਰਦੇ ਹਾਂ, ਤਾਂ ਇਹ ਸਾਡੇ ਮਾਨਸਿਕ ਤਣਾਅ ਨੂੰ ਤੁਰੰਤ ਦੂਰ ਕਰ ਦਿੰਦਾ ਹੈ। ਇਹ ਪ੍ਰਾਚੀਨ ਵਿਗਿਆਨ ਨਾ ਕੇਵਲ ਸਾਡੇ ਦਿਲ ਦੀ ਧੜਕਣ ਨੂੰ ਸੰਤੁਲਿਤ ਰੱਖਦਾ ਹੈ, ਸਗੋਂ ਸਾਡੀ ਆਤਮ-ਗਿਆਨ ਅਤੇ ਬੌਧਿਕ ਸਮਰੱਥਾ ਨੂੰ ਵੀ ਵਧਾਉਂਦਾ ਹੈ। ਮੰਤਰ ਸਾਧਨਾ ਜੀਵਨ ਵਿੱਚ ਸ਼ਾਂਤੀ, ਸਿਹਤ ਅਤੇ ਅਖੰਡ ਆਨੰਦ ਦਾ ਸੰਚਾਰ ਕਰਨ ਵਾਲਾ ਇੱਕ ਅਦੁੱਤੀ ਮਾਰਗ ਹੈ।''',
+    'Kannada':
+        '''ಮಂತ್ರಗಳ ಪವಿತ್ರ ಧ್ವನಿಯು ನಮ್ಮ ಆತ್ಮವನ್ನು ಜಾಗೃತಗೊಳಿಸುತ್ತದೆ. ಶುದ್ಧ ಉಚ್ಚಾರಣೆಯೊಂದಿಗೆ ಮಂತ್ರಗಳನ್ನು ಪಠಿಸುವುದರಿಂದ ನಮ್ಮ ಮಿದುಳಿನ ನರಮಂಡಲದಲ್ಲಿ ಅಪೂರ್ವವಾದ ಕಂಪನ ಉಂಟಾಗುತ್ತದೆ. ‘ಓಂ’ಕಾರದ ನಾದವು ಮನಸ್ಸಿನ ಒತ್ತಡವನ್ನು ಕಡಿಮೆ ಮಾಡಿ, ಏಕಾಗ್ರತೆಯನ್ನು ಹೆಚ್ಚಿಸಲು ಸಹಕಾರಿಯಾಗಿದೆ. ಈ ಪ್ರಾಚೀನ ಧ್ವನಿ ವಿಜ್ಞಾನವು ನಮ್ಮ ಶರೀರ ಮತ್ತು ಮನಸ್ಸಿನ ಸಮತೋಲನವನ್ನು ಕಾಪಾಡುತ್ತದೆ. ಪ್ರತಿದಿನ ಮಂತ್ರಗಳನ್ನು ಪಠಿಸುವುದರಿಂದ ಜೀವನದಲ್ಲಿ ಶಾಂತಿ, ಆರೋಗ್ಯ ಮತ್ತು ಅಖಂಡ ಆನಂದವು ಲಭಿಸುತ್ತದೆ. ಇದು ಆಧ್ಯಾತ್ಮಿಕ ಶಕ್ತಿಯನ್ನು ವೃದ್ಧಿಸುವ ಒಂದು ಅದ್ಭುತ ಮಾರ್ಗವಾಗಿದೆ.''',
 
-    'Nepali': '''मन्त्रहरूको पवित्र ध्वनिले हाम्रो आत्मालाई जागृत गर्छ। ऋषि-मुनिहरूका अनुसार, शुद्ध उच्चारणका साथ जप गर्दा मस्तिष्कको स्नायु प्रणालीमा एक अद्भुत कम्पन पैदा हुन्छ। जब हामी पूर्ण एकाग्रताका साथ ‘ॐ’ को उच्चारण गर्छौँ, तब यसले मानसिक तनावलाई तुरुन्तै कम गर्छ। यो प्राचीन ध्वनि विज्ञानले हाम्रो शरीर र मनलाई स्वस्थ राख्न मद्दत गर्दछ। दैनिक मन्त्र जप गर्नाले जीवनमा शान्ति, शक्ति र असीम आनन्दको सञ्चार हुन्छ। यो आध्यात्मिक उन्नति र बौद्धिक क्षमता बढाउने एक अनुपम मार्ग हो''',
+    'Gujarati':
+        '''મંત્રોની પવિત્ર ધ્વનિ આપણા આત્માને જાગૃત કરે છે. ઋષિ-મુનિઓના જણાવ્યા અનુસાર, શુદ્ધ ઉચ્ચારણ સાથે કરવામાં આવેલો મંત્રોચ્ચાર મગજની કોશિકાઓમાં એક અદભૂત સ્પંદન પેદા કરે છે. જ્યારે આપણે પૂરી એકાગ્રતાથી 'ૐ' નો ઉચ્ચાર કરીએ છીએ, ત્યારે તે માનસિક તણાવને ક્ષણવારમાં દૂર કરી દે છે. આ પ્રાચીન વિજ્ઞાન માત્ર હૃદયના ધબકારાને સંતુલિત નથી રાખતું, પરંતુ વ્યક્તિના આત્મજ્ઞાન અને બૌદ્ધિક ક્ષમતાને પણ પ્રખર બનાવે છે. મંત્ર સાધના જીવનમાં શાંતિ, સ્વાસ્થ્ય અને અખંડ આનંદનો સંચાર કરનારો એક અદ્વિતીય માર્ગ છે''',
 
-    'Marathi': '''ऋषींच्या मते, वैदिक मंत्रांचा गूंज आपल्या अंतरात्म्याला जागृत करतो. जेव्हा कोणी शुद्ध उच्चारात ‘ॐ’ (ओम) कार ध्वनीचा उच्चार करतो, तेव्हा त्याच्या मेंदूच्या मज्जासंस्थेमध्ये एक अलौकिक शांतता पसरते. हा पवित्र शब्दतरंग केवळ आध्यात्मिक प्रगतीचा मार्ग दाखवत नाही, तर रक्तदाब नियंत्रण आणि स्मरणशक्ती वाढवण्यातही अभूतपूर्व मदत करतो. मंत्राचा प्रत्येक अक्षर किंवा वर्ण अशा प्रकारे रचलेला असतो जो आपल्या शरीराच्या सूक्ष्म चक्रांना सक्रिय करतो. म्हणूनच रोज नियमाने स्तोत्र पठण केल्यास माणसाच्या जीवनात शिस्त आणि अखंड आनंद परत येतो. हा प्राचीन ध्वनी विज्ञानाचा एक यशस्वी प्रयोग आहे जो आजही आश्चर्यकारकपणे प्रभावी आहे.''',
+    'Punjabi':
+        '''ਮੰਤਰਾਂ ਦੀ ਪਵਿੱਤਰ ਆਵਾਜ਼ ਸਾਡੀ ਆਤਮਾ ਨੂੰ ਜਾਗ੍ਰਿਤ ਕਰਦੀ ਹੈ। ਰਿਸ਼ੀਆਂ-ਮੁਨੀਆਂ ਅਨੁਸਾਰ, ਸ਼ੁੱਧ ਉਚਾਰਨ ਨਾਲ ਕੀਤਾ ਗਿਆ ਜਾਪ ਸਾਡੇ ਦਿਮਾਗ ਦੀਆਂ ਨਸਾਂ ਵਿੱਚ ਇੱਕ ਅਦਭੁਤ ਕੰਬਣੀ ਪੈਦਾ ਕਰਦਾ ਹੈ। ਜਦੋਂ ਅਸੀਂ ਪੂਰੀ ਇਕਾਗਰਤਾ ਨਾਲ 'ਓਂਕਾਰ' ਦਾ ਉਚਾਰਨ ਕਰਦੇ ਹਾਂ, ਤਾਂ ਇਹ ਸਾਡੇ ਮਾਨਸਿਕ ਤਣਾਅ ਨੂੰ ਤੁਰੰਤ ਦੂਰ ਕਰ ਦਿੰਦਾ ਹੈ। ਇਹ ਪ੍ਰਾਚੀਨ ਵਿਗਿਆਨ ਨਾ ਕੇਵਲ ਸਾਡੇ ਦਿਲ ਦੀ ਧੜਕਣ ਨੂੰ ਸੰਤੁਲਿਤ ਰੱਖਦਾ ਹੈ, ਸਗੋਂ ਸਾਡੀ ਆਤਮ-ਗਿਆਨ ਅਤੇ ਬੌਧਿਕ ਸਮਰੱਥਾ ਨੂੰ ਵੀ ਵਧਾਉਂਦਾ ਹੈ। ਮੰਤਰ ਸਾਧਨਾ ਜੀਵਨ ਵਿੱਚ ਸ਼ਾਂਤੀ, ਸਿਹਤ ਅਤੇ ਅਖੰਡ ਆਨੰਦ ਦਾ ਸੰਚਾਰ ਕਰਨ ਵਾਲਾ ਇੱਕ ਅਦੁੱਤੀ ਮਾਰਗ ਹੈ।''',
 
-    'Odia': '''ଋଷିମାନଙ୍କ ମତରେ, ବୈଦିକ ମନ୍ତ୍ରର ଗୁଞ୍ଜନ ଆମର ଅନ୍ତରାତ୍ମାକୁ ଜାଗ୍ରତ କରିଥାଏ । ଯେତେବେଳେ କେହି ଶୁଦ୍ଧ ଉଚ୍ଚାରଣରେ ‘ଓଁ’ କାର ଧ୍ୱନି ଉଚ୍ଚାରଣ କରେ, ସେତେବେଳେ ତାଙ୍କ ମସ୍ତିଷ୍କର ସ୍ନାୟୁତନ୍ତ୍ରରେ ଏକ ଅଲୌକିକ ପ୍ରଶାନ୍ତି ଖେଳିଯାଏ । ଏହି ପବିତ୍ର ଶବ୍ଦତରଙ୍ଗ କେବଳ ଆଧ୍ୟାତ୍ମିକ ଉନ୍ନତିର ପଥ ଦେଖାଏ ନାହିଁ, ବରଂ ରକ୍ତଚାପ ନିୟନ୍ତ୍ରଣ ଓ ସ୍ମୃତିଶକ୍ତି ବୃଦ୍ଧିରେ ମଧ୍ୟ ଅଦ୍ଭୁତ ଭାବରେ ସାହାଯ୍ୟ କରେ । ମନ୍ତ୍ରର ପ୍ରତ୍ୟେକ ଅକ୍ଷର ବା ବର୍ଣ୍ଣ ଏପରି ଭାବରେ ସଜାଯାଇଥାଏ ଯାହା ଆମ ଶରୀରର ସୂକ୍ଷ୍ମ ଚକ୍ରଗୁଡ଼ିକୁ ସକ୍ରିୟ କରିଥାଏ । ତେଣୁ ପ୍ରତିଦିନ ନିୟମିତ ଭାବରେ ସ୍ତୋତ୍ର ପାଠ କଲେ ମଣିଷ ଜୀବନରେ ଶୃଙ୍ଖଳା ଓ ଅଖଣ୍ଡ ଆନନ୍ଦ ଫେରିଆସେ । ଏହା ପ୍ରାଚୀନ ଧ୍ୱନି ବିଜ୍ଞାନର ଏକ ସଫଳ ପ୍ରୟୋଗ ଯାହା ଆଜି ବି ବିସ୍ମୟକର ଭାବେ ପ୍ରଭାବଶାଳୀ ।''',
+    'Nepali':
+        '''मन्त्रहरूको पवित्र ध्वनिले हाम्रो आत्मालाई जागृत गर्छ। ऋषि-मुनिहरूका अनुसार, शुद्ध उच्चारणका साथ जप गर्दा मस्तिष्कको स्नायु प्रणालीमा एक अद्भुत कम्पन पैदा हुन्छ। जब हामी पूर्ण एकाग्रताका साथ ‘ॐ’ को उच्चारण गर्छौँ, तब यसले मानसिक तनावलाई तुरुन्तै कम गर्छ। यो प्राचीन ध्वनि विज्ञानले हाम्रो शरीर र मनलाई स्वस्थ राख्न मद्दत गर्दछ। दैनिक मन्त्र जप गर्नाले जीवनमा शान्ति, शक्ति र असीम आनन्दको सञ्चार हुन्छ। यो आध्यात्मिक उन्नति र बौद्धिक क्षमता बढाउने एक अनुपम मार्ग हो''',
 
-    'Rajasthani': '''मंत्रां री पवित्र धूणी आपणा मन ने जागृत करै। ऋषि-मुनियां रै अनुसार, शुद्ध उचारण स्यूं जप करण स्यूं आपणा मस्तिष्क री नस-नस्यां में एक अनोखो स्पंदन पैदा होवै। जद आपां पूरै ध्यान स्यूं 'ॐ' रो उचारण करां, तो इण स्यूं मानसिक तनाव झटपट दूर हो जावै। यो प्राचीन विज्ञान आपणा शरीर अर मन नै स्वस्थ राखन रो घणो बड़ो साध्य अर मार्ग है। रोज मन्त्रां रो जाप करण स्यूं जीवन में शांति, शक्ति अर अटूट आनंद रो संचार होवै। यो एक असली ज्ञान है, जो आपणी एकाग्रता नै बढ़ावण में पूरी मदद करै'''
+    'Marathi':
+        '''ऋषींच्या मते, वैदिक मंत्रांचा गूंज आपल्या अंतरात्म्याला जागृत करतो. जेव्हा कोणी शुद्ध उच्चारात ‘ॐ’ (ओम) कार ध्वनीचा उच्चार करतो, तेव्हा त्याच्या मेंदूच्या मज्जासंस्थेमध्ये एक अलौकिक शांतता पसरते. हा पवित्र शब्दतरंग केवळ आध्यात्मिक प्रगतीचा मार्ग दाखवत नाही, तर रक्तदाब नियंत्रण आणि स्मरणशक्ती वाढवण्यातही अभूतपूर्व मदत करतो. मंत्राचा प्रत्येक अक्षर किंवा वर्ण अशा प्रकारे रचलेला असतो जो आपल्या शरीराच्या सूक्ष्म चक्रांना सक्रिय करतो. म्हणूनच रोज नियमाने स्तोत्र पठण केल्यास माणसाच्या जीवनात शिस्त आणि अखंड आनंद परत येतो. हा प्राचीन ध्वनी विज्ञानाचा एक यशस्वी प्रयोग आहे जो आजही आश्चर्यकारकपणे प्रभावी आहे.''',
+
+    'Odia':
+        '''ଋଷିମାନଙ୍କ ମତରେ, ବୈଦିକ ମନ୍ତ୍ରର ଗୁଞ୍ଜନ ଆମର ଅନ୍ତରାତ୍ମାକୁ ଜାଗ୍ରତ କରିଥାଏ । ଯେତେବେଳେ କେହି ଶୁଦ୍ଧ ଉଚ୍ଚାରଣରେ ‘ଓଁ’ କାର ଧ୍ୱନି ଉଚ୍ଚାରଣ କରେ, ସେତେବେଳେ ତାଙ୍କ ମସ୍ତିଷ୍କର ସ୍ନାୟୁତନ୍ତ୍ରରେ ଏକ ଅଲୌକିକ ପ୍ରଶାନ୍ତି ଖେଳିଯାଏ । ଏହି ପବିତ୍ର ଶବ୍ଦତରଙ୍ଗ କେବଳ ଆଧ୍ୟାତ୍ମିକ ଉନ୍ନତିର ପଥ ଦେଖାଏ ନାହିଁ, ବରଂ ରକ୍ତଚାପ ନିୟନ୍ତ୍ରଣ ଓ ସ୍ମୃତିଶକ୍ତି ବୃଦ୍ଧିରେ ମଧ୍ୟ ଅଦ୍ଭୁତ ଭାବରେ ସାହାଯ୍ୟ କରେ । ମନ୍ତ୍ରର ପ୍ରତ୍ୟେକ ଅକ୍ଷର ବା ବର୍ଣ୍ଣ ଏପରି ଭାବରେ ସଜାଯାଇଥାଏ ଯାହା ଆମ ଶରୀରର ସୂକ୍ଷ୍ମ ଚକ୍ରଗୁଡ଼ିକୁ ସକ୍ରିୟ କରିଥାଏ । ତେଣୁ ପ୍ରତିଦିନ ନିୟମିତ ଭାବରେ ସ୍ତୋତ୍ର ପାଠ କଲେ ମଣିଷ ଜୀବନରେ ଶୃଙ୍ଖଳା ଓ ଅଖଣ୍ଡ ଆନନ୍ଦ ଫେରିଆସେ । ଏହା ପ୍ରାଚୀନ ଧ୍ୱନି ବିଜ୍ଞାନର ଏକ ସଫଳ ପ୍ରୟୋଗ ଯାହା ଆଜି ବି ବିସ୍ମୟକର ଭାବେ ପ୍ରଭାବଶାଳୀ ।''',
+
+    'Rajasthani':
+        '''मंत्रां री पवित्र धूणी आपणा मन ने जागृत करै। ऋषि-मुनियां रै अनुसार, शुद्ध उचारण स्यूं जप करण स्यूं आपणा मस्तिष्क री नस-नस्यां में एक अनोखो स्पंदन पैदा होवै। जद आपां पूरै ध्यान स्यूं 'ॐ' रो उचारण करां, तो इण स्यूं मानसिक तनाव झटपट दूर हो जावै। यो प्राचीन विज्ञान आपणा शरीर अर मन नै स्वस्थ राखन रो घणो बड़ो साध्य अर मार्ग है। रोज मन्त्रां रो जाप करण स्यूं जीवन में शांति, शक्ति अर अटूट आनंद रो संचार होवै। यो एक असली ज्ञान है, जो आपणी एकाग्रता नै बढ़ावण में पूरी मदद करै''',
   };
 
   // Request recording permission - Uses PermissionService (native iOS, permission_handler on Android)
   Future<bool> requestPermission() async {
     try {
-      print('=== MICROPHONE PERMISSION REQUEST START ===');
-      
       // Use PermissionService: native on iOS, permission_handler on Android
       final granted = await PermissionService.requestMicrophonePermission();
-      
-      print('=== PERMISSION REQUEST RESULT ===');
-      print('Granted: $granted');
-      print('=== MICROPHONE PERMISSION REQUEST END ===');
-      
+
       return granted;
     } catch (e, stackTrace) {
-      print('=== ERROR REQUESTING MICROPHONE PERMISSION ===');
-      print('Error: $e');
-      print('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -396,19 +347,15 @@ class VoiceRecordingService {
   Future<bool> startRecording() async {
     try {
       if (_isRecording) {
-        print('Already recording, cannot start again');
         return false;
       }
 
       // Request permission (only once)
       final hasPermission = await requestPermission();
       if (!hasPermission) {
-        print('Permission denied, cannot start recording');
         // Check if permission is permanently denied for better error handling
         final isPermanentlyDenied = await isPermissionPermanentlyDenied();
-        if (isPermanentlyDenied) {
-          print('Permission is permanently denied - user needs to enable in Settings');
-        }
+        if (isPermanentlyDenied) {}
         return false;
       }
 
@@ -439,7 +386,6 @@ class VoiceRecordingService {
           echoCancel: true,
           noiseSuppress: true,
         );
-        print('Starting Android recording with AAC (m4a)');
       } else {
         config = const RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -447,35 +393,24 @@ class VoiceRecordingService {
           sampleRate: 44100,
           numChannels: 1,
         );
-        print('Starting iOS recording with AAC (m4a)');
       }
-      
+
       final filename = 'recording_$timestamp.$extension';
       _currentRecordingPath = '${recordingsDir.path}/$filename';
 
       // Ensure recorder is initialized (recreate if needed)
       try {
-        await _recorder.start(
-          config,
-          path: _currentRecordingPath!,
-        );
+        await _recorder.start(config, path: _currentRecordingPath!);
       } catch (e) {
         // If recorder is disposed or not initialized, recreate it
-        print('Recorder error, recreating: $e');
         _audioRecorder?.dispose();
         _audioRecorder = AudioRecorder();
-        await _recorder.start(
-          config,
-          path: _currentRecordingPath!,
-        );
+        await _recorder.start(config, path: _currentRecordingPath!);
       }
 
       _isRecording = true;
-      print('Recording started: $_currentRecordingPath');
       return true;
     } catch (e, stackTrace) {
-      print('Error starting recording: $e');
-      print('Stack trace: $stackTrace');
       _isRecording = false;
       return false;
     }
@@ -488,59 +423,46 @@ class VoiceRecordingService {
 
       // Stop the real audio recording
       final path = await _recorder.stop();
-      
+
       if (path != null && path.isNotEmpty) {
         _currentRecordingPath = path;
-        print('Recording stopped and saved: $_currentRecordingPath');
-        
+
         // Wait a moment for file system to sync
         await Future.delayed(const Duration(milliseconds: 200));
-        
+
         // Verify file exists and has content
         final file = File(_currentRecordingPath!);
         if (await file.exists()) {
           final fileSize = await file.length();
-          print('Recording file size: $fileSize bytes');
-          
+
           // Minimum file size check (very small files are likely empty/noise)
           // For a 1-second recording at 44.1kHz mono AAC, expect at least ~5KB
           const minFileSize = 5000; // 5KB minimum
-          
+
           if (fileSize == 0) {
-            print('❌ Error: Recording file is empty (0 bytes)');
             // Delete the empty file
             try {
               await file.delete();
-            } catch (e) {
-              print('Warning: Could not delete empty file: $e');
-            }
+            } catch (e) {}
             _currentRecordingPath = null;
             _isRecording = false;
             return null;
           } else if (fileSize < minFileSize) {
-            print('⚠️  Warning: Recording file is very small ($fileSize bytes < $minFileSize bytes)');
-            print('   This might indicate a recording issue (emulator/no mic)');
             // Still return the path, but log the warning
           }
-          
+
           // Verify file is readable
           final canRead = await file.exists();
-          print('File exists and is readable: $canRead');
           _isRecording = false;
           return _currentRecordingPath;
         } else {
-          print('❌ Error: Recording file does not exist at path: $_currentRecordingPath');
           _currentRecordingPath = null;
         }
-      } else {
-        print('❌ Error: Audio recorder returned null or empty path');
-      }
+      } else {}
 
       _isRecording = false;
       return _currentRecordingPath;
     } catch (e, stackTrace) {
-      print('Error stopping recording: $e');
-      print('Stack trace: $stackTrace');
       _isRecording = false;
       return null;
     }
@@ -553,23 +475,19 @@ class VoiceRecordingService {
         // Stop recording first
         try {
           await _recorder.stop();
-        } catch (e) {
-          print('Error stopping recorder during cancel: $e');
-        }
+        } catch (e) {}
         _isRecording = false;
       }
-      
+
       // Delete the file if it exists (whether currently recording or just unsaved)
       if (_currentRecordingPath != null) {
         final file = File(_currentRecordingPath!);
         if (await file.exists()) {
           await file.delete();
-          print('Cancelled recording and deleted file: $_currentRecordingPath');
         }
         _currentRecordingPath = null;
       }
     } catch (e) {
-      print('Error canceling recording: $e');
       _isRecording = false;
       _currentRecordingPath = null;
     }
@@ -577,10 +495,12 @@ class VoiceRecordingService {
 
   // Save recording with name
   // Returns a map with 'success' (bool) and 'errorMessage' (String?) keys
-  Future<Map<String, dynamic>> saveRecording(String name, String language) async {
+  Future<Map<String, dynamic>> saveRecording(
+    String name,
+    String language,
+  ) async {
     try {
       if (_currentRecordingPath == null) {
-        print('Error: No recording path to save');
         return {
           'success': false,
           'backendSuccess': false,
@@ -596,32 +516,36 @@ class VoiceRecordingService {
       }
 
       // Rename file to match the user's name (sanitize name for filename)
-      final sanitizedName = name.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_');
+      final sanitizedName = name
+          .replaceAll(RegExp(r'[^\w\s-]'), '')
+          .replaceAll(' ', '_');
       const extension = 'm4a';
       final newFilePath = '${recordingsDir.path}/$sanitizedName.$extension';
-      
+
       // If file with same name exists, add timestamp
       final originalFile = File(_currentRecordingPath!);
       File finalFile = File(newFilePath);
       if (await finalFile.exists()) {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        finalFile = File('${recordingsDir.path}/$sanitizedName\_$timestamp.$extension');
+        finalFile = File(
+          '${recordingsDir.path}/$sanitizedName\_$timestamp.$extension',
+        );
       }
-      
+
       // Verify original file exists and is not empty before copying
       if (!await originalFile.exists()) {
         throw Exception('Original recording file does not exist');
       }
       final originalFileSize = await originalFile.length();
       if (originalFileSize == 0) {
-        throw Exception('Recording file is empty (0 bytes) - recording may have failed');
+        throw Exception(
+          'Recording file is empty (0 bytes) - recording may have failed',
+        );
       }
-      print('Original recording file size: $originalFileSize bytes');
-      
+
       // Copy/rename the file to final location - ALWAYS keep local copy
       await originalFile.copy(finalFile.path);
-      print('Recording file copied to: ${finalFile.path}');
-      
+
       // Verify the file was copied successfully and is not empty
       final copiedFile = File(finalFile.path);
       if (!await copiedFile.exists()) {
@@ -631,14 +555,11 @@ class VoiceRecordingService {
       if (fileSize == 0) {
         throw Exception('Copied recording file is empty (0 bytes)');
       }
-      if (fileSize != originalFileSize) {
-        print('Warning: File size mismatch after copy (original: $originalFileSize, copied: $fileSize)');
-      }
-      print('Local file saved: ${finalFile.path} (${fileSize} bytes)');
+      if (fileSize != originalFileSize) {}
 
       // Generate UUID
       final uuid = _uuid.v4();
-      
+
       // Create recording object with new file path
       final recording = VoiceRecording(
         id: uuid,
@@ -651,14 +572,18 @@ class VoiceRecordingService {
       // Upload to backend: 3 retries, 3s apart (silent); queue for later if all fail
       String? backendErrorMessage;
       bool backendSuccess = false;
-      final outcome =
-          await _uploadRecordingWithRetries(recording: recording, showLogs: true);
+      final outcome = await _uploadRecordingWithRetries(
+        recording: recording,
+        showLogs: true,
+      );
       if (outcome.ok) {
         backendSuccess = true;
         if (outcome.recordingId != null && outcome.recordingId!.isNotEmpty) {
-          await _rememberPathForRecordingId(outcome.recordingId!, recording.filePath);
+          await _rememberPathForRecordingId(
+            outcome.recordingId!,
+            recording.filePath,
+          );
         }
-        print('Recording saved to backend successfully');
       } else {
         await _addPendingUpload(
           localPath: recording.filePath,
@@ -667,45 +592,34 @@ class VoiceRecordingService {
         );
         backendErrorMessage =
             'Saved on device; server sync will retry when you open Record Your Voice again.';
-        print('Recording queued for background upload');
       }
 
       // ALWAYS keep local file - delete original temporary file only
       try {
         if (await originalFile.exists()) {
           await originalFile.delete();
-          print('Deleted original temporary file: ${originalFile.path}');
         }
       } catch (e) {
-        print('Warning: Could not delete original file: $e');
         // Continue anyway - the new file is saved
       }
 
       // Add to local list - ALWAYS add, regardless of backend success
       _recordings.add(recording);
-      print('Recording added to local list: ${recording.name}');
 
       // Clear current recording
       _currentRecordingPath = null;
-      
+
       if (backendSuccess) {
-        print('Recording saved successfully (both local and backend): $name');
-        return {
-          'success': true,
-          'backendSuccess': true,
-          'errorMessage': null,
-        };
+        return {'success': true, 'backendSuccess': true, 'errorMessage': null};
       } else {
-        print('Recording saved locally but backend save failed: $name');
         return {
           'success': true, // Still success because local save worked
           'backendSuccess': false,
-          'errorMessage': backendErrorMessage ?? 'Failed to save recording to backend',
+          'errorMessage':
+              backendErrorMessage ?? 'Failed to save recording to backend',
         };
       }
     } catch (e, stackTrace) {
-      print('Error saving recording: $e');
-      print('Stack trace: $stackTrace');
       return {
         'success': false,
         'backendSuccess': false,
@@ -799,7 +713,10 @@ class VoiceRecordingService {
   }
 
   /// Single PUT — returns server [recording_id] when present.
-  Future<String?> _uploadRecordingPutOnce(VoiceRecording recording, {required bool verbose}) async {
+  Future<String?> _uploadRecordingPutOnce(
+    VoiceRecording recording, {
+    required bool verbose,
+  }) async {
     final authService = AuthService();
     final accessToken = authService.accessToken;
 
@@ -817,7 +734,10 @@ class VoiceRecordingService {
 
     String dottedExt = '.m4a';
     if (filename.contains('.')) {
-      dottedExt = filename.substring(filename.lastIndexOf('.')).trim().toLowerCase();
+      dottedExt = filename
+          .substring(filename.lastIndexOf('.'))
+          .trim()
+          .toLowerCase();
     }
     if (!dottedExt.startsWith('.')) {
       dottedExt = '.$dottedExt';
@@ -847,8 +767,9 @@ class VoiceRecordingService {
         mimeType = 'audio/m4a';
     }
 
-    final extForApi =
-        dottedExt.startsWith('.') ? dottedExt.substring(1) : dottedExt;
+    final extForApi = dottedExt.startsWith('.')
+        ? dottedExt.substring(1)
+        : dottedExt;
 
     final fileStem = filename.contains('.')
         ? filename.substring(0, filename.lastIndexOf('.'))
@@ -867,17 +788,11 @@ class VoiceRecordingService {
       'recordingBase64': base64Encoded,
     });
 
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}',
+    );
 
-    if (verbose) {
-      print('═══════════════════════════════════════════════════════════');
-      print('🎤 UPLOAD RECORDING (PUT)');
-      print('   URL: $url');
-      print('   fileName: $fileStem / recordingName: ${recording.name}');
-      print('   ext: $extForApi / mime: $mimeType / bytes: $fileSize');
-      await _writeDebugUploadPayload(requestBody);
-      print('═══════════════════════════════════════════════════════════');
-    }
+    if (verbose) {}
 
     final response = await AuthenticatedHttp.put(
       url,
@@ -885,9 +800,7 @@ class VoiceRecordingService {
       timeout: const Duration(seconds: 90),
     );
 
-    if (verbose) {
-      print('📥 PUT status=${response.statusCode} body=${response.body}');
-    }
+    if (verbose) {}
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return _parseRecordingIdFromUploadResponse(response.body);
@@ -917,9 +830,7 @@ class VoiceRecordingService {
         final id = await _uploadRecordingPutOnce(recording, verbose: showLogs);
         return _VoiceUploadOutcome(ok: true, recordingId: id);
       } catch (e) {
-        if (showLogs) {
-          print('❌ Upload attempt $attempt/3 failed: $e');
-        }
+        if (showLogs) {}
         if (attempt < 3) {
           await Future<void>.delayed(const Duration(seconds: 3));
         }
@@ -964,53 +875,28 @@ class VoiceRecordingService {
     required String localFilePath,
   }) async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('📥 DOWNLOAD RECORDING FROM BACKEND (PRE-SIGNED URL)');
-      print('═══════════════════════════════════════════════════════════');
-      print('   URL: $recordingUrl');
-      print('   Local Path: $localFilePath');
-      print('═══════════════════════════════════════════════════════════');
-      
       // Ensure the directory exists
       final file = File(localFilePath);
       final directory = file.parent;
       if (!await directory.exists()) {
         await directory.create(recursive: true);
-        print('   📁 Created directory: ${directory.path}');
       }
 
       // Download from pre-signed URL (no auth headers needed for pre-signed URLs)
-      final response = await http.get(
-        Uri.parse(recordingUrl),
-      ).timeout(
-        const Duration(seconds: 60),
-      );
-
-      print('📥 DOWNLOAD RESPONSE:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Content Length: ${response.bodyBytes.length} bytes');
+      final response = await http
+          .get(Uri.parse(recordingUrl))
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         // Write the file
         await file.writeAsBytes(response.bodyBytes);
-        print('✅ Recording downloaded successfully: $localFilePath');
-        print('   File size: ${await file.length()} bytes');
-        print('═══════════════════════════════════════════════════════════');
         return true;
       } else {
-        print('❌ Failed to download recording: ${response.statusCode}');
-        print('   Response: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
         return false;
       }
     } on TimeoutException {
-      print('❌ Download request timed out');
-      print('═══════════════════════════════════════════════════════════');
       return false;
     } catch (e, stackTrace) {
-      print('❌ ERROR downloading recording: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
       return false;
     }
   }
@@ -1030,7 +916,6 @@ class VoiceRecordingService {
       final url = Uri.parse(
         '${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}/$recordingId',
       );
-      print('📥 RESTORE recording file GET $url');
 
       final response = await AuthenticatedHttp.get(
         url,
@@ -1038,12 +923,10 @@ class VoiceRecordingService {
       );
 
       if (response.statusCode == 404 || response.statusCode == 410) {
-        print('   Backend reports recording/file not found (${response.statusCode})');
         return null;
       }
 
       if (response.statusCode != 200) {
-        print('   Restore failed: HTTP ${response.statusCode}');
         return null;
       }
 
@@ -1055,7 +938,6 @@ class VoiceRecordingService {
         }
         map = decoded;
       } catch (e) {
-        print('   Restore failed: invalid JSON $e');
         return null;
       }
 
@@ -1079,7 +961,6 @@ class VoiceRecordingService {
         final cleaned = fileStr.replaceAll(RegExp(r'\s'), '');
         bytes = base64Decode(_stripDataUrlBase64(cleaned));
       } catch (e) {
-        print('   Restore failed: base64 decode error $e');
         return null;
       }
 
@@ -1102,10 +983,8 @@ class VoiceRecordingService {
 
       idPaths[recordingId] = localPath;
       await _rememberPathForRecordingId(recordingId, localPath);
-      print('   ✅ Restored recording to $localPath (${bytes.length} bytes)');
       return localPath;
     } catch (e, st) {
-      print('   ❌ Restore recording error: $e\n$st');
       return null;
     }
   }
@@ -1113,10 +992,6 @@ class VoiceRecordingService {
   // Load recordings from backend and sync with local storage
   Future<void> loadRecordings() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🔄 LOADING RECORDINGS (GET list + local / restore)');
-      print('═══════════════════════════════════════════════════════════');
-
       await processPendingUploadsInBackground();
 
       // 1. Fetch recordings from backend (GET .../voice/recordings → { recordings: [...] })
@@ -1129,8 +1004,6 @@ class VoiceRecordingService {
       if (!await recordingsDir.exists()) {
         await recordingsDir.create(recursive: true);
       }
-
-      print('📂 Local recordings directory: ${recordingsDir.path}');
 
       final idPaths = await _loadRecordingIdPaths();
 
@@ -1152,8 +1025,7 @@ class VoiceRecordingService {
           final createdAtStr = backendRec['created_at']?.toString() ?? '';
           final fileExtension =
               backendRec['file_extension']?.toString() ?? '.m4a';
-          final trainingStatus =
-              backendRec['training_status']?.toString();
+          final trainingStatus = backendRec['training_status']?.toString();
 
           DateTime createdAt;
           try {
@@ -1186,8 +1058,6 @@ class VoiceRecordingService {
             }
           }
 
-          print('\n📝 Backend recording: $name id=$recordingId local=${hasLocal ? "yes" : "no"}');
-
           _recordings.add(
             VoiceRecording(
               id: recordingId,
@@ -1200,22 +1070,12 @@ class VoiceRecordingService {
               trainingStatus: trainingStatus,
             ),
           );
-        } catch (e) {
-          print('❌ Error processing backend recording: $e');
-        }
+        } catch (e) {}
       }
 
       // Sort by creation date (newest first)
       _recordings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      
-      print('\n✅ Loaded ${_recordings.length} recordings total');
-      for (final recording in _recordings) {
-        print('  - ${recording.name} (${recording.language}) - ${recording.filePath}');
-      }
-      print('═══════════════════════════════════════════════════════════');
     } catch (e, stackTrace) {
-      print('❌ ERROR loading recordings: $e');
-      print('Stack trace: $stackTrace');
       // Don't clear recordings on error - keep what we have
     }
   }
@@ -1227,26 +1087,14 @@ class VoiceRecordingService {
       final accessToken = authService.accessToken;
 
       if (accessToken == null || accessToken.isEmpty) {
-        print('❌ ERROR: No access token available for fetching recordings');
         return [];
       }
 
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}');
-
-      print('═══════════════════════════════════════════════════════════');
-      print('📥 FETCH RECORDINGS FROM BACKEND API CALL');
-      print('═══════════════════════════════════════════════════════════');
-      print('📤 REQUEST:');
-      print('   URL: $url');
-      print('   Method: GET');
-      print('═══════════════════════════════════════════════════════════');
+      final url = Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}',
+      );
 
       final response = await AuthenticatedHttp.get(url);
-
-      print('📥 RESPONSE:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
 
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
@@ -1259,21 +1107,15 @@ class VoiceRecordingService {
         } else if (decoded is List) {
           recordingsList = decoded;
         }
-        print('✅ Successfully fetched ${recordingsList.length} recordings from backend');
         return recordingsList
             .map((rec) => Map<String, dynamic>.from(rec as Map))
             .toList();
       } else {
-        print('❌ Failed to fetch recordings: ${response.statusCode}');
-        print('   Response: ${response.body}');
         return [];
       }
     } on TimeoutException {
-      print('❌ Backend fetch timed out');
       return [];
     } catch (e, stackTrace) {
-      print('❌ ERROR fetching recordings from backend: $e');
-      print('   StackTrace: $stackTrace');
       return [];
     }
   }
@@ -1281,16 +1123,14 @@ class VoiceRecordingService {
   // Download recording file from backend by name
   Future<bool> _downloadRecordingFromBackend(String name) async {
     try {
-      print('Downloading recording from backend: $name');
-      
-      final response = await http.get(
-        Uri.parse('https://mock-api.colab-app.com/api/recordings/download?name=$name'),
-        headers: {
-          'Authorization': 'Bearer mock-token',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await http
+          .get(
+            Uri.parse(
+              'https://mock-api.colab-app.com/api/recordings/download?name=$name',
+            ),
+            headers: {'Authorization': 'Bearer mock-token'},
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         // Get app directory
@@ -1303,7 +1143,7 @@ class VoiceRecordingService {
         const extension = 'm4a';
         final file = File('${recordingsDir.path}/$name.$extension');
         await file.writeAsBytes(response.bodyBytes);
-        
+
         // Add to local recordings list
         final recording = VoiceRecording(
           id: _uuid.v4(),
@@ -1313,18 +1153,14 @@ class VoiceRecordingService {
           createdAt: DateTime.now(),
         );
         _recordings.add(recording);
-        
-        print('Recording downloaded successfully: $name');
+
         return true;
       } else {
-        print('Failed to download recording: ${response.statusCode}');
         return false;
       }
     } on TimeoutException {
-      print('Download request timed out for: $name');
       return false;
     } catch (e) {
-      print('Error downloading recording $name: $e');
       return false;
     }
   }
@@ -1334,14 +1170,9 @@ class VoiceRecordingService {
   // This method is kept for backward compatibility
   Future<void> syncRecordings() async {
     try {
-      print('=== Starting recording sync ===');
       // The new loadRecordings() method already handles backend sync
       await loadRecordings();
-      print('=== Recording sync completed ===');
-    } catch (e, stackTrace) {
-      print('Error syncing recordings: $e');
-      print('Stack trace: $stackTrace');
-    }
+    } catch (e, stackTrace) {}
   }
 
   // Delete recording — local file first, then DELETE on server when [recordingId] exists.
@@ -1353,7 +1184,6 @@ class VoiceRecordingService {
         final file = File(recording.filePath);
         if (await file.exists()) {
           await file.delete();
-          print('Deleted local recording file: ${recording.filePath}');
         }
       }
 
@@ -1363,17 +1193,13 @@ class VoiceRecordingService {
         final backendSuccess = await _deleteFromBackend(recording);
         if (!backendSuccess) {
           _recordings.remove(recording);
-          print('❌ Backend delete failed');
           return false;
         }
       }
 
       _recordings.remove(recording);
-      print('✅ Recording deleted: ${recording.name}');
       return true;
     } catch (e, stackTrace) {
-      print('❌ Error deleting recording: $e');
-      print('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -1385,52 +1211,34 @@ class VoiceRecordingService {
       final accessToken = authService.accessToken;
 
       if (accessToken == null || accessToken.isEmpty) {
-        print('❌ ERROR: No access token available for delete API');
         return false;
       }
 
       // Use recordingId from backend
       final recordingId = recording.recordingId!;
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}/$recordingId');
-
-      print('═══════════════════════════════════════════════════════════');
-      print('🗑️  DELETE RECORDING FROM BACKEND API CALL');
-      print('═══════════════════════════════════════════════════════════');
-      print('📤 REQUEST:');
-      print('   URL: $url');
-      print('   Method: DELETE');
-      print('   Recording ID: $recordingId');
-      print('   Recording Name: ${recording.name}');
-      print('═══════════════════════════════════════════════════════════');
+      final url = Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.voiceRecordingsEndpoint}/$recordingId',
+      );
 
       final response = await AuthenticatedHttp.delete(url);
 
-      print('📥 RESPONSE:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
-
       if (response.statusCode == 200 || response.statusCode == 204) {
-        print('✅ Recording deleted from backend successfully: ${recording.name}');
         return true;
       } else {
-        print('❌ Failed to delete recording from backend: ${response.statusCode}');
-        print('   Response: ${response.body}');
         return false;
       }
     } on TimeoutException {
-      print('❌ Backend delete timed out');
       return false;
     } catch (e, stackTrace) {
-      print('❌ ERROR deleting from backend: $e');
-      print('   StackTrace: $stackTrace');
       return false;
     }
   }
 
   // Check if name is unique
   bool isNameUnique(String name) {
-    return !_recordings.any((recording) => recording.name.toLowerCase() == name.toLowerCase());
+    return !_recordings.any(
+      (recording) => recording.name.toLowerCase() == name.toLowerCase(),
+    );
   }
 
   // Dispose
@@ -1443,9 +1251,7 @@ class VoiceRecordingService {
         await _audioRecorder!.dispose();
         _audioRecorder = null;
       }
-    } catch (e) {
-      print('Error disposing audio recorder: $e');
-    }
+    } catch (e) {}
   }
 }
 
@@ -1460,9 +1266,11 @@ class VoiceRecording {
   final String? recordingId; // Backend recording_id from API
   final String name;
   final String language;
+
   /// Local file path; empty when [hasLocalFile] is false (remote-only row).
   final String filePath;
   final DateTime createdAt;
+
   /// False when the server lists the recording but there is no local audio file.
   final bool hasLocalFile;
   final String? trainingStatus;
@@ -1526,4 +1334,3 @@ class VoiceRecording {
     );
   }
 }
-

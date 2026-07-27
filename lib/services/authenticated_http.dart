@@ -57,8 +57,7 @@ class AuthenticatedHttp {
   /// `PUT /payments/...`, etc.
   static Future<http.Response> paymentGet(Uri url, {Duration? timeout}) {
     return _withPaymentAuth(
-      (headers) =>
-          http.get(url, headers: headers).timeout(_timeout(timeout)),
+      (headers) => http.get(url, headers: headers).timeout(_timeout(timeout)),
     );
   }
 
@@ -66,18 +65,18 @@ class AuthenticatedHttp {
     Uri url, {
     Object? body,
     Duration? timeout,
+    Map<String, String>? mergeHeaders,
   }) {
-    return _withPaymentAuth(
-      (headers) =>
-          http.post(url, headers: headers, body: body).timeout(_timeout(timeout)),
-    );
+    return _withPaymentAuth((headers) {
+      final h = mergeHeaders != null ? {...headers, ...mergeHeaders} : headers;
+      return http.post(url, headers: h, body: body).timeout(_timeout(timeout));
+    });
   }
 
   /// Main API Gateway (`ApiConfig.baseUrl`).
   static Future<http.Response> get(Uri url, {Duration? timeout}) {
     return _withMainAuth(
-      (headers) =>
-          http.get(url, headers: headers).timeout(_timeout(timeout)),
+      (headers) => http.get(url, headers: headers).timeout(_timeout(timeout)),
     );
   }
 
@@ -115,15 +114,14 @@ class AuthenticatedHttp {
   /// Multipart POST (e.g. profile photo). Rebuilds the request on refresh so streams stay valid.
   static Future<http.StreamedResponse> sendMultipart(
     Future<http.MultipartRequest> Function(Map<String, String> headers)
-        buildRequest,
+    buildRequest,
   ) async {
     Future<http.StreamedResponse> send(Map<String, String> h) async {
       final req = await buildRequest(h);
       return req.send();
     }
 
-    var resp =
-        await send(ApiConfig.getHeaders(accessToken: _auth.accessToken));
+    var resp = await send(ApiConfig.getHeaders(accessToken: _auth.accessToken));
     if (!_isUnauthorized(resp.statusCode)) return resp;
 
     await resp.stream.drain();

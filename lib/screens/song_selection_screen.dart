@@ -11,7 +11,7 @@ class SongSelectionScreen extends StatefulWidget {
 
 class _SongSelectionScreenState extends State<SongSelectionScreen> {
   String? _selectedSongId;
-  
+
   final List<Map<String, dynamic>> _songs = [
     {
       'id': '1',
@@ -79,9 +79,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.primaryGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
         child: SafeArea(
           child: Column(
             children: [
@@ -92,15 +90,19 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back, color: AppColors.white),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.white,
+                      ),
                     ),
                     Expanded(
                       child: Text(
                         'Choose Your Song',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: AppColors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: AppColors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -108,7 +110,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                   ],
                 ),
               ),
-              
+
               // Search Bar
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -122,17 +124,25 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                     style: const TextStyle(color: AppColors.white),
                     decoration: InputDecoration(
                       hintText: 'Search songs...',
-                      hintStyle: TextStyle(color: AppColors.white.withOpacity(0.7)),
-                      prefixIcon: Icon(Icons.search, color: AppColors.white.withOpacity(0.7)),
+                      hintStyle: TextStyle(
+                        color: AppColors.white.withOpacity(0.7),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: AppColors.white.withOpacity(0.7),
+                      ),
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Songs List
               Expanded(
                 child: Container(
@@ -149,10 +159,11 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                       const SizedBox(height: 24),
                       Text(
                         'Popular Songs',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
                       ),
                       const SizedBox(height: 16),
                       Expanded(
@@ -161,14 +172,22 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                           itemBuilder: (context, index) {
                             final song = _songs[index];
                             final isSelected = _selectedSongId == song['id'];
-                            
+
                             return Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppColors.primarySaffron.withOpacity(0.1) : null,
+                                color: isSelected
+                                    ? AppColors.primarySaffron.withOpacity(0.1)
+                                    : null,
                                 borderRadius: BorderRadius.circular(12),
-                                border: isSelected 
-                                    ? Border.all(color: AppColors.primarySaffron, width: 2)
+                                border: isSelected
+                                    ? Border.all(
+                                        color: AppColors.primarySaffron,
+                                        width: 2,
+                                      )
                                     : null,
                               ),
                               child: ListTile(
@@ -178,12 +197,19 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     gradient: const LinearGradient(
-                                      colors: [AppColors.primarySaffron, AppColors.lightSaffron],
+                                      colors: [
+                                        AppColors.primarySaffron,
+                                        AppColors.lightSaffron,
+                                      ],
                                     ),
                                   ),
                                   child: Center(
                                     child: Text(
-                                      song['artist'].toString().split(' ').map((e) => e[0]).join(''),
+                                      song['artist']
+                                          .toString()
+                                          .split(' ')
+                                          .map((e) => e[0])
+                                          .join(''),
                                       style: const TextStyle(
                                         color: AppColors.white,
                                         fontWeight: FontWeight.bold,
@@ -196,7 +222,9 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                                   song['title'],
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
-                                    color: isSelected ? AppColors.primarySaffron : AppColors.textPrimary,
+                                    color: isSelected
+                                        ? AppColors.primarySaffron
+                                        : AppColors.textPrimary,
                                   ),
                                 ),
                                 subtitle: Column(
@@ -204,14 +232,24 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                                   children: [
                                     Text(
                                       song['artist'],
-                                      style: const TextStyle(color: AppColors.textSecondary),
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        _buildChip(song['genre'], AppColors.successGreen),
+                                        _buildChip(
+                                          song['genre'],
+                                          AppColors.successGreen,
+                                        ),
                                         const SizedBox(width: 8),
-                                        _buildChip(song['difficulty'], _getDifficultyColor(song['difficulty'])),
+                                        _buildChip(
+                                          song['difficulty'],
+                                          _getDifficultyColor(
+                                            song['difficulty'],
+                                          ),
+                                        ),
                                         const SizedBox(width: 8),
                                         Icon(
                                           Icons.access_time,
@@ -252,7 +290,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                   ),
                 ),
               ),
-              
+
               // Continue Button
               if (_selectedSongId != null)
                 Container(
@@ -261,7 +299,9 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () {
-                        final selectedSong = _songs.firstWhere((s) => s['id'] == _selectedSongId);
+                        final selectedSong = _songs.firstWhere(
+                          (s) => s['id'] == _selectedSongId,
+                        );
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -296,7 +336,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
       ),
     );
   }
-  
+
   Widget _buildChip(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -315,7 +355,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
       ),
     );
   }
-  
+
   Color _getDifficultyColor(String difficulty) {
     switch (difficulty.toLowerCase()) {
       case 'easy':
@@ -328,7 +368,7 @@ class _SongSelectionScreenState extends State<SongSelectionScreen> {
         return AppColors.textSecondary;
     }
   }
-  
+
   void _playPreview(String previewUrl) {
     // TODO: Implement audio preview
     ScaffoldMessenger.of(context).showSnackBar(

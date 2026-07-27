@@ -11,6 +11,7 @@ class Mantra {
   final bool isBought; // whether user has purchased this mantra
   /// Licenses owned for this song (from purchase API `available_count`).
   final int purchasedCount;
+
   /// How many units of this mantra are in the cart (≥ 1 when [isInCart]).
   final int cartQuantity;
 
@@ -32,10 +33,7 @@ class Mantra {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  factory Mantra.fromJson(
-    Map<String, dynamic> json, {
-    PricingRegion? region,
-  }) {
+  factory Mantra.fromJson(Map<String, dynamic> json, {PricingRegion? region}) {
     final effectiveRegion = region ?? LocationPricingService.cachedRegion;
     final hasRegionalPrices = ['price_in', 'price_sa', 'price_other'].any((k) {
       final v = json[k];
@@ -93,7 +91,10 @@ class Mantra {
     }
     return Mantra(
       name: json['name'] ?? '',
-      mantraFile: json['song_id'] ?? json['mantra_file'] ?? '', // Support both API and JSON formats
+      mantraFile:
+          json['song_id'] ??
+          json['mantra_file'] ??
+          '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
       price: price,
@@ -102,7 +103,7 @@ class Mantra {
       purchasedCount: (json['available_count'] is int)
           ? json['available_count'] as int
           : int.tryParse(json['available_count']?.toString() ?? '') ??
-              (json['bought'] == 'Y' ? 1 : 0),
+                (json['bought'] == 'Y' ? 1 : 0),
     );
   }
 
@@ -158,8 +159,7 @@ class Mantra {
       return 'USD ${amount.toStringAsFixed(2)}';
     }
     final whole = amount % 1 == 0;
-    final value =
-        whole ? amount.toInt().toString() : amount.toStringAsFixed(2);
+    final value = whole ? amount.toInt().toString() : amount.toStringAsFixed(2);
     return 'INR $value';
   }
 

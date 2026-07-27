@@ -2,12 +2,14 @@ import 'package:intl/intl.dart';
 
 class InferredSong {
   final String inferredId;
+
   /// DELETE `/auth/profile/inferred/songs/{transaction_id}` path segment.
   final String transactionId;
   final String songId;
   final String? outputPath;
   final String completedAt;
   final String recordingId;
+
   /// From API `recording_name` (user's recording label).
   final String recordingName;
 
@@ -31,7 +33,8 @@ class InferredSong {
       outputPath: json['output_path']?.toString(),
       completedAt: json['completed_at']?.toString() ?? '',
       recordingId: json['recording_id']?.toString() ?? '',
-      recordingName: json['recording_name']?.toString() ??
+      recordingName:
+          json['recording_name']?.toString() ??
           json['recordingName']?.toString() ??
           '',
     );

@@ -63,7 +63,8 @@ class LocationPricingService {
       }
     }
 
-    final raw = pick(region) ??
+    final raw =
+        pick(region) ??
         _nonEmptyPrice(song['price_in']) ??
         _nonEmptyPrice(song['price_sa']) ??
         _nonEmptyPrice(song['price_other']) ??
@@ -106,9 +107,9 @@ class LocationPricingService {
 
   static Future<String?> _fetchCountryCode() async {
     try {
-      final response = await http.get(Uri.parse(_geoLookupUrl)).timeout(
-        const Duration(seconds: 5),
-      );
+      final response = await http
+          .get(Uri.parse(_geoLookupUrl))
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data =

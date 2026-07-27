@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import '../utils/device_info.dart';
+import 'secure_session_storage.dart';
 
 /// Decodes the JWT access token payload (middle segment). Does not verify the signature.
 Map<String, dynamic>? decodeJwtPayload(String jwt) {
@@ -30,7 +31,11 @@ Map<String, dynamic>? decodeJwtPayload(String jwt) {
 class AuthService extends ChangeNotifier {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
-  AuthService._internal();
+  AuthService._internal() : _secureSessionStorage = SecureSessionStorage();
+
+  @visibleForTesting
+  AuthService.forTesting(SecureSessionStorage secureSessionStorage)
+    : _secureSessionStorage = secureSessionStorage;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile', 'openid'],
@@ -47,6 +52,7 @@ class AuthService extends ChangeNotifier {
   String? _accessToken;
   String? _refreshToken;
   DateTime? _tokenExpiry;
+  final SecureSessionStorage _secureSessionStorage;
   Future<bool>? _refreshInFlight;
   bool _lastRefreshWasAuthRejection = false;
 
@@ -56,6 +62,24 @@ class AuthService extends ChangeNotifier {
   User? get currentUser => _currentUser;
   String? get accessToken => _accessToken;
   bool get isLoggedIn => _currentUser != null && _accessToken != null;
+
+  @visibleForTesting
+  Future<void> restoreSessionForTesting() => _loadSession();
+
+  @visibleForTesting
+  Future<void> persistSessionForTesting({
+    required User user,
+    required String accessToken,
+    String? refreshToken,
+    DateTime? expiry,
+  }) async {
+    _currentUser = user;
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
+    _tokenExpiry = expiry;
+    await _saveSession();
+  }
+
   /// True when `/auth/refresh` returned 401/403 — safe to clear session.
   bool get shouldLogoutAfterRefreshFailure => _lastRefreshWasAuthRejection;
 
@@ -68,7 +92,6 @@ class AuthService extends ChangeNotifier {
         FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
       }
     } catch (e) {
-      debugPrint('Auth initialization error: $e');
       // Continue with empty state
     }
   }
@@ -76,36 +99,24 @@ class AuthService extends ChangeNotifier {
   // Google Sign In
   Future<bool> signInWithGoogle() async {
     try {
-      debugPrint('Starting Google Sign-In...');
-      
       // Sign out first to ensure a fresh sign-in
       await _googleSignIn.signOut();
-      
+
       // Trigger the authentication flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      
+
       if (googleUser == null) {
-        debugPrint('Google Sign-In cancelled by user');
         return false;
       }
 
-      debugPrint('Google Sign-In successful: ${googleUser.email}');
-      
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
       if (googleAuth.idToken == null) {
-        debugPrint('Google ID token is null');
         return false;
       }
 
-      // Log the ID token for backend debugging (user requested)
-      debugPrint('=== GOOGLE ID TOKEN START ===');
-      debugPrint(googleAuth.idToken);
-      debugPrint('=== GOOGLE ID TOKEN END ===');
-      
-      debugPrint('Google ID token obtained, sending to backend...');
-      
       // Send ID token to backend
       final success = await _sendTokenToBackend(
         googleAuth.accessToken ?? '',
@@ -116,11 +127,10 @@ class AuthService extends ChangeNotifier {
       if (success) {
         // Verify that access token was set by backend
         if (_accessToken == null || _accessToken!.isEmpty) {
-          debugPrint('ERROR: Backend returned success but access token is null/empty');
           _currentUser = null;
           return false;
         }
-        
+
         // Update user info from Google account (if not already set by backend)
         if (_currentUser == null) {
           _currentUser = User(
@@ -131,25 +141,21 @@ class AuthService extends ChangeNotifier {
             provider: 'google',
           );
         }
-        
+
         await _saveSession();
-        
+
         // Verify final state before notifying
         final finalIsLoggedIn = _currentUser != null && _accessToken != null;
-        debugPrint('Final auth state - User: ${_currentUser?.email}, Token: ${_accessToken != null ? "SET (${_accessToken!.length} chars)" : "NULL"}, isLoggedIn: $finalIsLoggedIn');
-        
+
         FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
         notifyListeners();
-        debugPrint('Google Sign-In completed successfully, notifying listeners');
         return true;
       } else {
         _currentUser = null;
         _accessToken = null;
-        debugPrint('Backend authentication failed');
         return false;
       }
     } catch (e) {
-      debugPrint('Google Sign In Error: $e');
       _currentUser = null;
       return false;
     }
@@ -158,8 +164,6 @@ class AuthService extends ChangeNotifier {
   // Facebook Sign In
   Future<bool> signInWithFacebook() async {
     try {
-      debugPrint('Starting Facebook Sign-In...');
-
       final LoginResult result = await FacebookAuth.instance.login(
         permissions: ['email', 'public_profile'],
       );
@@ -167,14 +171,8 @@ class AuthService extends ChangeNotifier {
       if (result.status == LoginStatus.success && result.accessToken != null) {
         final String? facebookAccessToken = result.accessToken!.tokenString;
         if (facebookAccessToken == null || facebookAccessToken.isEmpty) {
-          debugPrint('Facebook access token is null or empty');
           return false;
         }
-
-        debugPrint('Facebook Sign-In successful, got access token');
-        debugPrint('=== FACEBOOK ACCESS TOKEN (full) ===');
-        debugPrint(facebookAccessToken);
-        debugPrint('=== END FACEBOOK ACCESS TOKEN ===');
 
         // Get user data from Graph API (fallback if backend does not return user)
         Map<String, dynamic>? userData;
@@ -182,12 +180,11 @@ class AuthService extends ChangeNotifier {
           userData = await FacebookAuth.instance.getUserData(
             fields: 'name,email,picture.width(200)',
           );
-        } catch (e) {
-          debugPrint('Could not get Facebook user data: $e');
-        }
+        } catch (e) {}
 
         final String userId = userData != null
-            ? (userData['id']?.toString() ?? 'facebook_${DateTime.now().millisecondsSinceEpoch}')
+            ? (userData['id']?.toString() ??
+                  'facebook_${DateTime.now().millisecondsSinceEpoch}')
             : 'facebook_${DateTime.now().millisecondsSinceEpoch}';
 
         if (userData != null) {
@@ -221,30 +218,24 @@ class AuthService extends ChangeNotifier {
 
         if (success) {
           if (_accessToken == null || _accessToken!.isEmpty) {
-            debugPrint('ERROR: Backend returned success but access token is null/empty');
             _currentUser = null;
             return false;
           }
           await _saveSession();
-          debugPrint('Facebook Sign-In completed successfully');
           FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
           notifyListeners();
           return true;
         } else {
           _currentUser = null;
           _accessToken = null;
-          debugPrint('Backend Facebook authentication failed');
           return false;
         }
       } else if (result.status == LoginStatus.cancelled) {
-        debugPrint('Facebook Sign-In cancelled by user');
         return false;
       } else {
-        debugPrint('Facebook Sign-In failed: ${result.status}');
         return false;
       }
     } catch (e) {
-      debugPrint('Facebook Sign In Error: $e');
       _currentUser = null;
       return false;
     }
@@ -263,33 +254,35 @@ class AuthService extends ChangeNotifier {
         },
       });
 
-      debugPrint('Sending Facebook access token to backend...');
-      debugPrint('Device Info: $deviceInfo');
-
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.facebookSignInEndpoint}'),
-        headers: ApiConfig.getHeaders(accessToken: facebookAccessToken),
-        body: requestBody,
-      ).timeout(
-        const Duration(seconds: 60),
-      );
-
-      debugPrint('Backend Facebook signin response status: ${response.statusCode}');
-      debugPrint('Backend response body: ${response.body}');
+      final response = await http
+          .post(
+            Uri.parse(
+              '${ApiConfig.baseUrl}${ApiConfig.facebookSignInEndpoint}',
+            ),
+            headers: ApiConfig.getHeaders(accessToken: facebookAccessToken),
+            body: requestBody,
+          )
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> responseData;
         try {
           final decoded = json.decode(response.body);
-          responseData = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+          responseData = decoded is Map<String, dynamic>
+              ? decoded
+              : <String, dynamic>{};
         } catch (e) {
-          debugPrint('Backend Facebook signin JSON parse error: $e');
           return false;
         }
         final tokens = responseData['tokens'];
-        final Map<String, dynamic>? dataMap = responseData['data'] is Map ? responseData['data'] as Map<String, dynamic>? : null;
+        final Map<String, dynamic>? dataMap = responseData['data'] is Map
+            ? responseData['data'] as Map<String, dynamic>?
+            : null;
         if (tokens != null && tokens is Map) {
-          _accessToken = tokens['accessToken'] ?? tokens['access_token'] ?? tokens['token'];
+          _accessToken =
+              tokens['accessToken'] ??
+              tokens['access_token'] ??
+              tokens['token'];
           _refreshToken = tokens['refreshToken'] ?? tokens['refresh_token'];
           if (tokens['expiresIn'] != null) {
             final expiresIn = tokens['expiresIn'] as int;
@@ -303,7 +296,10 @@ class AuthService extends ChangeNotifier {
             _tokenExpiry = DateTime.now().add(const Duration(days: 30));
           }
         } else if (dataMap != null) {
-          _accessToken = dataMap['accessToken'] ?? dataMap['access_token'] ?? dataMap['token'];
+          _accessToken =
+              dataMap['accessToken'] ??
+              dataMap['access_token'] ??
+              dataMap['token'];
           _refreshToken = dataMap['refreshToken'] ?? dataMap['refresh_token'];
           if (dataMap['expiresIn'] != null) {
             final expiresIn = dataMap['expiresIn'] as int;
@@ -315,8 +311,13 @@ class AuthService extends ChangeNotifier {
             _tokenExpiry = DateTime.now().add(const Duration(days: 30));
           }
         } else {
-          _accessToken = responseData['accessToken'] ?? responseData['access_token'] ?? responseData['token'] ?? responseData['authToken'];
-          _refreshToken = responseData['refreshToken'] ?? responseData['refresh_token'];
+          _accessToken =
+              responseData['accessToken'] ??
+              responseData['access_token'] ??
+              responseData['token'] ??
+              responseData['authToken'];
+          _refreshToken =
+              responseData['refreshToken'] ?? responseData['refresh_token'];
           if (responseData['expiresIn'] != null) {
             final expiresIn = responseData['expiresIn'] as int;
             _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
@@ -331,30 +332,33 @@ class AuthService extends ChangeNotifier {
         }
 
         if (_accessToken == null || _accessToken!.isEmpty) {
-          debugPrint('ERROR: Backend returned success but no access token in response. Keys: ${responseData.keys.toList()}');
           return false;
         }
 
         if (responseData['user'] != null) {
           final userData = responseData['user'];
           _currentUser = User(
-            id: userData['userId']?.toString() ?? userData['user_id']?.toString() ?? userData['id']?.toString() ?? _currentUser?.id ?? '',
+            id:
+                userData['userId']?.toString() ??
+                userData['user_id']?.toString() ??
+                userData['id']?.toString() ??
+                _currentUser?.id ??
+                '',
             name: userData['name']?.toString() ?? _currentUser?.name ?? '',
             email: userData['email']?.toString() ?? _currentUser?.email ?? '',
-            photoUrl: userData['photoUrl']?.toString() ?? userData['photo_url']?.toString() ?? _currentUser?.photoUrl,
+            photoUrl:
+                userData['photoUrl']?.toString() ??
+                userData['photo_url']?.toString() ??
+                _currentUser?.photoUrl,
             provider: 'facebook',
           );
         }
 
-        debugPrint('Backend Facebook authentication successful');
         return true;
       } else {
-        debugPrint('Backend Facebook signin failed: ${response.statusCode}');
-        debugPrint('Response: ${response.body}');
         return false;
       }
     } catch (e) {
-      debugPrint('Backend Facebook communication error: $e');
       return false;
     }
   }
@@ -365,7 +369,7 @@ class AuthService extends ChangeNotifier {
       // TODO: Implement Apple Sign In
       // This is a placeholder for now
       await Future.delayed(const Duration(seconds: 1));
-      
+
       _currentUser = User(
         id: 'apple_user_123',
         name: 'Apple User',
@@ -393,18 +397,21 @@ class AuthService extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      debugPrint('Apple Sign In Error: $e');
       _currentUser = null;
       return false;
     }
   }
 
   // Send token to backend
-  Future<bool> _sendTokenToBackend(String accessToken, String idToken, String provider) async {
+  Future<bool> _sendTokenToBackend(
+    String accessToken,
+    String idToken,
+    String provider,
+  ) async {
     try {
       // Get device info
       final deviceInfo = await DeviceInfo.getDeviceInfoMap();
-      
+
       // Prepare request body
       final requestBody = json.encode({
         'deviceInfo': {
@@ -414,33 +421,28 @@ class AuthService extends ChangeNotifier {
         },
       });
 
-      debugPrint('Sending Google ID token to backend...');
-      debugPrint('Device Info: $deviceInfo');
-      
       // Make API call to backend
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}${ApiConfig.googleSignInEndpoint}'),
-        headers: ApiConfig.getHeaders(accessToken: idToken),
-        body: requestBody,
-      ).timeout(
-        const Duration(seconds: 30),
-      );
-
-      debugPrint('Backend response status: ${response.statusCode}');
-      debugPrint('Backend response body: ${response.body}');
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}${ApiConfig.googleSignInEndpoint}'),
+            headers: ApiConfig.getHeaders(accessToken: idToken),
+            body: requestBody,
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
-        
-        debugPrint('Backend response data keys: ${responseData.keys.toList()}');
-        
+
         // Extract tokens from response
         // Backend returns tokens nested in a "tokens" object
         final tokens = responseData['tokens'];
         if (tokens != null && tokens is Map) {
-          _accessToken = tokens['accessToken'] ?? tokens['access_token'] ?? tokens['token'];
+          _accessToken =
+              tokens['accessToken'] ??
+              tokens['access_token'] ??
+              tokens['token'];
           _refreshToken = tokens['refreshToken'] ?? tokens['refresh_token'];
-          
+
           // Extract token expiry from tokens object
           if (tokens['expiresIn'] != null) {
             final expiresIn = tokens['expiresIn'] as int;
@@ -456,9 +458,14 @@ class AuthService extends ChangeNotifier {
           }
         } else {
           // Fallback: try root level (for backward compatibility)
-          _accessToken = responseData['accessToken'] ?? responseData['access_token'] ?? responseData['token'] ?? responseData['authToken'];
-          _refreshToken = responseData['refreshToken'] ?? responseData['refresh_token'];
-          
+          _accessToken =
+              responseData['accessToken'] ??
+              responseData['access_token'] ??
+              responseData['token'] ??
+              responseData['authToken'];
+          _refreshToken =
+              responseData['refreshToken'] ?? responseData['refresh_token'];
+
           // Extract token expiry (adjust based on your API response)
           if (responseData['expiresIn'] != null) {
             final expiresIn = responseData['expiresIn'] as int;
@@ -473,39 +480,37 @@ class AuthService extends ChangeNotifier {
             _tokenExpiry = DateTime.now().add(const Duration(days: 30));
           }
         }
-        
+
         // CRITICAL: Verify that access token was actually set
         if (_accessToken == null || _accessToken!.isEmpty) {
-          debugPrint('ERROR: Backend returned success but no access token found in response');
-          debugPrint('Response data: $responseData');
-          debugPrint('Tokens object: $tokens');
           return false;
         }
-        
-        debugPrint('Access token extracted successfully (length: ${_accessToken!.length})');
-        
+
         // Update user info if provided in response
         if (responseData['user'] != null) {
           final userData = responseData['user'];
           _currentUser = User(
-            id: userData['userId'] ?? userData['user_id'] ?? userData['id'] ?? _currentUser?.id ?? '',
+            id:
+                userData['userId'] ??
+                userData['user_id'] ??
+                userData['id'] ??
+                _currentUser?.id ??
+                '',
             name: userData['name'] ?? _currentUser?.name ?? '',
             email: userData['email'] ?? _currentUser?.email ?? '',
-            photoUrl: userData['photoUrl'] ?? userData['photo_url'] ?? _currentUser?.photoUrl,
+            photoUrl:
+                userData['photoUrl'] ??
+                userData['photo_url'] ??
+                _currentUser?.photoUrl,
             provider: provider,
           );
         }
-        
-        debugPrint('Backend authentication successful');
-        debugPrint('isLoggedIn will be: ${_currentUser != null && _accessToken != null}');
+
         return true;
       } else {
-        debugPrint('Backend authentication failed: ${response.statusCode}');
-        debugPrint('Response: ${response.body}');
         return false;
       }
     } catch (e) {
-      debugPrint('Backend communication error: $e');
       return false;
     }
   }
@@ -549,11 +554,13 @@ class AuthService extends ChangeNotifier {
       payload = Map<String, dynamic>.from(root['tokens'] as Map);
     }
 
-    final newAccess = payload['access_token'] ??
+    final newAccess =
+        payload['access_token'] ??
         payload['accessToken'] ??
         root['access_token'] ??
         root['accessToken'];
-    final newRefresh = payload['refresh_token'] ??
+    final newRefresh =
+        payload['refresh_token'] ??
         payload['refreshToken'] ??
         root['refresh_token'] ??
         root['refreshToken'];
@@ -568,10 +575,12 @@ class AuthService extends ChangeNotifier {
     }
 
     final expRaw =
-        payload['expires_in'] ?? payload['expiresIn'] ?? root['expires_in'] ?? root['expiresIn'];
+        payload['expires_in'] ??
+        payload['expiresIn'] ??
+        root['expires_in'] ??
+        root['expiresIn'];
     if (expRaw != null) {
-      final sec =
-          expRaw is int ? expRaw : int.tryParse(expRaw.toString()) ?? 0;
+      final sec = expRaw is int ? expRaw : int.tryParse(expRaw.toString()) ?? 0;
       _updateAccessTokenExpiry(expiresInSeconds: sec > 0 ? sec : null);
     } else {
       _updateAccessTokenExpiry();
@@ -593,7 +602,6 @@ class AuthService extends ChangeNotifier {
   /// POST `/auth/refresh` with `Authorization: Bearer <refresh_token>` (Postman).
   Future<bool> refreshAccessToken() async {
     if (_refreshToken == null || _refreshToken!.isEmpty) {
-      debugPrint('refreshAccessToken: no refresh token stored');
       return false;
     }
     if (_refreshInFlight != null) return _refreshInFlight!;
@@ -609,13 +617,14 @@ class AuthService extends ChangeNotifier {
 
   Future<bool> _performRefreshAccessToken() async {
     _lastRefreshWasAuthRejection = false;
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.refreshTokenEndpoint}');
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.refreshTokenEndpoint}',
+    );
 
-    Future<http.Response> post(
-      Map<String, String> headers, [
-      String? body,
-    ]) =>
-        http.post(url, headers: headers, body: body).timeout(const Duration(seconds: 30));
+    Future<http.Response> post(Map<String, String> headers, [String? body]) =>
+        http
+            .post(url, headers: headers, body: body)
+            .timeout(const Duration(seconds: 30));
 
     try {
       // Primary: Bearer refresh_token (matches Postman collection).
@@ -625,9 +634,7 @@ class AuthService extends ChangeNotifier {
       );
 
       if (!(response.statusCode == 200 || response.statusCode == 201)) {
-        response = await post(
-          ApiConfig.getHeaders(accessToken: _refreshToken),
-        );
+        response = await post(ApiConfig.getHeaders(accessToken: _refreshToken));
       }
 
       // Fallbacks for older API shapes.
@@ -648,26 +655,21 @@ class AuthService extends ChangeNotifier {
         if (_statusUnauthorized(response.statusCode)) {
           _lastRefreshWasAuthRejection = true;
         }
-        debugPrint(
-          'refreshAccessToken failed: ${response.statusCode} ${response.body}',
-        );
         return false;
       }
 
       final decoded = json.decode(response.body);
-      final root =
-          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      final root = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
       if (!_applyTokensFromAuthResponse(root)) {
-        debugPrint('refreshAccessToken: response had no access token');
         return false;
       }
 
       await _saveSession();
       notifyListeners();
-      debugPrint('refreshAccessToken: success');
       return true;
     } catch (e, st) {
-      debugPrint('refreshAccessToken error: $e\n$st');
       return false;
     }
   }
@@ -677,7 +679,6 @@ class AuthService extends ChangeNotifier {
 
     if (_refreshToken == null || _refreshToken!.isEmpty) {
       if (_isAccessTokenNearExpiry()) {
-        debugPrint('_refreshTokenIfNeeded: access token expired, no refresh token');
         await logout();
       }
       return;
@@ -709,59 +710,25 @@ class AuthService extends ChangeNotifier {
     headers = ApiConfig.getHeaders(accessToken: _accessToken);
     return http.get(url, headers: headers).timeout(timeout);
   }
-  
+
   // Get user profile from backend
   Future<Map<String, dynamic>?> getUserProfile() async {
     if (_accessToken == null) {
-      print('❌ ERROR: No access token available for profile request');
-      debugPrint('No access token available for profile request');
       return null;
     }
-    
+
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('📥 GET USER PROFILE API CALL START');
-      print('═══════════════════════════════════════════════════════════');
-      
       final url = '${ApiConfig.baseUrl}${ApiConfig.profileEndpoint}';
-      final headers = ApiConfig.getHeaders(accessToken: _accessToken);
-      
-      print('📤 REQUEST DETAILS:');
-      print('   Method: GET');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   FULL TOKEN: $_accessToken');
-      
-      debugPrint('Fetching user profile...');
 
       final response = await _authorizedMainGet(Uri.parse(url));
 
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
-
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        print('✅ GET USER PROFILE SUCCESS');
-        print('   Data: ${json.encode(responseData)}');
-        print('═══════════════════════════════════════════════════════════');
-        debugPrint('Profile fetched successfully');
         return responseData;
       } else {
-        print('❌ GET USER PROFILE FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
-        debugPrint('Failed to fetch profile: ${response.statusCode}');
         return null;
       }
-    } catch (e, stackTrace) {
-      print('❌ GET USER PROFILE ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
-      debugPrint('Error fetching profile: $e');
+    } catch (e) {
       return null;
     }
   }
@@ -801,31 +768,53 @@ class AuthService extends ChangeNotifier {
 
   // Save session to local storage
   Future<void> _saveSession() async {
-    if (_refreshToken == null || _refreshToken!.isEmpty) {
-      debugPrint(
-        'WARNING: No refresh token stored — user may be logged out when the access token expires (~15 min)',
+    if (_refreshToken == null || _refreshToken!.isEmpty) {}
+    if (_accessToken == null || _accessToken!.isEmpty) {
+      throw StateError(
+        'Cannot persist an authenticated session without a token',
       );
     }
+
+    await _secureSessionStorage.saveAccessToken(_accessToken!);
+    if (_refreshToken != null && _refreshToken!.isNotEmpty) {
+      await _secureSessionStorage.saveRefreshToken(_refreshToken!);
+    } else {
+      await _secureSessionStorage.deleteRefreshToken();
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', _currentUser?.id ?? '');
     await prefs.setString('user_name', _currentUser?.name ?? '');
     await prefs.setString('user_email', _currentUser?.email ?? '');
     await prefs.setString('user_photo_url', _currentUser?.photoUrl ?? '');
     await prefs.setString('user_provider', _currentUser?.provider ?? '');
-    await prefs.setString('access_token', _accessToken ?? '');
-    // Also save as 'auth_token' for compatibility with other services
-    await prefs.setString('auth_token', _accessToken ?? '');
-    await prefs.setString('refresh_token', _refreshToken ?? '');
-    await prefs.setString('token_expiry', _tokenExpiry?.toIso8601String() ?? '');
+    await prefs.setString(
+      'token_expiry',
+      _tokenExpiry?.toIso8601String() ?? '',
+    );
+    await SecureSessionStorage.removeLegacyTokenKeys(prefs);
   }
 
   // Load session from local storage
   Future<void> _loadSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
+      final migration = await _secureSessionStorage.migrateLegacyTokens(prefs);
+      if (migration == LegacyTokenMigrationResult.failed) {
+        _currentUser = null;
+        _accessToken = null;
+        _refreshToken = null;
+        _tokenExpiry = null;
+        return;
+      }
+
       final userId = prefs.getString('user_id');
-      if (userId != null && userId.isNotEmpty) {
+      final secureAccessToken = await _secureSessionStorage.readAccessToken();
+      final secureRefreshToken = await _secureSessionStorage.readRefreshToken();
+      if (userId != null &&
+          userId.isNotEmpty &&
+          secureAccessToken != null &&
+          secureAccessToken.isNotEmpty) {
         _currentUser = User(
           id: userId,
           name: prefs.getString('user_name') ?? '',
@@ -833,10 +822,10 @@ class AuthService extends ChangeNotifier {
           photoUrl: prefs.getString('user_photo_url'),
           provider: prefs.getString('user_provider') ?? '',
         );
-        
-        _accessToken = prefs.getString('access_token');
-        _refreshToken = prefs.getString('refresh_token');
-        
+
+        _accessToken = secureAccessToken;
+        _refreshToken = secureRefreshToken;
+
         final expiryString = prefs.getString('token_expiry');
         if (expiryString != null && expiryString.isNotEmpty) {
           _tokenExpiry = DateTime.parse(expiryString);
@@ -844,7 +833,6 @@ class AuthService extends ChangeNotifier {
         _syncTokenExpiryFromJwtIfNeeded();
       }
     } catch (e) {
-      debugPrint('Load session error: $e');
       // Continue with empty state
     }
   }
@@ -855,69 +843,30 @@ class AuthService extends ChangeNotifier {
       // Call backend logout endpoint if we have an access token
       if (_accessToken != null) {
         try {
-          await http.post(
-            Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logoutEndpoint}'),
-            headers: ApiConfig.getHeaders(accessToken: _accessToken),
-            body: json.encode({'test': 'data'}),
-          ).timeout(
-            const Duration(seconds: 10),
-          );
-          debugPrint('Backend logout successful');
-        } catch (e) {
-          debugPrint('Backend logout error (continuing with local logout): $e');
-        }
+          await http
+              .post(
+                Uri.parse('${ApiConfig.baseUrl}${ApiConfig.logoutEndpoint}'),
+                headers: ApiConfig.getHeaders(accessToken: _accessToken),
+                body: json.encode({'test': 'data'}),
+              )
+              .timeout(const Duration(seconds: 10));
+        } catch (e) {}
       }
-      
-      // Sign out from Google
-      await _googleSignIn.signOut();
-      
-      // Save cart before clearing SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final cartItems = prefs.getStringList('cart_items') ?? [];
-      final cartQuantities = prefs.getString('cart_quantities');
-      
-      // Clear local data (but preserve cart)
-      await prefs.clear();
-      
-      // Restore cart after clearing
-      if (cartItems.isNotEmpty) {
-        await prefs.setStringList('cart_items', cartItems);
-        if (cartQuantities != null && cartQuantities.isNotEmpty) {
-          await prefs.setString('cart_quantities', cartQuantities);
-        }
-        debugPrint('Cart preserved after logout: ${cartItems.length} items');
-      }
-      
-      // Reset state
-      _currentUser = null;
-      _accessToken = null;
-      _refreshToken = null;
-      _tokenExpiry = null;
-      
-      notifyListeners();
-      debugPrint('Logout completed');
+
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
     } catch (e) {
-      debugPrint('Logout error: $e');
-      // Even if logout fails, clear local state (but preserve cart)
-      final prefs = await SharedPreferences.getInstance();
-      final cartItems = prefs.getStringList('cart_items') ?? [];
-      final cartQuantities = prefs.getString('cart_quantities');
-      await prefs.clear();
-      
-      // Restore cart after clearing
-      if (cartItems.isNotEmpty) {
-        await prefs.setStringList('cart_items', cartItems);
-        if (cartQuantities != null && cartQuantities.isNotEmpty) {
-          await prefs.setString('cart_quantities', cartQuantities);
-        }
-        debugPrint('Cart preserved after logout error: ${cartItems.length} items');
-      }
-      
+    } finally {
       _currentUser = null;
       _accessToken = null;
       _refreshToken = null;
       _tokenExpiry = null;
-      notifyListeners();
+      try {
+        await _clearPersistedSessionPreservingCart();
+      } finally {
+        notifyListeners();
+      }
     }
   }
 
@@ -925,16 +874,43 @@ class AuthService extends ChangeNotifier {
   Future<void> clearSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      await _secureSessionStorage.clearSessionSecrets();
+      await SecureSessionStorage.removeLegacyTokenKeys(prefs);
       await prefs.clear();
-      
+
       _currentUser = null;
       _accessToken = null;
       _refreshToken = null;
       _tokenExpiry = null;
-      
+
       notifyListeners();
-    } catch (e) {
-      debugPrint('Clear session error: $e');
+    } catch (e) {}
+  }
+
+  Future<void> _clearPersistedSessionPreservingCart() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cartItems = prefs.getStringList('cart_items') ?? [];
+    final cartQuantities = prefs.getString('cart_quantities');
+
+    Object? secureStorageError;
+    try {
+      await _secureSessionStorage.clearSessionSecrets();
+    } catch (error) {
+      secureStorageError = error;
+    }
+
+    await SecureSessionStorage.removeLegacyTokenKeys(prefs);
+    await prefs.clear();
+
+    if (cartItems.isNotEmpty) {
+      await prefs.setStringList('cart_items', cartItems);
+      if (cartQuantities != null && cartQuantities.isNotEmpty) {
+        await prefs.setString('cart_quantities', cartQuantities);
+      }
+    }
+
+    if (secureStorageError != null) {
+      throw StateError('Secure session cleanup failed');
     }
   }
 }

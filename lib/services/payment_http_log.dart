@@ -1,25 +1,12 @@
-import 'dart:convert';
+import '../utils/safe_log.dart';
 
-/// Shared verbose HTTP logging for payment and post-payment purchase APIs.
-/// Uses [print] so everything appears in the **console** (stdout), not throttled like [debugPrint].
-/// Request/response bodies are logged **exactly** as sent/received. Sensitive
-/// header values are redacted (`Authorization`).
+/// Safe operational logging for payment and post-payment purchase APIs.
+///
+/// The body/header parameters remain in the API to avoid changing networking
+/// call sites, but their values are intentionally never logged.
 class PaymentHttpLog {
-  static const String _sep =
-      '═══════════════════════════════════════════════════════════';
-
-  static Map<String, String> redactedHeaders(Map<String, String> headers) {
-    final out = <String, String>{};
-    for (final e in headers.entries) {
-      final k = e.key;
-      if (k.toLowerCase() == 'authorization') {
-        out[k] = 'Bearer <REDACTED>';
-      } else {
-        out[k] = e.value;
-      }
-    }
-    return out;
-  }
+  static Map<String, String> redactedHeaders(Map<String, String> headers) =>
+      SafeLog.sanitizeHeaders(headers);
 
   static void log({
     required String operation,
@@ -31,26 +18,15 @@ class PaymentHttpLog {
     Map<String, String>? responseHeaders,
     required String responseBodyExact,
   }) {
-    final headersJson = requestHeaders != null
-        ? json.encode(redactedHeaders(requestHeaders))
-        : '{}';
-    final respHeadersJson =
-        responseHeaders != null ? json.encode(responseHeaders) : '{}';
-
-    print(_sep);
-    print('[PaymentHttpLog] $operation');
-    print('METHOD: $method');
-    print('URL (exact): $urlExact');
-    print('REQUEST_HEADERS_JSON: $headersJson');
-    if (requestBodyExact != null) {
-      print('REQUEST_BODY_JSON (exact): $requestBodyExact');
-    } else {
-      print('REQUEST_BODY_JSON (exact): <none>');
-    }
-    print('RESPONSE_STATUS (exact): $responseStatus');
-    print('RESPONSE_HEADERS_JSON (exact): $respHeadersJson');
-    print('RESPONSE_BODY (exact): $responseBodyExact');
-    print(_sep);
+    SafeLog.debug(
+      operation,
+      metadata: {
+        'method': method,
+        'statusCode': responseStatus,
+        'success': responseStatus >= 200 && responseStatus < 400,
+        'url': SafeLog.sanitizeUri(Uri.parse(urlExact)).toString(),
+      },
+    );
   }
 
   static void logError({
@@ -62,21 +38,14 @@ class PaymentHttpLog {
     required Object error,
     required StackTrace stackTrace,
   }) {
-    final headersJson = requestHeaders != null
-        ? json.encode(redactedHeaders(requestHeaders))
-        : '{}';
-    print(_sep);
-    print('[PaymentHttpLog] $operation — ERROR (no response or pre-request)');
-    print('METHOD: $method');
-    print('URL (exact): $urlExact');
-    print('REQUEST_HEADERS_JSON: $headersJson');
-    if (requestBodyExact != null) {
-      print('REQUEST_BODY_JSON (exact): $requestBodyExact');
-    } else {
-      print('REQUEST_BODY_JSON (exact): <none>');
-    }
-    print('ERROR (exact): $error');
-    print('STACK_TRACE (exact): $stackTrace');
-    print(_sep);
+    SafeLog.error(
+      operation,
+      error: error,
+      metadata: {
+        'method': method,
+        'success': false,
+        'url': SafeLog.sanitizeUri(Uri.parse(urlExact)).toString(),
+      },
+    );
   }
 }

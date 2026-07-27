@@ -10,7 +10,7 @@ import '../services/voice_recording_service.dart';
 class VoiceRecordingScreen extends StatefulWidget {
   final String songTitle;
   final String songArtist;
-  
+
   const VoiceRecordingScreen({
     super.key,
     required this.songTitle,
@@ -25,7 +25,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     with TickerProviderStateMixin {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final VoiceRecordingService _voiceService = VoiceRecordingService();
-  
+
   bool _isRecording = false;
   bool _isPlaying = false;
   bool _hasRecording = false;
@@ -33,40 +33,36 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   Duration _recordingDuration = Duration.zero;
   Duration _playbackPosition = Duration.zero;
   Duration _playbackDuration = Duration.zero;
-  
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  
+
   @override
   void initState() {
     super.initState();
     _setupAnimations();
     _requestPermissions();
   }
-  
+
   void _setupAnimations() {
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
-    _pulseAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
-  
+
   Future<void> _requestPermissions() async {
     await PermissionService.requestMicrophonePermission();
   }
-  
+
   Future<void> _startRecording() async {
     try {
       // Request microphone permission first using PermissionService
       final granted = await PermissionService.requestMicrophonePermission();
-      
+
       if (granted) {
         // Start real recording using VoiceRecordingService
         final success = await _voiceService.startRecording();
@@ -78,7 +74,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           _pulseController.repeat(reverse: true);
           _startTimer();
         } else {
-          _showErrorSnackBar('Failed to start recording. Please check microphone permissions.');
+          _showErrorSnackBar(
+            'Failed to start recording. Please check microphone permissions.',
+          );
         }
       } else {
         // Authoritative check
@@ -89,7 +87,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           try {
             if (!Platform.isIOS) {
               final phStatus = await Permission.microphone.status;
-              permanentlyDenied = phStatus == PermissionStatus.permanentlyDenied;
+              permanentlyDenied =
+                  phStatus == PermissionStatus.permanentlyDenied;
             } else {
               permanentlyDenied = false;
             }
@@ -108,7 +107,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       _showErrorSnackBar('Failed to start recording: $e');
     }
   }
-  
+
   void _showPermissionDialog() {
     showDialog(
       context: context,
@@ -138,7 +137,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       },
     );
   }
-  
+
   Future<void> _stopRecording() async {
     try {
       // Stop real recording using VoiceRecordingService
@@ -158,18 +157,20 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       _showErrorSnackBar('Failed to stop recording: $e');
     }
   }
-  
+
   void _startTimer() {
     Future.delayed(const Duration(seconds: 1), () {
       if (_isRecording) {
         setState(() {
-          _recordingDuration = Duration(seconds: _recordingDuration.inSeconds + 1);
+          _recordingDuration = Duration(
+            seconds: _recordingDuration.inSeconds + 1,
+          );
         });
         _startTimer();
       }
     });
   }
-  
+
   Future<void> _playRecording() async {
     if (_recordingPath != null) {
       try {
@@ -179,34 +180,35 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           _showErrorSnackBar('Recording file not found. Please record again.');
           return;
         }
-        
+
         // Check file size (should not be empty)
         final fileSize = await file.length();
         if (fileSize == 0) {
           _showErrorSnackBar('Recording file is empty. Please record again.');
           return;
         }
-        
+
         // Configure audio session for playback on iOS
         if (Platform.isIOS) {
           try {
-            const MethodChannel audioChannel = MethodChannel('app.channel.audio');
+            const MethodChannel audioChannel = MethodChannel(
+              'app.channel.audio',
+            );
             await audioChannel.invokeMethod('configureAudioSessionForPlayback');
           } catch (e) {
-            print('Warning: Could not configure audio session for playback: $e');
             // Continue anyway - audioplayers might handle it
           }
         }
-        
+
         // Stop any current playback first
         await _audioPlayer.stop();
-        
+
         // Play the recording
         await _audioPlayer.play(DeviceFileSource(_recordingPath!));
         setState(() {
           _isPlaying = true;
         });
-        
+
         _audioPlayer.onDurationChanged.listen((duration) {
           if (mounted) {
             setState(() {
@@ -214,7 +216,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
             });
           }
         });
-        
+
         _audioPlayer.onPositionChanged.listen((position) {
           if (mounted) {
             setState(() {
@@ -222,7 +224,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
             });
           }
         });
-        
+
         _audioPlayer.onPlayerComplete.listen((_) {
           if (mounted) {
             setState(() {
@@ -232,14 +234,15 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
           }
         });
       } catch (e) {
-        print('Error playing recording: $e');
         if (mounted) {
-          _showErrorSnackBar('Failed to play recording. The file may be corrupted. Please record again.');
+          _showErrorSnackBar(
+            'Failed to play recording. The file may be corrupted. Please record again.',
+          );
         }
       }
     }
   }
-  
+
   Future<void> _stopPlayback() async {
     await _audioPlayer.stop();
     setState(() {
@@ -247,13 +250,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
       _playbackPosition = Duration.zero;
     });
   }
-  
+
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.errorRed,
-      ),
+      SnackBar(content: Text(message), backgroundColor: AppColors.errorRed),
     );
   }
 
@@ -264,7 +264,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
     _voiceService.dispose();
     super.dispose();
   }
-  
+
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
@@ -276,9 +276,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.voiceGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.voiceGradient),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
@@ -289,24 +287,28 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back, color: AppColors.white),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.white,
+                      ),
                     ),
                     Expanded(
                       child: Text(
                         'Record Your Voice',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: AppColors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: AppColors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     const SizedBox(width: 48), // Balance the back button
                   ],
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Song Info
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -338,9 +340,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 60),
-                
+
                 // Recording Visual
                 AnimatedBuilder(
                   animation: _pulseAnimation,
@@ -352,26 +354,30 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                         height: 200,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _isRecording 
+                          color: _isRecording
                               ? AppColors.errorRed.withOpacity(0.3)
                               : AppColors.white.withOpacity(0.2),
                           border: Border.all(
-                            color: _isRecording ? AppColors.errorRed : AppColors.white,
+                            color: _isRecording
+                                ? AppColors.errorRed
+                                : AppColors.white,
                             width: 4,
                           ),
                         ),
                         child: Icon(
                           _isRecording ? Icons.stop : Icons.mic,
                           size: 80,
-                          color: _isRecording ? AppColors.errorRed : AppColors.white,
+                          color: _isRecording
+                              ? AppColors.errorRed
+                              : AppColors.white,
                         ),
                       ),
                     );
                   },
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Recording Status
                 Text(
                   _isRecording ? 'Recording...' : 'Tap to start recording',
@@ -381,9 +387,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Duration Display
                 Text(
                   _formatDuration(_recordingDuration),
@@ -394,19 +400,25 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     fontFamily: 'monospace',
                   ),
                 ),
-                
+
                 const SizedBox(height: 60),
-                
+
                 // Control Buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     // Record/Stop Button
                     ElevatedButton(
-                      onPressed: _isRecording ? _stopRecording : _startRecording,
+                      onPressed: _isRecording
+                          ? _stopRecording
+                          : _startRecording,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _isRecording ? AppColors.errorRed : AppColors.white,
-                        foregroundColor: _isRecording ? AppColors.white : AppColors.primarySaffron,
+                        backgroundColor: _isRecording
+                            ? AppColors.errorRed
+                            : AppColors.white,
+                        foregroundColor: _isRecording
+                            ? AppColors.white
+                            : AppColors.primarySaffron,
                         shape: const CircleBorder(),
                         padding: const EdgeInsets.all(20),
                       ),
@@ -415,7 +427,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                         size: 32,
                       ),
                     ),
-                    
+
                     // Play/Pause Button
                     if (_hasRecording)
                       ElevatedButton(
@@ -433,9 +445,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                       ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Instructions
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -471,9 +483,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen>
                     ],
                   ),
                 ),
-                
+
                 const Spacer(),
-                
+
                 // Continue Button
                 if (_hasRecording)
                   SizedBox(

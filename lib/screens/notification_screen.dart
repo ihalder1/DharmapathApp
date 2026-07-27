@@ -32,7 +32,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading notifications: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -86,43 +85,42 @@ class _NotificationScreenState extends State<NotificationScreen> {
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primarySaffron),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppColors.primarySaffron,
+                ),
               ),
             )
           : _notifications.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.notifications_none,
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No notifications',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.notifications_none,
+                    size: 64,
+                    color: Colors.grey[400],
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadNotifications,
-                  color: AppColors.primarySaffron,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _notifications.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final notification = _notifications[index];
-                      return _buildNotificationItem(notification);
-                    },
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notifications',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
-                ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadNotifications,
+              color: AppColors.primarySaffron,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: _notifications.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final notification = _notifications[index];
+                  return _buildNotificationItem(notification);
+                },
+              ),
+            ),
     );
   }
 
@@ -155,8 +153,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 style: TextStyle(
                   fontSize: 15,
                   height: 1.35,
-                  fontWeight:
-                      notification.isRead ? FontWeight.w400 : FontWeight.w600,
+                  fontWeight: notification.isRead
+                      ? FontWeight.w400
+                      : FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
               ),
@@ -164,10 +163,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             const SizedBox(width: 8),
             Text(
               notification.formattedDate,
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
             ),
           ],
         ),

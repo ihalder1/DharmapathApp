@@ -66,10 +66,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isMantraSelectionExpanded = false;
   bool _isRecordingsExpanded = false;
   bool _isMyMantrasExpanded = false;
-  
+
   // Notifications
   int _unreadNotificationCount = 0;
-  
+
   String? _photoUrl;
 
   // Mantra System
@@ -77,7 +77,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Mantra> _filteredMantras = [];
   bool _isLoadingMantras = false;
 
-  final InferredMantrasService _inferredMantrasService = InferredMantrasService();
+  final InferredMantrasService _inferredMantrasService =
+      InferredMantrasService();
   List<InferredSong> _inferredSongs = [];
   final Map<String, String> _inferredLocalPaths = {};
   bool _loadingInferredSongs = false;
@@ -88,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Mantra? _currentlyPlaying;
   bool _isPlaying = false;
   final TextEditingController _searchController = TextEditingController();
-  
+
   // Voice Recording System
   final VoiceRecordingService _voiceService = VoiceRecordingService();
   String _selectedLanguage = 'English';
@@ -97,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentlyPlayingPath; // Track which file is currently playing
   String? _currentRecordingPath;
   final AudioPlayer _recordingPlayer = AudioPlayer();
+
   /// Tracks step transitions so we refresh GET voice/recordings when entering Record Voice.
   int? _prevStepForVoiceRefresh;
 
@@ -105,7 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _recordingTimer;
   int _recordingSeconds = 0;
   static const int _maxRecordingSeconds = 60;
-  
+
   // Personal Info Data - Initialize with default values
   Map<String, dynamic> _personalInfo = {
     'fullName': '',
@@ -114,34 +116,34 @@ class _HomeScreenState extends State<HomeScreen> {
     'mobile': 'Add Phone Number',
     'gender': 'Prefer not to say',
   };
-  
+
   final List<Map<String, dynamic>> _steps = [
     {
       'title': 'Select Mantras',
       'icon': Icons.music_note_outlined,
-      'description': 'Choose your Mantras'
+      'description': 'Choose your Mantras',
     },
     {
       'title': 'Cart',
       'icon': Icons.shopping_cart_outlined,
-      'description': 'Complete your purchase'
+      'description': 'Complete your purchase',
     },
     {
       'title': 'Record Voice',
       'icon': Icons.mic_outlined,
-      'description': 'Record your voice'
+      'description': 'Record your voice',
     },
     {
       'title': 'My Mantra',
       'icon': Icons.person_outline,
-      'description': 'View your mantras'
+      'description': 'View your mantras',
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    
+
     // Check if user is authenticated before loading data
     final authService = Provider.of<AuthService>(context, listen: false);
     if (!authService.isLoggedIn || authService.accessToken == null) {
@@ -153,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       return;
     }
-    
+
     // Initialize with authenticated user data immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializePersonalInfo();
@@ -193,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _initializePersonalInfo() {
     final authService = Provider.of<AuthService>(context, listen: false);
     final user = authService.currentUser;
-    
+
     if (user != null) {
       setState(() {
         _personalInfo = {
@@ -218,38 +220,49 @@ class _HomeScreenState extends State<HomeScreen> {
       // First, initialize with authenticated user data
       final authService = Provider.of<AuthService>(context, listen: false);
       final currentUser = authService.currentUser;
-      
+
       if (currentUser != null) {
         setState(() {
-          _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
-              ? _personalInfo['fullName'] 
+          _personalInfo['fullName'] =
+              _personalInfo['fullName']?.isNotEmpty == true
+              ? _personalInfo['fullName']
               : currentUser.name;
-          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
-              ? _personalInfo['email'] 
+          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true
+              ? _personalInfo['email']
               : currentUser.email;
           _photoUrl = _photoUrl ?? currentUser.photoUrl;
         });
       }
-      
+
       // Then try to get full profile from API
       final profileData = await ProfileService.getProfile();
       if (profileData != null) {
         setState(() {
           _personalInfo = {
-            'fullName': (profileData['fullName']?.toString().isNotEmpty == true) 
-                ? profileData['fullName'] 
-                : (_personalInfo['fullName']?.toString().isNotEmpty == true ? _personalInfo['fullName'] : ''),
-            'email': (profileData['email']?.toString().isNotEmpty == true) 
-                ? profileData['email'] 
-                : (_personalInfo['email']?.toString().isNotEmpty == true ? _personalInfo['email'] : ''),
-            'location': (profileData['location'] != null && profileData['location'].toString().trim().isNotEmpty) 
-                ? profileData['location'] 
+            'fullName': (profileData['fullName']?.toString().isNotEmpty == true)
+                ? profileData['fullName']
+                : (_personalInfo['fullName']?.toString().isNotEmpty == true
+                      ? _personalInfo['fullName']
+                      : ''),
+            'email': (profileData['email']?.toString().isNotEmpty == true)
+                ? profileData['email']
+                : (_personalInfo['email']?.toString().isNotEmpty == true
+                      ? _personalInfo['email']
+                      : ''),
+            'location':
+                (profileData['location'] != null &&
+                    profileData['location'].toString().trim().isNotEmpty)
+                ? profileData['location']
                 : 'Add Location',
-            'mobile': (profileData['mobile'] != null && profileData['mobile'].toString().trim().isNotEmpty) 
-                ? profileData['mobile'] 
+            'mobile':
+                (profileData['mobile'] != null &&
+                    profileData['mobile'].toString().trim().isNotEmpty)
+                ? profileData['mobile']
                 : 'Add Phone Number',
-            'gender': (profileData['gender'] != null && profileData['gender'].toString().trim().isNotEmpty) 
-                ? profileData['gender'] 
+            'gender':
+                (profileData['gender'] != null &&
+                    profileData['gender'].toString().trim().isNotEmpty)
+                ? profileData['gender']
                 : 'Prefer not to say',
           };
           _photoUrl = profileData['photoUrl'] ?? _photoUrl;
@@ -258,46 +271,51 @@ class _HomeScreenState extends State<HomeScreen> {
         // If profile API fails, ensure we at least have authenticated user data and default values
         if (currentUser != null) {
           setState(() {
-            _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
-                ? _personalInfo['fullName'] 
+            _personalInfo['fullName'] =
+                _personalInfo['fullName']?.isNotEmpty == true
+                ? _personalInfo['fullName']
                 : currentUser.name;
-            _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
-                ? _personalInfo['email'] 
+            _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true
+                ? _personalInfo['email']
                 : currentUser.email;
-            _personalInfo['location'] = _personalInfo['location']?.isNotEmpty == true 
-                ? _personalInfo['location'] 
+            _personalInfo['location'] =
+                _personalInfo['location']?.isNotEmpty == true
+                ? _personalInfo['location']
                 : 'Add Location';
-            _personalInfo['mobile'] = _personalInfo['mobile']?.isNotEmpty == true 
-                ? _personalInfo['mobile'] 
+            _personalInfo['mobile'] =
+                _personalInfo['mobile']?.isNotEmpty == true
+                ? _personalInfo['mobile']
                 : 'Add Phone Number';
-            _personalInfo['gender'] = _personalInfo['gender']?.isNotEmpty == true 
-                ? _personalInfo['gender'] 
+            _personalInfo['gender'] =
+                _personalInfo['gender']?.isNotEmpty == true
+                ? _personalInfo['gender']
                 : 'Prefer not to say';
             _photoUrl = _photoUrl ?? currentUser.photoUrl;
           });
         }
       }
     } catch (e) {
-      debugPrint('Error loading profile: $e');
       // Fallback to authenticated user data with default values
       final authService = Provider.of<AuthService>(context, listen: false);
       final currentUser = authService.currentUser;
       if (currentUser != null) {
         setState(() {
-          _personalInfo['fullName'] = _personalInfo['fullName']?.isNotEmpty == true 
-              ? _personalInfo['fullName'] 
+          _personalInfo['fullName'] =
+              _personalInfo['fullName']?.isNotEmpty == true
+              ? _personalInfo['fullName']
               : currentUser.name;
-          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true 
-              ? _personalInfo['email'] 
+          _personalInfo['email'] = _personalInfo['email']?.isNotEmpty == true
+              ? _personalInfo['email']
               : currentUser.email;
-          _personalInfo['location'] = _personalInfo['location']?.isNotEmpty == true 
-              ? _personalInfo['location'] 
+          _personalInfo['location'] =
+              _personalInfo['location']?.isNotEmpty == true
+              ? _personalInfo['location']
               : 'Add Location';
-          _personalInfo['mobile'] = _personalInfo['mobile']?.isNotEmpty == true 
-              ? _personalInfo['mobile'] 
+          _personalInfo['mobile'] = _personalInfo['mobile']?.isNotEmpty == true
+              ? _personalInfo['mobile']
               : 'Add Phone Number';
-          _personalInfo['gender'] = _personalInfo['gender']?.isNotEmpty == true 
-              ? _personalInfo['gender'] 
+          _personalInfo['gender'] = _personalInfo['gender']?.isNotEmpty == true
+              ? _personalInfo['gender']
               : 'Prefer not to say';
           _photoUrl = _photoUrl ?? currentUser.photoUrl;
         });
@@ -320,20 +338,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      print('Loading mantras... (syncCatalog=$syncCatalog)');
       final mantras = await MantraService.loadMantras(syncCatalog: syncCatalog);
       if (syncCatalog) {
         // Allow icons written during sync to be resolved on disk (avoid stale memoized misses).
         _mantraLocalIconPathFutures.clear();
       }
-      print('Loaded ${mantras.length} mantras');
 
       if (!mounted) return;
       setState(() {
         _applyMantraList(mantras);
       });
     } catch (e) {
-      print('Error loading mantras: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -416,11 +431,8 @@ class _HomeScreenState extends State<HomeScreen> {
           size: size * 0.85,
           color: iconColor.withValues(alpha: 0.35),
         ),
-        errorWidget: (context, url, error) => Icon(
-          Icons.music_note,
-          size: size,
-          color: iconColor,
-        ),
+        errorWidget: (context, url, error) =>
+            Icon(Icons.music_note, size: size, color: iconColor),
       );
     }
 
@@ -437,41 +449,24 @@ class _HomeScreenState extends State<HomeScreen> {
         errorBuilder: (context, error, stackTrace) {
           if (iconName.endsWith('.png')) {
             final jpgName = '$baseName.jpg';
-            print('Image loading error for $iconName, trying $jpgName');
             return Image.asset(
               'assets/Media/$jpgName',
               fit: fit,
               errorBuilder: (context, error2, stackTrace2) {
-                print('Image loading error for both $iconName and $jpgName: $error2');
-                return Icon(
-                  Icons.music_note,
-                  size: size,
-                  color: iconColor,
-                );
+                return Icon(Icons.music_note, size: size, color: iconColor);
               },
             );
           } else if (iconName.endsWith('.jpg')) {
             final pngName = '$baseName.png';
-            print('Image loading error for $iconName, trying $pngName');
             return Image.asset(
               'assets/Media/$pngName',
               fit: fit,
               errorBuilder: (context, error2, stackTrace2) {
-                print('Image loading error for both $iconName and $pngName: $error2');
-                return Icon(
-                  Icons.music_note,
-                  size: size,
-                  color: iconColor,
-                );
+                return Icon(Icons.music_note, size: size, color: iconColor);
               },
             );
           }
-          print('Image loading error for $iconName: $error');
-          return Icon(
-            Icons.music_note,
-            size: size,
-            color: iconColor,
-          );
+          return Icon(Icons.music_note, size: size, color: iconColor);
         },
       );
     }
@@ -517,9 +512,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _unreadNotificationCount = count;
         });
       }
-    } catch (e) {
-      print('Error loading unread notification count: $e');
-    }
+    } catch (e) {}
   }
 
   // Voice recording methods
@@ -534,7 +527,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('You have to purchase at least one song first to start recording your voice'),
+            content: Text(
+              'You have to purchase at least one song first to start recording your voice',
+            ),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),
           ),
@@ -542,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return;
     }
-    
+
     // startRecording() handles permission checking internally, so we don't need to check here
     final success = await _voiceService.startRecording();
     if (success) {
@@ -567,7 +562,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to start recording. Please check microphone permissions.'),
+            content: Text(
+              'Failed to start recording. Please check microphone permissions.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -665,21 +662,21 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         return;
       }
-      
+
       // If playing a different file, stop it first
       if (_isPlayingRecording && _currentlyPlayingPath != path) {
         await _recordingPlayer.stop();
       }
-      
+
       // Validate file exists
       final file = File(path);
       if (!await file.exists()) {
-        print('❌ Error: Recording file does not exist at path: $path');
-        print('   File path: $path');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Recording file not found at:\n${path.split('/').last}\n\nFile may need to be re-downloaded from backend.'),
+              content: Text(
+                'Recording file not found at:\n${path.split('/').last}\n\nFile may need to be re-downloaded from backend.',
+              ),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 4),
             ),
@@ -687,44 +684,40 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         return;
       }
-      
+
       // Check file size (should not be empty)
       final fileSize = await file.length();
       if (fileSize == 0) {
-        print('❌ Error: Recording file is empty: $path');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Recording file is empty (0 bytes). Please record again.'),
+              content: Text(
+                'Recording file is empty (0 bytes). Please record again.',
+              ),
               backgroundColor: Colors.red,
             ),
           );
         }
         return;
       }
-      
-      print('✅ Playing recording: ${path.split('/').last} (${fileSize} bytes)');
-      print('   Full path: $path');
-      
+
       // Configure audio session for playback on iOS
       if (Platform.isIOS) {
         try {
           const MethodChannel audioChannel = MethodChannel('app.channel.audio');
           await audioChannel.invokeMethod('configureAudioSessionForPlayback');
-          print('iOS audio session configured for playback');
         } catch (e) {
-          print('Warning: Could not configure audio session for playback: $e');
           // Continue anyway - audioplayers might handle it
         }
       }
-      
+
       // Play the actual recording file
       await _recordingPlayer.play(DeviceFileSource(path));
       setState(() {
         _isPlayingRecording = true;
         _currentlyPlayingPath = path;
       });
-      
+
       // Listen for playback completion
       _recordingPlayer.onPlayerComplete.listen((_) {
         if (mounted) {
@@ -735,8 +728,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       });
     } catch (e) {
-      print('Error playing recording: $e');
-      print('Path: $path');
       if (mounted) {
         setState(() {
           _isPlayingRecording = false;
@@ -758,7 +749,9 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Recording'),
-        content: Text('Are you sure you want to delete "${recording.name}"? This action cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete "${recording.name}"? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -766,9 +759,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -788,13 +779,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Delete the recording
     final success = await _voiceService.deleteRecording(recording);
-    
+
     if (success) {
       setState(() {
         // Reload recordings to update the list
         _loadRecordings();
       });
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -875,48 +866,49 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 if (!_voiceService.isNameUnique(name)) {
                   setDialogState(() {
-                    errorText = 'This name already exists. Please choose a different name.';
+                    errorText =
+                        'This name already exists. Please choose a different name.';
                   });
                   return;
                 }
 
                 Navigator.pop(dialogContext);
-                
+
                 // Show loading - use the main context, not dialog context
                 if (!mounted) return;
-                
+
                 // Store ScaffoldMessenger BEFORE async operation
                 final scaffoldMessenger = ScaffoldMessenger.of(context);
-                
+
                 BuildContext? loadingContext;
                 showDialog(
                   context: context,
                   barrierDismissible: false,
                   builder: (dialogCtx) {
                     loadingContext = dialogCtx;
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
+                    return const Center(child: CircularProgressIndicator());
                   },
                 );
 
-                final result = await _voiceService.saveRecording(name, _selectedLanguage);
+                final result = await _voiceService.saveRecording(
+                  name,
+                  _selectedLanguage,
+                );
                 final success = result['success'] as bool? ?? false;
-                final backendSuccess = result['backendSuccess'] as bool? ?? false;
+                final backendSuccess =
+                    result['backendSuccess'] as bool? ?? false;
                 final errorMessage = result['errorMessage'] as String?;
-                
+
                 // Close loading dialog safely
                 if (mounted && loadingContext != null) {
                   try {
                     Navigator.of(loadingContext!, rootNavigator: true).pop();
-                  } catch (e) {
-                    print('Error closing loading dialog: $e');
-                  }
+                  } catch (e) {}
                 }
-                
+
                 // Only show messages if widget is still mounted
                 if (!mounted) return;
-                
+
                 if (success) {
                   // Local save succeeded (backend may or may not have succeeded).
                   // Reload recordings to ensure list is up to date.
@@ -986,22 +978,22 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_isRecordingsExpanded) {
       return _buildExpandedRecordingsStep();
     }
-    
+
     // If My Mantras is expanded, show it as full screen
     if (_isMyMantrasExpanded) {
       return _buildExpandedMyMantrasStep();
     }
-    
+
     // If mantra selection is expanded, show it as full screen
     if (_currentStep == 0 && _isMantraSelectionExpanded) {
       return _buildExpandedMantraSelectionStep();
     }
-    
+
     // If we're on the voice recording step, return it as a full screen
     if (_currentStep == 2) {
       return _buildVoiceRecordingStep();
     }
-    
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -1043,7 +1035,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: (_isLoading && _currentStep != 0)
                     ? const Center(
                         child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primarySaffron),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppColors.primarySaffron,
+                          ),
                         ),
                       )
                     : ClipRRect(
@@ -1147,10 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onPressed: () => _showLogoutDialog(context),
                 padding: EdgeInsets.zero,
                 visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
-                ),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 icon: const Icon(
                   Icons.logout,
                   color: AppColors.textSecondary,
@@ -1159,9 +1150,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 6),
-          
+
           // App title
           const Text(
             'MantraSutra - मन्त्रसूत्र',
@@ -1196,7 +1187,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Map<String, dynamic> step = entry.value;
           bool isActive = index <= _currentStep;
           bool isCompleted = index < _currentStep;
-          
+
           return Expanded(
             child: GestureDetector(
               onTap: () {
@@ -1217,7 +1208,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                      color: isActive ? AppColors.primarySaffron : AppColors.lightSaffron,
+                      color: isActive
+                          ? AppColors.primarySaffron
+                          : AppColors.lightSaffron,
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: AppColors.primarySaffron,
@@ -1226,7 +1219,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Icon(
                       step['icon'],
-                      color: isActive ? AppColors.white : AppColors.textSecondary,
+                      color: isActive
+                          ? AppColors.white
+                          : AppColors.textSecondary,
                       size: 17,
                     ),
                   ),
@@ -1236,7 +1231,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
+                      color: isActive
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1282,9 +1279,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onTap: () async {
         await Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const NotificationScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const NotificationScreen()),
         );
         if (mounted) _loadUnreadNotificationCount();
       },
@@ -1297,10 +1292,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 50,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.primarySaffron,
-                width: 1.5,
-              ),
+              border: Border.all(color: AppColors.primarySaffron, width: 1.5),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.08),
@@ -1336,12 +1328,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Colors.red,
                   shape: BoxShape.circle,
                 ),
-                constraints: const BoxConstraints(
-                  minWidth: 18,
-                  minHeight: 18,
-                ),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 child: Text(
-                  _unreadNotificationCount > 9 ? '9+' : '$_unreadNotificationCount',
+                  _unreadNotificationCount > 9
+                      ? '9+'
+                      : '$_unreadNotificationCount',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -1366,10 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'RECORDINGS',
           recordings == null ? '—' : '$recordings',
         ),
-        _buildStatisticItem(
-          'SONGS',
-          songs == null ? '—' : '$songs',
-        ),
+        _buildStatisticItem('SONGS', songs == null ? '—' : '$songs'),
       ],
     );
   }
@@ -1405,11 +1393,19 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             Expanded(
-              child: _buildStepBox(1, 'Select & Add', 'Pick your mantra and add it to the cart.'),
+              child: _buildStepBox(
+                1,
+                'Select & Add',
+                'Pick your mantra and add it to the cart.',
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: _buildStepBox(2, 'Checkout', 'Complete your payment in the Cart tab.'),
+              child: _buildStepBox(
+                2,
+                'Checkout',
+                'Complete your payment in the Cart tab.',
+              ),
             ),
           ],
         ),
@@ -1418,11 +1414,19 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           children: [
             Expanded(
-              child: _buildStepBox(3, 'Record Voice', 'Submit your voice sample in the Record Voice tab.'),
+              child: _buildStepBox(
+                3,
+                'Record Voice',
+                'Submit your voice sample in the Record Voice tab.',
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: _buildStepBox(4, 'Download', 'Access your file from the \'My Mantras\' section.'),
+              child: _buildStepBox(
+                4,
+                'Download',
+                'Access your file from the \'My Mantras\' section.',
+              ),
             ),
           ],
         ),
@@ -1506,15 +1510,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showEditPersonalInfoDialog() {
-    final nameController = TextEditingController(text: _personalInfo['fullName']);
-    final locationController = TextEditingController(text: _personalInfo['location']);
-    final mobileController = TextEditingController(text: _personalInfo['mobile']);
+    final nameController = TextEditingController(
+      text: _personalInfo['fullName'],
+    );
+    final locationController = TextEditingController(
+      text: _personalInfo['location'],
+    );
+    final mobileController = TextEditingController(
+      text: _personalInfo['mobile'],
+    );
     String initialGender = _personalInfo['gender'] ?? 'Prefer not to say';
     // Normalize gender value to match dropdown options
-    if (initialGender != 'Male' && initialGender != 'Female' && initialGender != 'Prefer not to say') {
+    if (initialGender != 'Male' &&
+        initialGender != 'Female' &&
+        initialGender != 'Prefer not to say') {
       initialGender = 'Prefer not to say';
     }
-    
+
     showDialog(
       context: context,
       builder: (context) {
@@ -1556,7 +1568,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelText: 'Gender',
                       border: OutlineInputBorder(),
                     ),
-                    items: const ['Male', 'Female', 'Prefer not to say'].map((String value) {
+                    items: const ['Male', 'Female', 'Prefer not to say'].map((
+                      String value,
+                    ) {
                       return DropdownMenuItem<String>(
                         value: value,
                         child: Text(value),
@@ -1583,7 +1597,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Store the selected gender before closing dialog
                   final finalGender = selectedGender;
                   Navigator.pop(context);
-                  
+
                   setState(() {
                     _isLoading = true;
                   });
@@ -1601,22 +1615,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Update local state with the values we just saved
                       final updatedLocation = locationController.text.trim();
                       final updatedMobile = mobileController.text.trim();
-                      
+
                       setState(() {
                         _personalInfo['fullName'] = nameController.text.trim();
-                        _personalInfo['location'] = updatedLocation.isEmpty ? 'Add Location' : updatedLocation;
-                        _personalInfo['mobile'] = updatedMobile.isEmpty ? 'Add Phone Number' : updatedMobile;
+                        _personalInfo['location'] = updatedLocation.isEmpty
+                            ? 'Add Location'
+                            : updatedLocation;
+                        _personalInfo['mobile'] = updatedMobile.isEmpty
+                            ? 'Add Phone Number'
+                            : updatedMobile;
                         _personalInfo['gender'] = finalGender;
                       });
-                      
+
                       // Don't reload from API immediately - preserve the values we just saved
                       // The API might not return them immediately, so we keep our updated values
-                  
+
                       // Show success message
                       if (mounted && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Personal information updated successfully'),
+                            content: Text(
+                              'Personal information updated successfully',
+                            ),
                             backgroundColor: Colors.green,
                           ),
                         );
@@ -1626,32 +1646,33 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (mounted && context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Failed to update profile. Please check your connection and try again.'),
+                            content: Text(
+                              'Failed to update profile. Please check your connection and try again.',
+                            ),
                             backgroundColor: Colors.red,
                           ),
                         );
                       }
                     }
-              } catch (e) {
-                print('Error updating profile: $e');
-                if (mounted && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error updating profile: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } finally {
-                setState(() {
-                  _isLoading = false;
-                });
-              }
-            },
-            child: const Text('Save'),
+                  } catch (e) {
+                    if (mounted && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error updating profile: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  } finally {
+                    setState(() {
+                      _isLoading = false;
+                    });
+                  }
+                },
+                child: const Text('Save'),
+              ),
+            ],
           ),
-        ],
-      ),
         );
       },
     );
@@ -1690,7 +1711,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_inferredDownloadingIds.contains(song.inferredId)) return;
     setState(() => _inferredDownloadingIds.add(song.inferredId));
     try {
-      var path = _inferredLocalPaths[song.inferredId] ??
+      var path =
+          _inferredLocalPaths[song.inferredId] ??
           await _inferredMantrasService.localPathIfExists(song.inferredId);
       if (path != null) {
         if (mounted) {
@@ -1699,7 +1721,9 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      final url = await _inferredMantrasService.fetchDownloadUrl(song.inferredId);
+      final url = await _inferredMantrasService.fetchDownloadUrl(
+        song.inferredId,
+      );
       if (url == null || url.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1757,7 +1781,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<String?> _resolveInferredSongLocalPath(InferredSong song) async {
-    final path = _inferredLocalPaths[song.inferredId] ??
+    final path =
+        _inferredLocalPaths[song.inferredId] ??
         await _inferredMantrasService.localPathIfExists(song.inferredId);
     if (path == null || path.isEmpty) return null;
     final file = File(path);
@@ -1811,16 +1836,13 @@ class _HomeScreenState extends State<HomeScreen> {
     String path,
   ) async {
     try {
-      await Share.shareXFiles(
-        [
-          XFile(
-            path,
-            mimeType: 'audio/mpeg',
-            name: _inferredSongExportFileName(song),
-          ),
-        ],
-        text: song.displayTitle,
-      );
+      await Share.shareXFiles([
+        XFile(
+          path,
+          mimeType: 'audio/mpeg',
+          name: _inferredSongExportFileName(song),
+        ),
+      ], text: song.displayTitle);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1839,7 +1861,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Download the mantra in the app first, then use Share.'),
+            content: Text(
+              'Download the mantra in the app first, then use Share.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -2021,7 +2045,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
         if (Platform.isIOS) {
           try {
-            const MethodChannel audioChannel = MethodChannel('app.channel.audio');
+            const MethodChannel audioChannel = MethodChannel(
+              'app.channel.audio',
+            );
             await audioChannel.invokeMethod('configureAudioSessionForPlayback');
           } catch (_) {}
         }
@@ -2075,15 +2101,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // Play new mantra
         String assetPath = 'Media/${mantra.mantraFile}';
-        print('Attempting to play: $assetPath');
-        
+
         try {
           await _audioPlayer.play(AssetSource(assetPath));
           setState(() {
             _currentlyPlaying = mantra;
             _isPlaying = true;
           });
-          
+
           // Listen for completion
           _audioPlayer.onPlayerComplete.listen((_) {
             setState(() {
@@ -2091,15 +2116,14 @@ class _HomeScreenState extends State<HomeScreen> {
               _currentlyPlaying = null;
             });
           });
-          
-          print('Successfully started playing: ${mantra.name}');
         } catch (e) {
-          print('Error playing mantra: $e');
           // Show error to user
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Unable to play ${mantra.name}. Audio file not found.'),
+                content: Text(
+                  'Unable to play ${mantra.name}. Audio file not found.',
+                ),
                 backgroundColor: Colors.red,
               ),
             );
@@ -2107,7 +2131,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      print('Error playing mantra: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2126,9 +2149,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _isPlaying = false;
         _currentlyPlaying = null;
       });
-    } catch (e) {
-      print('Error stopping audio: $e');
-    }
+    } catch (e) {}
   }
 
   void _showCartLimitSnackBar() {
@@ -2174,7 +2195,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _mantras[index] = _mantras[index].copyWith(isInCart: false);
       }
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${mantra.name} removed from cart'),
@@ -2225,7 +2246,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCartQuantityStepper(Mantra mantra, int quantity) {
     final atCartLimit =
-        MantraService.getCartTotalQuantity() >= MantraService.maxCartTotalQuantity;
+        MantraService.getCartTotalQuantity() >=
+        MantraService.maxCartTotalQuantity;
 
     return Container(
       decoration: BoxDecoration(
@@ -2251,11 +2273,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Icon(
-                  Icons.remove,
-                  size: 18,
-                  color: AppColors.errorRed,
-                ),
+                child: Icon(Icons.remove, size: 18, color: AppColors.errorRed),
               ),
             ),
           ),
@@ -2365,14 +2383,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   /// Shown on mantra rows when the purchase API reports `available_count` > 0.
   Widget _buildPurchasedCountHint(
     Mantra mantra, {
     double fontSize = 12,
     bool compact = false,
+
     /// When [compact] is true, grid cards center the row; set false for list/dialog rows.
     bool centerCompactRow = true,
+
     /// Inline with price/actions row — no extra top padding.
     bool inline = false,
   }) {
@@ -2427,17 +2446,13 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
 
-    final child =
-        (compact && centerCompactRow && !inline)
-            ? Center(child: row)
-            : Align(alignment: Alignment.centerLeft, child: row);
+    final child = (compact && centerCompactRow && !inline)
+        ? Center(child: row)
+        : Align(alignment: Alignment.centerLeft, child: row);
 
     if (inline) return child;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: child,
-    );
+    return Padding(padding: const EdgeInsets.only(top: 4), child: child);
   }
 
   Widget _buildMantraListTile(Mantra mantra) {
@@ -2552,9 +2567,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSongSelectionStep() {
     if (_isLoadingMantras) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return Column(
@@ -2610,8 +2623,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     hintText: 'Search mantras...',
                     prefixIcon: Icon(Icons.search, size: 15),
                     border: InputBorder.none,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
                     isDense: true,
                   ),
                   style: const TextStyle(fontSize: 13),
@@ -2625,10 +2640,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.shopping_cart, size: 15),
                   label: const Text(
                     'Purchase All',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primarySaffron,
@@ -2645,10 +2657,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 alignment: Alignment.centerRight,
                 child: Text(
                   'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.blue,
-                  ),
+                  style: const TextStyle(fontSize: 11, color: Colors.blue),
                 ),
               ),
             ],
@@ -2692,9 +2701,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           centerTitle: true,
         ),
-        body: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -2741,14 +2748,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     hintText: 'Search mantras...',
                     prefixIcon: Icon(Icons.search, size: 16),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 0,
+                    ),
                     isDense: true,
                   ),
                   style: const TextStyle(fontSize: 13),
                 ),
               ),
               const SizedBox(height: 6),
-              
+
               // Purchase All Button
               SizedBox(
                 width: double.infinity,
@@ -2757,10 +2767,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.shopping_cart, size: 16),
                   label: const Text(
                     'Purchase All',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primarySaffron,
@@ -2774,115 +2781,121 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              
+
               // Mantra count info
               Align(
                 alignment: Alignment.centerRight,
                 child: Text(
                   'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.blue,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.blue),
                 ),
               ),
               const SizedBox(height: 20),
-              
+
               // Mantras List
-              ..._filteredMantras.map((mantra) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: Row(
-                  children: [
-                    // Icon
-                    Container(
-                      width: 50,
-                      height: 50,
+              ..._filteredMantras
+                  .map(
+                    (mantra) => Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: AppColors.primarySaffron.withOpacity(0.1),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: _buildMantraIcon(
-                          iconName: mantra.icon,
-                          size: 30,
-                          iconColor: AppColors.primarySaffron,
-                          fit: BoxFit.cover,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    
-                    // Details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            mantra.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                          // Icon
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: AppColors.primarySaffron.withOpacity(0.1),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: _buildMantraIcon(
+                                iconName: mantra.icon,
+                                size: 30,
+                                iconColor: AppColors.primarySaffron,
+                                fit: BoxFit.cover,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          // Text(
-                          //   mantra.formattedPlaytime, // COMMENTED OUT
-                          //   style: const TextStyle(
-                          //     fontSize: 12,
-                          //     color: AppColors.textSecondary,
-                          //   ),
-                          // ),
-                          // const SizedBox(height: 4),
-                          Text(
-                            mantra.formattedPrice,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                          const SizedBox(width: 16),
+
+                          // Details
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  mantra.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Text(
+                                //   mantra.formattedPlaytime, // COMMENTED OUT
+                                //   style: const TextStyle(
+                                //     fontSize: 12,
+                                //     color: AppColors.textSecondary,
+                                //   ),
+                                // ),
+                                // const SizedBox(height: 4),
+                                Text(
+                                  mantra.formattedPrice,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primarySaffron,
+                                  ),
+                                ),
+                                _buildPurchasedCountHint(mantra),
+                              ],
+                            ),
+                          ),
+
+                          // Play Button
+                          IconButton(
+                            onPressed: () => _playMantra(mantra),
+                            icon: Icon(
+                              _currentlyPlaying == mantra && _isPlaying
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_filled,
                               color: AppColors.primarySaffron,
+                              size: 32,
                             ),
                           ),
-                          _buildPurchasedCountHint(mantra),
+
+                          ElevatedButton(
+                            onPressed: () => mantra.isInCart
+                                ? _removeFromCart(mantra)
+                                : _addToCart(mantra),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: mantra.isInCart
+                                  ? Colors.red
+                                  : AppColors.primarySaffron,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: Text(
+                              mantra.isInCart ? 'Remove' : 'Add',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    
-                    // Play Button
-                    IconButton(
-                      onPressed: () => _playMantra(mantra),
-                      icon: Icon(
-                        _currentlyPlaying == mantra && _isPlaying 
-                            ? Icons.pause_circle_filled 
-                            : Icons.play_circle_filled,
-                        color: AppColors.primarySaffron,
-                        size: 32,
-                      ),
-                    ),
-                    
-                    ElevatedButton(
-                      onPressed: () => mantra.isInCart 
-                          ? _removeFromCart(mantra) 
-                          : _addToCart(mantra),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: mantra.isInCart ? Colors.red : AppColors.primarySaffron,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      child: Text(
-                        mantra.isInCart ? 'Remove' : 'Add',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              )).toList(),
-              
+                  )
+                  .toList(),
+
               const SizedBox(height: 20),
             ],
           ),
@@ -2894,7 +2907,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildMantraCard(Mantra mantra) {
     final isPlaying = _currentlyPlaying == mantra && _isPlaying;
     final isInCart = mantra.isInCart;
-    
+
     return GestureDetector(
       onTap: () => _playMantra(mantra),
       child: Container(
@@ -2904,7 +2917,9 @@ class _HomeScreenState extends State<HomeScreen> {
             width: isPlaying ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
-          color: isPlaying ? AppColors.primarySaffron.withOpacity(0.1) : Colors.white,
+          color: isPlaying
+              ? AppColors.primarySaffron.withOpacity(0.1)
+              : Colors.white,
         ),
         child: Padding(
           padding: const EdgeInsets.all(8),
@@ -2932,7 +2947,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              
+
               // Mantra Name
               Text(
                 mantra.name,
@@ -2944,9 +2959,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              
+
               const SizedBox(height: 4),
-              
+
               // Playtime - COMMENTED OUT
               // Text(
               //   mantra.formattedPlaytime, // COMMENTED OUT
@@ -2955,9 +2970,8 @@ class _HomeScreenState extends State<HomeScreen> {
               //     color: AppColors.textSecondary,
               //   ),
               // ),
-              
               const SizedBox(height: 4),
-              
+
               // Price
               Text(
                 mantra.formattedPrice,
@@ -2968,9 +2982,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               _buildPurchasedCountHint(mantra, fontSize: 9, compact: true),
-              
+
               const SizedBox(height: 6),
-              
+
               SizedBox(
                 width: double.infinity,
                 child: isInCart
@@ -3036,343 +3050,382 @@ class _HomeScreenState extends State<HomeScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-          child: Column(
-            children: [
-              // Instructions
-              const Text(
-                'Read the text clearly in a quiet environment',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 6),
-              
-              // Language Selection
-              Row(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Column(
                 children: [
+                  // Instructions
                   const Text(
-                    'Language:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black,
-                    ),
+                    'Read the text clearly in a quiet environment',
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _selectedLanguage,
-                        isExpanded: true,
-                        underline: const SizedBox(),
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 13,
-                        ),
-                        dropdownColor: Colors.white,
-                        items: VoiceRecordingService.languageContent.keys.map((String language) {
-                          return DropdownMenuItem<String>(
-                            value: language,
-                            child: Text(
-                              language,
-                              style: const TextStyle(color: Colors.black, fontSize: 13),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              _selectedLanguage = newValue;
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 6),
-              
-              // Text Display Box
-              Expanded(
-                flex: 1,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.grey[300]!,
-                      width: 1,
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.zero,
-                    child: Text(
-                      VoiceRecordingService.languageContent[_selectedLanguage] ?? '',
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              // Recording Controls
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // When recording: show timer + stop button. When not: show record button
-                  if (_isRecording)
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _formatRecordingTime(_recordingSeconds),
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primarySaffron,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${_recordingSeconds >= _maxRecordingSeconds ? "Stopping..." : "Tap stop or wait 1 min"}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildRecordingButton(
-                          icon: Icons.stop,
-                          onPressed: _stopRecording,
-                          isPrimary: true,
-                          isRecording: true,
-                          enabled: true,
-                        ),
-                      ],
-                    )
-                  else
-                    _buildRecordingButton(
-                      icon: Icons.mic,
-                      onPressed: () {
-                        if (!_hasPurchasedMantras()) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('You have to purchase at least one song first to start recording your voice'),
-                              backgroundColor: Colors.orange,
-                              duration: Duration(seconds: 3),
-                            ),
-                          );
-                        } else {
-                          _startRecording();
-                        }
-                      },
-                      isPrimary: true,
-                      isRecording: false,
-                      enabled: _hasPurchasedMantras(),
-                    ),
 
-                  // Preview / Save (only show if recording exists)
-                  if (_currentRecordingPath != null) ...[
-                    const SizedBox(width: 16),
-                    _buildRecordingButton(
-                          icon: (_isPlayingRecording && _currentlyPlayingPath == _currentRecordingPath) 
-                              ? Icons.pause 
-                              : Icons.play_arrow,
-                      onPressed: () => _playRecording(_currentRecordingPath!),
-                      isPrimary: false,
-                      label: (_isPlayingRecording &&
-                              _currentlyPlayingPath == _currentRecordingPath)
-                          ? 'Pause'
-                          : 'Play',
-                    ),
-                    const SizedBox(width: 12),
-                    _buildRecordingButton(
-                      icon: Icons.save,
-                      onPressed: _showSaveDialog,
-                      isPrimary: false,
-                      label: 'Save',
-                    ),
-                  ],
-                ],
-              ),
-              
-              const SizedBox(height: 12),
-              
-                  // Existing Recordings Section - Made larger to show at least 2 recordings
-              Expanded(
-                    flex: 1,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.grey[300]!,
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(height: 6),
+
+                  // Language Selection
+                  Row(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Your Recordings',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _isRecordingsExpanded = true;
-                              });
-                            },
-                            icon: const Icon(
-                              Icons.fullscreen,
-                              color: AppColors.primarySaffron,
-                              size: 18,
-                            ),
-                            tooltip: 'Expand to full screen',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
+                      const Text(
+                        'Language:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: _voiceService.recordings.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'No recordings yet',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                shrinkWrap: false,
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                itemCount: _voiceService.recordings.length,
-                                itemBuilder: (context, index) {
-                                  final recording = _voiceService.recordings[index];
-                                  final greyedOut = !recording.hasLocalFile;
-                                  final titleStyle = TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: greyedOut ? Colors.grey[600]! : Colors.black,
-                                  );
-                                  final subStyle = TextStyle(
-                                    fontSize: 11,
-                                    color: greyedOut ? Colors.grey[600]! : Colors.black54,
-                                  );
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: greyedOut ? Colors.grey[200]! : Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.grey[300]!),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(recording.name, style: titleStyle),
-                                              Text(
-                                                greyedOut
-                                                    ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
-                                                    : '${recording.language} • ${_formatDate(recording.createdAt)}',
-                                                style: subStyle,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (recording.hasLocalFile) ...[
-                                          IconButton(
-                                            onPressed: () => _playRecording(recording.filePath),
-                                            icon: Icon(
-                                              (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
-                                                  ? Icons.pause
-                                                  : Icons.play_arrow,
-                                              color: Colors.black,
-                                              size: 20,
-                                            ),
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(),
-                                          ),
-                                          Tooltip(
-                                            message: 'Create your Mantra',
-                                            child: IconButton(
-                                              onPressed: () {
-                                                _showCreateMantraDialog(recording);
-                                              },
-                                              icon: const Text(
-                                                'ॐ',
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  color: AppColors.primarySaffron,
-                                                ),
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(),
-                                            ),
-                                          ),
-                                        ],
-                                        IconButton(
-                                          onPressed: () => _deleteRecording(recording),
-                                          icon: const Icon(
-                                            Icons.delete,
-                                            color: Colors.red,
-                                            size: 20,
-                                          ),
-                                          tooltip: 'Delete recording',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                        ),
-                                      ],
+                        child: Container(
+                          height: 32,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _selectedLanguage,
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 13,
+                            ),
+                            dropdownColor: Colors.white,
+                            items: VoiceRecordingService.languageContent.keys
+                                .map((String language) {
+                                  return DropdownMenuItem<String>(
+                                    value: language,
+                                    child: Text(
+                                      language,
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   );
-                                },
-                              ),
+                                })
+                                .toList(),
+                            onChanged: (String? newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  _selectedLanguage = newValue;
+                                });
+                              }
+                            },
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 6),
+
+                  // Text Display Box
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey[300]!, width: 1),
+                      ),
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.zero,
+                        child: Text(
+                          VoiceRecordingService
+                                  .languageContent[_selectedLanguage] ??
+                              '',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Recording Controls
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // When recording: show timer + stop button. When not: show record button
+                      if (_isRecording)
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _formatRecordingTime(_recordingSeconds),
+                              style: const TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primarySaffron,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_recordingSeconds >= _maxRecordingSeconds ? "Stopping..." : "Tap stop or wait 1 min"}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildRecordingButton(
+                              icon: Icons.stop,
+                              onPressed: _stopRecording,
+                              isPrimary: true,
+                              isRecording: true,
+                              enabled: true,
+                            ),
+                          ],
+                        )
+                      else
+                        _buildRecordingButton(
+                          icon: Icons.mic,
+                          onPressed: () {
+                            if (!_hasPurchasedMantras()) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'You have to purchase at least one song first to start recording your voice',
+                                  ),
+                                  backgroundColor: Colors.orange,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                            } else {
+                              _startRecording();
+                            }
+                          },
+                          isPrimary: true,
+                          isRecording: false,
+                          enabled: _hasPurchasedMantras(),
+                        ),
+
+                      // Preview / Save (only show if recording exists)
+                      if (_currentRecordingPath != null) ...[
+                        const SizedBox(width: 16),
+                        _buildRecordingButton(
+                          icon:
+                              (_isPlayingRecording &&
+                                  _currentlyPlayingPath ==
+                                      _currentRecordingPath)
+                              ? Icons.pause
+                              : Icons.play_arrow,
+                          onPressed: () =>
+                              _playRecording(_currentRecordingPath!),
+                          isPrimary: false,
+                          label:
+                              (_isPlayingRecording &&
+                                  _currentlyPlayingPath ==
+                                      _currentRecordingPath)
+                              ? 'Pause'
+                              : 'Play',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildRecordingButton(
+                          icon: Icons.save,
+                          onPressed: _showSaveDialog,
+                          isPrimary: false,
+                          label: 'Save',
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Existing Recordings Section - Made larger to show at least 2 recordings
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!, width: 1),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Your Recordings',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _isRecordingsExpanded = true;
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.fullscreen,
+                                  color: AppColors.primarySaffron,
+                                  size: 18,
+                                ),
+                                tooltip: 'Expand to full screen',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Expanded(
+                            child: _voiceService.recordings.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'No recordings yet',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    shrinkWrap: false,
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    itemCount: _voiceService.recordings.length,
+                                    itemBuilder: (context, index) {
+                                      final recording =
+                                          _voiceService.recordings[index];
+                                      final greyedOut = !recording.hasLocalFile;
+                                      final titleStyle = TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: greyedOut
+                                            ? Colors.grey[600]!
+                                            : Colors.black,
+                                      );
+                                      final subStyle = TextStyle(
+                                        fontSize: 11,
+                                        color: greyedOut
+                                            ? Colors.grey[600]!
+                                            : Colors.black54,
+                                      );
+                                      return Container(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 6,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: greyedOut
+                                              ? Colors.grey[200]!
+                                              : Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.grey[300]!,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    recording.name,
+                                                    style: titleStyle,
+                                                  ),
+                                                  Text(
+                                                    greyedOut
+                                                        ? 'Not on this device${recording.trainingStatus != null && recording.trainingStatus!.isNotEmpty ? ' • ${recording.trainingStatus}' : ''}'
+                                                        : '${recording.language} • ${_formatDate(recording.createdAt)}',
+                                                    style: subStyle,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (recording.hasLocalFile) ...[
+                                              IconButton(
+                                                onPressed: () => _playRecording(
+                                                  recording.filePath,
+                                                ),
+                                                icon: Icon(
+                                                  (_isPlayingRecording &&
+                                                          _currentlyPlayingPath ==
+                                                              recording
+                                                                  .filePath)
+                                                      ? Icons.pause
+                                                      : Icons.play_arrow,
+                                                  color: Colors.black,
+                                                  size: 20,
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                constraints:
+                                                    const BoxConstraints(),
+                                              ),
+                                              Tooltip(
+                                                message: 'Create your Mantra',
+                                                child: IconButton(
+                                                  onPressed: () {
+                                                    _showCreateMantraDialog(
+                                                      recording,
+                                                    );
+                                                  },
+                                                  icon: const Text(
+                                                    'ॐ',
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      color: AppColors
+                                                          .primarySaffron,
+                                                    ),
+                                                  ),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                ),
+                                              ),
+                                            ],
+                                            IconButton(
+                                              onPressed: () =>
+                                                  _deleteRecording(recording),
+                                              icon: const Icon(
+                                                Icons.delete,
+                                                color: Colors.red,
+                                                size: 20,
+                                              ),
+                                              tooltip: 'Delete recording',
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
             );
           },
         ),
@@ -3411,10 +3464,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? const Center(
                   child: Text(
                     'No recordings yet',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.black54,
-                    ),
+                    style: TextStyle(fontSize: 16, color: Colors.black54),
                   ),
                 )
               : ListView.builder(
@@ -3465,9 +3515,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           if (recording.hasLocalFile) ...[
                             IconButton(
-                              onPressed: () => _playRecording(recording.filePath),
+                              onPressed: () =>
+                                  _playRecording(recording.filePath),
                               icon: Icon(
-                                (_isPlayingRecording && _currentlyPlayingPath == recording.filePath)
+                                (_isPlayingRecording &&
+                                        _currentlyPlayingPath ==
+                                            recording.filePath)
                                     ? Icons.pause
                                     : Icons.play_arrow,
                                 color: AppColors.primarySaffron,
@@ -3521,7 +3574,9 @@ class _HomeScreenState extends State<HomeScreen> {
       width: isPrimary ? 60 : 40,
       height: isPrimary ? 60 : 40,
       decoration: BoxDecoration(
-        color: isRecording ? Colors.red : (enabled ? AppColors.white : Colors.grey[300]),
+        color: isRecording
+            ? Colors.red
+            : (enabled ? AppColors.white : Colors.grey[300]),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -3535,8 +3590,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: onPressed, // Always allow click to show message
         icon: Icon(
           icon,
-          color: isRecording 
-              ? AppColors.white 
+          color: isRecording
+              ? AppColors.white
               : (enabled ? AppColors.primarySaffron : Colors.grey[600]),
           size: isPrimary ? 24 : 20,
         ),
@@ -3566,7 +3621,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  Widget _buildControlButton(IconData icon, VoidCallback onPressed, {bool isPrimary = false}) {
+  Widget _buildControlButton(
+    IconData icon,
+    VoidCallback onPressed, {
+    bool isPrimary = false,
+  }) {
     return Container(
       width: isPrimary ? 60 : 40,
       height: isPrimary ? 60 : 40,
@@ -3795,7 +3854,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            
+
             // Mantras List - Use Expanded to fill available space
             Expanded(
               child: _loadingInferredSongs
@@ -3805,75 +3864,79 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     )
                   : _inferredSongsError != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(
-                              _inferredSongsError!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                              ),
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          _inferredSongsError!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    )
+                  : _inferredSongs.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.music_note_outlined,
+                            size: 56,
+                            color: AppColors.textSecondary.withOpacity(0.6),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No mantras ready yet',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AppColors.textSecondary,
                             ),
                           ),
-                        )
-                      : _inferredSongs.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.music_note_outlined,
-                                    size: 56,
-                                    color: AppColors.textSecondary.withOpacity(0.6),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'No mantras ready yet',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Completed voice mantras appear here',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.textSecondary.withOpacity(0.85),
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: _inferredSongs.length,
-                              itemBuilder: (context, index) {
-                                final song = _inferredSongs[index];
-                                final hasLocal =
-                                    _inferredLocalPaths.containsKey(song.inferredId);
-                                final downloading =
-                                    _inferredDownloadingIds.contains(song.inferredId);
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.white.withOpacity(0.4),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: _buildInferredSongCardContent(
-                                    song: song,
-                                    hasLocal: hasLocal,
-                                    downloading: downloading,
-                                    compact: true,
-                                  ),
-                                );
-                              },
+                          const SizedBox(height: 6),
+                          Text(
+                            'Completed voice mantras appear here',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textSecondary.withOpacity(0.85),
                             ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _inferredSongs.length,
+                      itemBuilder: (context, index) {
+                        final song = _inferredSongs[index];
+                        final hasLocal = _inferredLocalPaths.containsKey(
+                          song.inferredId,
+                        );
+                        final downloading = _inferredDownloadingIds.contains(
+                          song.inferredId,
+                        );
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.white.withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _buildInferredSongCardContent(
+                            song: song,
+                            hasLocal: hasLocal,
+                            downloading: downloading,
+                            compact: true,
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -3906,9 +3969,7 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.voiceGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.voiceGradient),
         child: SafeArea(
           child: Column(
             children: [
@@ -3930,76 +3991,81 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       )
                     : _inferredSongsError != null
-                        ? Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                _inferredSongsError!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  color: AppColors.textSecondary,
-                                ),
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            _inferredSongsError!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _inferredSongs.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.music_note_outlined,
+                              size: 64,
+                              color: AppColors.textSecondary.withOpacity(0.6),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No mantras ready yet',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: AppColors.textSecondary,
                               ),
                             ),
-                          )
-                        : _inferredSongs.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.music_note_outlined,
-                                      size: 64,
-                                      color: AppColors.textSecondary.withOpacity(0.6),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'No mantras ready yet',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Completed voice mantras appear here',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppColors.textSecondary.withOpacity(0.85),
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
+                            const SizedBox(height: 8),
+                            Text(
+                              'Completed voice mantras appear here',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary.withOpacity(
+                                  0.85,
                                 ),
-                              )
-                            : ListView.builder(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 20),
-                                itemCount: _inferredSongs.length,
-                                itemBuilder: (context, index) {
-                                  final song = _inferredSongs[index];
-                                  final hasLocal = _inferredLocalPaths
-                                      .containsKey(song.inferredId);
-                                  final downloading = _inferredDownloadingIds
-                                      .contains(song.inferredId);
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.white.withOpacity(0.4),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: _buildInferredSongCardContent(
-                                      song: song,
-                                      hasLocal: hasLocal,
-                                      downloading: downloading,
-                                      compact: false,
-                                    ),
-                                  );
-                                },
                               ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _inferredSongs.length,
+                        itemBuilder: (context, index) {
+                          final song = _inferredSongs[index];
+                          final hasLocal = _inferredLocalPaths.containsKey(
+                            song.inferredId,
+                          );
+                          final downloading = _inferredDownloadingIds.contains(
+                            song.inferredId,
+                          );
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: _buildInferredSongCardContent(
+                              song: song,
+                              hasLocal: hasLocal,
+                              downloading: downloading,
+                              compact: false,
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -4014,7 +4080,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final total = MantraService.getCartTotal();
     final cartCurrencyCode = MantraService.getCartCurrencyCode();
     final totalDisplay = Mantra.formatMoney(total, cartCurrencyCode);
-    
+
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -4040,14 +4106,14 @@ class _HomeScreenState extends State<HomeScreen> {
               cartUnitCount == 0
                   ? 'No mantras selected'
                   : '$cartUnitCount / ${MantraService.maxCartTotalQuantity} '
-                      'mantra${cartUnitCount != 1 ? 's' : ''} selected',
+                        'mantra${cartUnitCount != 1 ? 's' : ''} selected',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.white.withOpacity(0.9),
               ),
             ),
             const SizedBox(height: 1),
-            
+
             // Cart Items List - Make scrollable when items are present
             if (cartItems.isEmpty)
               Expanded(
@@ -4138,11 +4204,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                
+
                                 // Mantra Details
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
@@ -4160,7 +4227,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                           '${mantra.formattedPrice} each',
                                           style: TextStyle(
                                             fontSize: 10,
-                                            color: AppColors.white.withOpacity(0.75),
+                                            color: AppColors.white.withOpacity(
+                                              0.75,
+                                            ),
                                           ),
                                         ),
                                     ],
@@ -4186,10 +4255,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                       ),
                     ),
-                    
+
                     // Total and Checkout - Fixed at bottom
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
@@ -4216,9 +4288,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 1),
-                    
+
                     // Checkout Button
                     SizedBox(
                       width: double.infinity,
@@ -4231,11 +4303,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               builder: (context) => PaymentScreen(
                                 totalAmount: total,
                                 currencyCode: cartCurrencyCode,
-                                cartItems: MantraService.expandCartForCheckout(),
+                                cartItems:
+                                    MantraService.expandCartForCheckout(),
                               ),
                             ),
                           );
-                          
+
                           // If payment was successful, update mantras and go to Select Mantra screen
                           if (paymentSuccess == true && mounted) {
                             setState(() {
@@ -4289,27 +4362,27 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     Widget sectionHeading(String text) => Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Text(text, style: headingStyle),
-        );
+      padding: const EdgeInsets.only(top: 12),
+      child: Text(text, style: headingStyle),
+    );
 
     Widget sectionBody(String text) => Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(text, style: bodyStyle),
-        );
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(text, style: bodyStyle),
+    );
 
     Widget benefitItem(String label, String description) => Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text.rich(
-            TextSpan(
-              style: bodyStyle,
-              children: [
-                TextSpan(text: label, style: headingStyle),
-                TextSpan(text: description),
-              ],
-            ),
-          ),
-        );
+      padding: const EdgeInsets.only(top: 8),
+      child: Text.rich(
+        TextSpan(
+          style: bodyStyle,
+          children: [
+            TextSpan(text: label, style: headingStyle),
+            TextSpan(text: description),
+          ],
+        ),
+      ),
+    );
 
     showDialog<void>(
       context: context,
@@ -4317,7 +4390,10 @@ class _HomeScreenState extends State<HomeScreen> {
         final dialogWidth = MediaQuery.sizeOf(ctx).width - 24;
 
         return AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 20,
+          ),
           constraints: BoxConstraints(maxWidth: dialogWidth),
           title: const Text('About MantraSutra'),
           content: SizedBox(
@@ -4326,39 +4402,39 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                const Text('MantraSutra', style: brandStyle),
-                sectionHeading('What is MantraSutra?'),
-                sectionBody(
-                  'MantraSutra is an innovative digital platform that allows you to '
-                  'chant—even without any prior experience—and record sacred Hindu '
-                  'mantras in your very own voice.',
-                ),
-                sectionHeading('Why MantraSutra?'),
-                sectionBody(
-                  'Ever wondered how a powerful mantra resonates when spoken by you? '
-                  'MantraSutra bridges the gap between technology and spirituality, '
-                  'giving you a deeply personal experience of hearing divine verses in '
-                  'your unique voice.',
-                ),
-                sectionHeading('Key Benefits:'),
-                benefitItem(
-                  'Learn & Practice: ',
-                  'It doesn\'t just inspire you to chant; it guides you on how to '
-                  'pronounce and recite mantras correctly.',
-                ),
-                benefitItem(
-                  'Personalized Spiritual Ringtone: ',
-                  'Save your recorded mantras as your mobile ringtone. Every time your '
-                  'phone rings, your own voice chanting a sacred mantra will purify the '
-                  'ambiance, inspire those around you, and bring positivity to your day.',
-                ),
-                sectionHeading('Important Note:'),
-                sectionBody(
-                  'This AI-driven tool depends entirely on your voice quality. For best '
-                  'results, please record in a completely quiet room, speaking at a '
-                  'normal pace with clear pronunciation. Accuracy may vary based on '
-                  'your input.',
-                ),
+                  const Text('MantraSutra', style: brandStyle),
+                  sectionHeading('What is MantraSutra?'),
+                  sectionBody(
+                    'MantraSutra is an innovative digital platform that allows you to '
+                    'chant—even without any prior experience—and record sacred Hindu '
+                    'mantras in your very own voice.',
+                  ),
+                  sectionHeading('Why MantraSutra?'),
+                  sectionBody(
+                    'Ever wondered how a powerful mantra resonates when spoken by you? '
+                    'MantraSutra bridges the gap between technology and spirituality, '
+                    'giving you a deeply personal experience of hearing divine verses in '
+                    'your unique voice.',
+                  ),
+                  sectionHeading('Key Benefits:'),
+                  benefitItem(
+                    'Learn & Practice: ',
+                    'It doesn\'t just inspire you to chant; it guides you on how to '
+                        'pronounce and recite mantras correctly.',
+                  ),
+                  benefitItem(
+                    'Personalized Spiritual Ringtone: ',
+                    'Save your recorded mantras as your mobile ringtone. Every time your '
+                        'phone rings, your own voice chanting a sacred mantra will purify the '
+                        'ambiance, inspire those around you, and bring positivity to your day.',
+                  ),
+                  sectionHeading('Important Note:'),
+                  sectionBody(
+                    'This AI-driven tool depends entirely on your voice quality. For best '
+                    'results, please record in a completely quiet room, speaking at a '
+                    'normal pace with clear pronunciation. Accuracy may vary based on '
+                    'your input.',
+                  ),
                 ],
               ),
             ),
@@ -4393,7 +4469,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (mounted) {
                   // Navigate to login screen after logout
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => const LoginScreen(),
+                    ),
                     (route) => false,
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -4424,12 +4502,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Get purchased mantras
-    final purchasedMantras = _mantras.where((mantra) => mantra.isBought).toList();
-    
+    final purchasedMantras = _mantras
+        .where((mantra) => mantra.isBought)
+        .toList();
+
     if (purchasedMantras.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No purchased mantras available. Please purchase a mantra first.'),
+          content: Text(
+            'No purchased mantras available. Please purchase a mantra first.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -4444,120 +4526,124 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final allSelected = selectedMantraIds.length == purchasedMantras.length;
+            final allSelected =
+                selectedMantraIds.length == purchasedMantras.length;
 
             return AlertDialog(
               title: const Text(
                 'Create Mantra in Your Voice',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               content: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 400),
                 child: SizedBox(
                   width: double.maxFinite,
                   child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Select All checkbox
-                    Row(
-                      children: [
-                        Checkbox(
-                          value: allSelected,
-                          onChanged: (value) {
-                            setDialogState(() {
-                              if (value == true) {
-                                selectedMantraIds.addAll(
-                                  purchasedMantras.map((m) => m.mantraFile),
-                                );
-                              } else {
-                                selectedMantraIds.clear();
-                              }
-                            });
-                          },
-                        ),
-                        const Text(
-                          'Select All',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    
-                    // Mantras list
-                    Expanded(
-                      child: ListView.builder(
-                        shrinkWrap: false,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: purchasedMantras.length,
-                        itemBuilder: (context, index) {
-                          final mantra = purchasedMantras[index];
-                          final isSelected = selectedMantraIds.contains(mantra.mantraFile);
-                          
-                          return CheckboxListTile(
-                            value: isSelected,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Select All checkbox
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: allSelected,
                             onChanged: (value) {
                               setDialogState(() {
                                 if (value == true) {
-                                  selectedMantraIds.add(mantra.mantraFile);
+                                  selectedMantraIds.addAll(
+                                    purchasedMantras.map((m) => m.mantraFile),
+                                  );
                                 } else {
-                                  selectedMantraIds.remove(mantra.mantraFile);
+                                  selectedMantraIds.clear();
                                 }
                               });
                             },
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                            title: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  mantra.name,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
+                          ),
+                          const Text(
+                            'Select All',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(),
+                      const SizedBox(height: 8),
+
+                      // Mantras list
+                      Expanded(
+                        child: ListView.builder(
+                          shrinkWrap: false,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: purchasedMantras.length,
+                          itemBuilder: (context, index) {
+                            final mantra = purchasedMantras[index];
+                            final isSelected = selectedMantraIds.contains(
+                              mantra.mantraFile,
+                            );
+
+                            return CheckboxListTile(
+                              value: isSelected,
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    selectedMantraIds.add(mantra.mantraFile);
+                                  } else {
+                                    selectedMantraIds.remove(mantra.mantraFile);
+                                  }
+                                });
+                              },
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    mantra.name,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  _buildPurchasedCountHint(
+                                    mantra,
+                                    compact: true,
+                                    centerCompactRow: false,
+                                  ),
+                                ],
+                              ),
+                              // subtitle: Text(
+                              //   mantra.formattedPlaytime, // COMMENTED OUT
+                              //   style: const TextStyle(fontSize: 12),
+                              // ),
+                              secondary: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(6),
+                                  color: AppColors.primarySaffron.withOpacity(
+                                    0.1,
                                   ),
                                 ),
-                                _buildPurchasedCountHint(
-                                  mantra,
-                                  compact: true,
-                                  centerCompactRow: false,
-                                ),
-                              ],
-                            ),
-                            // subtitle: Text(
-                            //   mantra.formattedPlaytime, // COMMENTED OUT
-                            //   style: const TextStyle(fontSize: 12),
-                            // ),
-                            secondary: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                                color: AppColors.primarySaffron.withOpacity(0.1),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: _buildMantraIcon(
-                                  iconName: mantra.icon,
-                                  size: 20,
-                                  iconColor: AppColors.primarySaffron,
-                                  fit: BoxFit.cover,
+                                child: ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
+                                  child: _buildMantraIcon(
+                                    iconName: mantra.icon,
+                                    size: 20,
+                                    iconColor: AppColors.primarySaffron,
+                                    fit: BoxFit.cover,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -4571,7 +4657,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       : () async {
                           Navigator.of(dialogContext).pop();
                           // Use backend recording_id if available, otherwise fall back to local id
-                          final recordingIdToUse = recording.recordingId ?? recording.id;
+                          final recordingIdToUse =
+                              recording.recordingId ?? recording.id;
                           await _generateMantraInVoice(
                             recordingId: recordingIdToUse,
                             mantraIds: selectedMantraIds.toList(),
@@ -4581,7 +4668,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     backgroundColor: AppColors.primarySaffron,
                     foregroundColor: AppColors.white,
                     minimumSize: const Size(double.infinity, 48),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                   ),
                   child: const SizedBox(
                     width: double.infinity,
@@ -4604,14 +4694,12 @@ class _HomeScreenState extends State<HomeScreen> {
     required List<String> mantraIds,
   }) async {
     if (!mounted) return;
-    
+
     // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
@@ -4633,7 +4721,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _loadUnreadNotificationCount();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('The Mantra is getting generated and you will be notified shortly'),
+              content: Text(
+                'The Mantra is getting generated and you will be notified shortly',
+              ),
               backgroundColor: AppColors.successGreen,
               duration: Duration(seconds: 4),
             ),
@@ -4654,13 +4744,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }

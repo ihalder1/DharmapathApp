@@ -60,7 +60,9 @@ class InferredMantrasService {
   }
 
   Future<List<InferredSong>> fetchInferredSongs() async {
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.inferredSongsEndpoint}');
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.inferredSongsEndpoint}',
+    );
     final response = await AuthenticatedHttp.get(
       url,
       timeout: const Duration(seconds: 45),

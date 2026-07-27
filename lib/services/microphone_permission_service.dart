@@ -9,16 +9,16 @@ final MethodChannel _audioChannel = MethodChannel('app.channel.audio');
 Future<bool> isMicrophoneGranted() async {
   if (Platform.isIOS) {
     try {
-      final dynamic statusMap = await _audioChannel.invokeMethod('readMicrophoneNativeStatus');
+      final dynamic statusMap = await _audioChannel.invokeMethod(
+        'readMicrophoneNativeStatus',
+      );
       if (statusMap is Map) {
         final int rp = (statusMap['recordPermission'] is int)
             ? statusMap['recordPermission'] as int
             : int.tryParse('${statusMap['recordPermission']}') ?? -1;
         return rp == 2;
       }
-    } catch (e) {
-      print('isMicrophoneGranted native read failed: $e');
-    }
+    } catch (e) {}
   }
   final status = await Permission.microphone.status;
   return status == PermissionStatus.granted;
@@ -29,14 +29,16 @@ Future<bool> isMicrophoneGranted() async {
 Future<bool> requestMicrophonePermissionCrossPlatform() async {
   if (Platform.isIOS) {
     try {
-      final dynamic result = await _audioChannel.invokeMethod('requestMicrophoneNative');
+      final dynamic result = await _audioChannel.invokeMethod(
+        'requestMicrophoneNative',
+      );
       if (result is int) return result == 2; // expected
       if (result is bool) return result;
-      if (result is String) return result == '2' || result.toLowerCase() == 'true';
+      if (result is String)
+        return result == '2' || result.toLowerCase() == 'true';
       final res = await Permission.microphone.request();
       return res == PermissionStatus.granted;
     } catch (e) {
-      print('requestMicrophonePermissionCrossPlatform native failed: $e');
       final res = await Permission.microphone.request();
       return res == PermissionStatus.granted;
     }
@@ -45,4 +47,3 @@ Future<bool> requestMicrophonePermissionCrossPlatform() async {
     return res == PermissionStatus.granted;
   }
 }
-

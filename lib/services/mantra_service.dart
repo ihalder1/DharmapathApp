@@ -36,13 +36,8 @@ class MantraService {
 
   /// Re-fetch purchased counts only and update in-memory catalog (no songs sync).
   static Future<List<Mantra>> refreshPurchasedCountsOnly() async {
-    print('═══════════════════════════════════════════════════════════');
-    print('🛒 MANTRA SERVICE: refresh purchased counts only');
-    print('═══════════════════════════════════════════════════════════');
     final purchasedCounts = await SongService.getPurchasedSongCounts();
     _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
-    print('✅ Updated ${_mantras.length} mantras with purchase counts');
-    print('═══════════════════════════════════════════════════════════');
     return List<Mantra>.from(_mantras);
   }
 
@@ -60,44 +55,27 @@ class MantraService {
     }
 
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🔄 MANTRA SERVICE: parallel catalog sync + purchased counts');
-      print('═══════════════════════════════════════════════════════════');
-
-      final syncFuture = MantraSyncService.syncMantras().catchError(
-        (Object e, StackTrace st) {
-          print('❌ Sync error: $e');
-          print('Stack trace: $st');
-          return false;
-        },
-      );
-      final purchasedFuture = SongService.getPurchasedSongCounts().catchError(
-        (Object e, StackTrace st) {
-          print('⚠️ Purchased counts error: $e');
-          return <String, int>{};
-        },
-      );
+      final syncFuture = MantraSyncService.syncMantras().catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        return false;
+      });
+      final purchasedFuture = SongService.getPurchasedSongCounts().catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        return <String, int>{};
+      });
 
       final wait = await Future.wait<Object>([syncFuture, purchasedFuture]);
       final syncResult = wait[0] as bool;
       final purchasedCounts = wait[1] as Map<String, int>;
-      print('🔄 Sync completed: $syncResult');
-      print('🛒 Purchased distinct song keys: ${purchasedCounts.length}');
 
-      print('═══════════════════════════════════════════════════════════');
-      print('📂 Loading mantras from local metadata.json...');
-      print('═══════════════════════════════════════════════════════════');
       await _loadFromLocalJson();
       _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
-      print(
-        '✅ Loaded ${_mantras.length} mantras with purchase state from LOCAL metadata',
-      );
-      print('═══════════════════════════════════════════════════════════');
       return List<Mantra>.from(_mantras);
     } catch (e, stackTrace) {
-      print('❌ Error during sync or loading: $e');
-      print('Stack trace: $stackTrace');
-      print('Falling back to local JSON...');
       await _loadFromLocalJson();
       try {
         final purchasedCounts = await SongService.getPurchasedSongCounts();
@@ -112,8 +90,6 @@ class MantraService {
   // Load mantras from local JSON metadata
   static Future<List<Mantra>> _loadFromLocalJson() async {
     try {
-      print('Attempting to load mantras from metadata.json');
-
       final Map<String, dynamic> jsonData =
           await MantraSyncService.loadLocalMetadata();
       final raw = jsonData['mantras'];
@@ -123,24 +99,20 @@ class MantraService {
 
       final pricingRegion = await LocationPricingService.getPricingRegion();
       _mantras = raw
-          .map((json) => Mantra.fromJson(
-                json as Map<String, dynamic>,
-                region: pricingRegion,
-              ))
+          .map(
+            (json) => Mantra.fromJson(
+              json as Map<String, dynamic>,
+              region: pricingRegion,
+            ),
+          )
           .toList();
 
-      print('Successfully created ${_mantras.length} mantra objects');
-      for (var mantra in _mantras) {
-        print('Mantra: ${mantra.name} - ${mantra.mantraFile} - ${mantra.icon}');
-      }
+      for (var mantra in _mantras) {}
 
       await _loadCart();
 
       return _mantras;
     } catch (e) {
-      print('Error loading mantras from local JSON: $e');
-      print('Error type: ${e.runtimeType}');
-      
       _mantras = [];
       _cart = [];
       return _mantras;
@@ -277,12 +249,7 @@ class MantraService {
         for (final m in _cart) m.name: m.cartQuantity,
       };
       await prefs.setString('cart_quantities', jsonEncode(quantities));
-      print(
-        '✅ Cart saved: ${cartNames.length} line(s), ${getCartTotalQuantity()} unit(s)',
-      );
-    } catch (e) {
-      print('⚠️ Error saving cart to SharedPreferences: $e');
-    }
+    } catch (e) {}
   }
 
   /// Drops units from the end of the cart until total ≤ [maxCartTotalQuantity].
@@ -328,22 +295,15 @@ class MantraService {
       final savedQuantities = _readSavedQuantities(prefs);
 
       if (cartNames.isEmpty) {
-        print('📦 No saved cart found');
         return;
       }
-
-      print('📦 Loading cart from SharedPreferences: ${cartNames.length} items');
 
       _cart.clear();
       for (final name in cartNames) {
         final mantra = _mantras.firstWhere(
           (m) => m.name == name,
-          orElse: () => Mantra(
-            name: name,
-            mantraFile: '',
-            icon: '',
-            price: 0.0,
-          ),
+          orElse: () =>
+              Mantra(name: name, mantraFile: '', icon: '', price: 0.0),
         );
 
         if (mantra.mantraFile.isNotEmpty) {
@@ -355,78 +315,54 @@ class MantraService {
           if (index != -1) {
             _mantras[index] = _mantras[index].copyWith(isInCart: true);
           }
-        } else {
-          print('⚠️ Skipping cart item "$name" - mantra not found in catalog');
-        }
+        } else {}
       }
 
       _trimCartToMaxLimit();
       await _saveCart();
-
-      print('✅ Cart loaded: ${_cart.length} line(s), ${getCartTotalQuantity()} unit(s)');
-    } catch (e) {
-      print('⚠️ Error loading cart from SharedPreferences: $e');
-    }
+    } catch (e) {}
   }
 
   // Mark mantra as purchased
   static Future<void> markAsPurchased(Mantra mantra) async {
-    print('═══════════════════════════════════════════════════════════');
-    print('🛒 MARKING MANTRA AS PURCHASED');
-    print('═══════════════════════════════════════════════════════════');
-    print('Mantra to mark: ${mantra.name}');
-    print('Mantra file: ${mantra.mantraFile}');
-    print('Current isBought: ${mantra.isBought}');
-    print('Total mantras in list: ${_mantras.length}');
-    
     // First try exact match by mantraFile (case-insensitive)
-    int index = _mantras.indexWhere((m) => 
-      m.mantraFile.toLowerCase().trim() == mantra.mantraFile.toLowerCase().trim()
+    int index = _mantras.indexWhere(
+      (m) =>
+          m.mantraFile.toLowerCase().trim() ==
+          mantra.mantraFile.toLowerCase().trim(),
     );
-    
+
     // If not found, try matching by name
     if (index == -1) {
-      print('Not found by mantraFile, trying name match...');
-      index = _mantras.indexWhere((m) => 
-        m.name.toLowerCase().trim() == mantra.name.toLowerCase().trim()
+      index = _mantras.indexWhere(
+        (m) => m.name.toLowerCase().trim() == mantra.name.toLowerCase().trim(),
       );
     }
-    
+
     // If still not found, try partial match on mantraFile
     if (index == -1) {
-      print('Not found by name, trying partial mantraFile match...');
       final searchFile = mantra.mantraFile.toLowerCase().trim();
-      index = _mantras.indexWhere((m) => 
-        m.mantraFile.toLowerCase().trim().contains(searchFile) ||
-        searchFile.contains(m.mantraFile.toLowerCase().trim())
+      index = _mantras.indexWhere(
+        (m) =>
+            m.mantraFile.toLowerCase().trim().contains(searchFile) ||
+            searchFile.contains(m.mantraFile.toLowerCase().trim()),
       );
     }
-    
+
     if (index != -1) {
-      print('✅ Found mantra at index $index');
-      print('   Before: ${_mantras[index].name} - isBought: ${_mantras[index].isBought}');
       _mantras[index] = _mantras[index].copyWith(
         isBought: true,
         isInCart: false,
         purchasedCount: _mantras[index].purchasedCount + 1,
       );
-      
+
       // Remove from cart if present
       _cart.removeWhere((item) => item.name == mantra.name);
-      
+
       // Save cart after removing purchased item
       await _saveCart();
-      
-      print('   After: ${_mantras[index].name} - isBought: ${_mantras[index].isBought}');
-      print('═══════════════════════════════════════════════════════════');
     } else {
-      print('❌ WARNING: Could not find mantra to mark as purchased!');
-      print('   Searching for: ${mantra.name} (${mantra.mantraFile})');
-      print('   Available mantras:');
-      for (int i = 0; i < _mantras.length; i++) {
-        print('     [$i] ${_mantras[i].name} (${_mantras[i].mantraFile}) - isBought: ${_mantras[i].isBought}');
-      }
-      print('═══════════════════════════════════════════════════════════');
+      for (int i = 0; i < _mantras.length; i++) {}
     }
   }
 
@@ -456,16 +392,11 @@ class MantraService {
       await authService.ensureValidAccessToken();
       final accessToken = authService.accessToken;
       if (accessToken == null || accessToken.isEmpty) {
-        print(
-          '❌ ERROR: No access token for create-job; '
-          'Authorization Bearer cannot be sent',
-        );
         return false;
       }
 
       final userFields = authService.getCreateJobUserFields();
       if (userFields == null) {
-        print('❌ ERROR: Could not resolve userId from JWT / session for create-job');
         return false;
       }
 
@@ -482,43 +413,21 @@ class MantraService {
         'song_ids': songIds,
       };
 
-      final prettyBody = const JsonEncoder.withIndent('  ').convert(bodyMap);
-
-      print('═══════════════════════════════════════════════════════════');
-      print('🎤 CREATE MANTRA JOB (POST create-job)');
-      print('═══════════════════════════════════════════════════════════');
-      print('📤 REQUEST JSON (verification):');
-      print(prettyBody);
-      print('📤 URL: $url');
-      print('   Method: POST with Authorization: Bearer <access_token>');
-      print('═══════════════════════════════════════════════════════════');
-
       final response = await AuthenticatedHttp.post(
         url,
         body: json.encode(bodyMap),
-        mergeHeaders: {
-          'Authorization': 'Bearer $accessToken',
-        },
+        mergeHeaders: {'Authorization': 'Bearer $accessToken'},
       );
 
-      print('═══════════════════════════════════════════════════════════');
-      print('📥 RESPONSE:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
-
-      final ok = response.statusCode == 200 ||
+      final ok =
+          response.statusCode == 200 ||
           response.statusCode == 201 ||
           response.statusCode == 202;
       if (ok) {
-        print('✅ Create-job accepted');
         return true;
       }
-      print('❌ Create-job failed: ${response.statusCode}');
       return false;
     } catch (e, stackTrace) {
-      print('❌ ERROR generating mantra in voice: $e');
-      print('   StackTrace: $stackTrace');
       return false;
     }
   }

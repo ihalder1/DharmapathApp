@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../constants/api_config.dart';
+import '../security/payment_identifiers.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
 import 'payment_http_log.dart';
@@ -9,18 +10,29 @@ class PaymentService {
       'Set currency to: usd, aud, eur, or gbp. unitAmount in smallest unit (cents). Each song is one product. Minimum: usd/aud/eur = 50 cents, gbp = 30p, inr = 5000 paise.';
 
   static const String _checkoutSessionInstructions =
-      'UPI is INR only. Minimum 5000 paise (\u20b950). Open checkout_url in Flutter WebView.';
+      'UPI is INR only. Minimum 5000 paise (\u20b950). Open checkout_url in '
+      'Flutter WebView. Set success_url to '
+      'mantrasutra://payment/success?session_id={CHECKOUT_SESSION_ID} and '
+      'cancel_url to mantrasutra://payment/cancel.';
 
   /// Create Payment Intent (card).
   /// Body: `{ "_instructions", "currency", "products": [ { "productId", "productName", "unitAmount" } ] }`.
   static Future<Map<String, dynamic>?> createPaymentIntent({
     required String currency,
     required List<Map<String, dynamic>> products,
+    required String idempotencyKey,
 
     /// When set (e.g. `['card']`), the server should create the Stripe PaymentIntent
     /// with only these `payment_method_types` so PaymentSheet does not list UPI, etc.
     List<String>? paymentMethodTypes,
   }) async {
+    if (!PaymentIdentifierPolicy.isValidClientAttemptId(idempotencyKey)) {
+      throw ArgumentError.value(
+        idempotencyKey,
+        'idempotencyKey',
+        'Invalid payment attempt identifier',
+      );
+    }
     final url =
         '${ApiConfig.paymentBaseUrl}${ApiConfig.createPaymentIntentEndpoint}';
     Map<String, String>? headers;
@@ -30,9 +42,6 @@ class PaymentService {
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print(
-          '[PaymentService] createPaymentIntent — no access token; URL (exact): $url',
-        );
         return null;
       }
 
@@ -51,6 +60,7 @@ class PaymentService {
       final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
         body: bodyExact,
+        mergeHeaders: {'Idempotency-Key': idempotencyKey},
       );
 
       PaymentHttpLog.log(
@@ -78,16 +88,14 @@ class PaymentService {
         error: e,
         stackTrace: stackTrace,
       );
-      print('Error creating payment intent: $e');
       return null;
     }
   }
 
   // Confirm Payment (Backend Verification)
-  static Future<bool> confirmPayment({
-    required String paymentIntentId,
-  }) async {
-    final url = '${ApiConfig.paymentBaseUrl}${ApiConfig.confirmPaymentEndpoint}';
+  static Future<bool> confirmPayment({required String paymentIntentId}) async {
+    final url =
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.confirmPaymentEndpoint}';
     Map<String, String>? headers;
     String? bodyExact;
 
@@ -95,16 +103,11 @@ class PaymentService {
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print(
-          '[PaymentService] confirmPayment — no access token; URL (exact): $url',
-        );
         return false;
       }
 
       headers = ApiConfig.getPaymentHeaders(accessToken: token);
-      final requestBody = <String, dynamic>{
-        'paymentIntentId': paymentIntentId,
-      };
+      final requestBody = <String, dynamic>{'paymentIntentId': paymentIntentId};
       bodyExact = json.encode(requestBody);
 
       final response = await AuthenticatedHttp.paymentPost(
@@ -137,7 +140,6 @@ class PaymentService {
         error: e,
         stackTrace: stackTrace,
       );
-      print('Error confirming payment: $e');
       return false;
     }
   }
@@ -154,9 +156,6 @@ class PaymentService {
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print(
-          '[PaymentService] getPaymentStatus — no access token; URL (exact): $url',
-        );
         return null;
       }
 
@@ -188,7 +187,6 @@ class PaymentService {
         error: e,
         stackTrace: stackTrace,
       );
-      print('Error getting payment status: $e');
       return null;
     }
   }
@@ -198,7 +196,15 @@ class PaymentService {
   static Future<Map<String, dynamic>?> createCheckoutSession({
     required String currency,
     required List<Map<String, dynamic>> products,
+    required String idempotencyKey,
   }) async {
+    if (!PaymentIdentifierPolicy.isValidClientAttemptId(idempotencyKey)) {
+      throw ArgumentError.value(
+        idempotencyKey,
+        'idempotencyKey',
+        'Invalid payment attempt identifier',
+      );
+    }
     final url =
         '${ApiConfig.paymentBaseUrl}${ApiConfig.createCheckoutSessionEndpoint}';
     Map<String, String>? headers;
@@ -208,9 +214,6 @@ class PaymentService {
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print(
-          '[PaymentService] createCheckoutSession — no access token; URL (exact): $url',
-        );
         return null;
       }
 
@@ -225,6 +228,7 @@ class PaymentService {
       final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
         body: bodyExact,
+        mergeHeaders: {'Idempotency-Key': idempotencyKey},
       );
 
       PaymentHttpLog.log(
@@ -252,7 +256,6 @@ class PaymentService {
         error: e,
         stackTrace: stackTrace,
       );
-      print('createCheckoutSession error: $e');
       return null;
     }
   }
@@ -271,9 +274,6 @@ class PaymentService {
       final authService = AuthService();
       final token = authService.accessToken;
       if (token == null) {
-        print(
-          '[PaymentService] verifyCheckoutSession — no access token; URL (exact): $urlExact',
-        );
         return null;
       }
 
@@ -305,22 +305,17 @@ class PaymentService {
         error: e,
         stackTrace: stackTrace,
       );
-      print('verifyCheckoutSession error: $e');
       return null;
     }
   }
 
   /// Poll until backend reports paid (webhook may lag) or a terminal non-paid state / timeout.
-  static Future<CheckoutSessionVerifyOutcome>
-      verifyCheckoutSessionUntilPaid({
+  static Future<CheckoutSessionVerifyOutcome> verifyCheckoutSessionUntilPaid({
     required String sessionId,
     int maxAttempts = 30,
     Duration interval = const Duration(seconds: 2),
   }) async {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      print(
-        '[PaymentService] verifyCheckoutSessionUntilPaid attempt ${attempt + 1}/$maxAttempts session_id (exact): $sessionId',
-      );
       final data = await verifyCheckoutSession(sessionId: sessionId);
       final parsed = parseCheckoutVerifyResponse(data);
       switch (parsed) {
@@ -335,9 +330,6 @@ class PaymentService {
       }
       await Future<void>.delayed(interval);
     }
-    print(
-      '[PaymentService] verifyCheckoutSessionUntilPaid finished after $maxAttempts attempts — outcome: timeout',
-    );
     return CheckoutSessionVerifyOutcome.timeout;
   }
 
@@ -365,9 +357,8 @@ class PaymentService {
       return CheckoutSessionVerifyOutcome.unpaid;
     }
 
-    final paymentStatus = str(
-          body['payment_status'] ?? body['paymentStatus'],
-        )?.toLowerCase() ??
+    final paymentStatus =
+        str(body['payment_status'] ?? body['paymentStatus'])?.toLowerCase() ??
         '';
     final status = str(body['status'])?.toLowerCase() ?? '';
 

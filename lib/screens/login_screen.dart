@@ -12,7 +12,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with TickerProviderStateMixin {
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
@@ -33,21 +34,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       vsync: this,
     );
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeInOut,
-    ));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     _fadeController.forward();
     _slideController.forward();
@@ -64,9 +58,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.primaryGradient,
-        ),
+        decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
         child: Stack(
           children: [
             // Large Watermark Om Symbol
@@ -97,19 +89,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                       children: [
                         // App Logo and Title
                         _buildHeader(),
-                        
+
                         const SizedBox(height: 60),
-                        
+
                         // Login Options
                         _buildLoginOptions(),
-                        
+
                         const SizedBox(height: 40),
-                        
+
                         // Error Message
                         if (_errorMessage != null) _buildErrorMessage(),
-                        
+
                         const SizedBox(height: 20),
-                        
+
                         // Loading Indicator
                         if (_isLoading) _buildLoadingIndicator(),
                       ],
@@ -148,9 +140,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             color: AppColors.goldenSaffron,
           ),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // App Title
         const Text(
           'MantraSutra - मन्त्रसूत्र',
@@ -161,9 +153,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           ),
           textAlign: TextAlign.center,
         ),
-        
+
         const SizedBox(height: 8),
-        
+
         // Tagline
         Text(
           'The Science of Sacred Sounds',
@@ -189,9 +181,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           AppColors.textPrimary,
           () => _handleGoogleSignIn(),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // Facebook Sign In Button
         _buildSocialButton(
           'Continue with Facebook',
@@ -200,7 +192,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           AppColors.white,
           () => _handleFacebookSignIn(),
         ),
-        
       ],
     );
   }
@@ -229,18 +220,11 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 24,
-              color: textColor,
-            ),
+            Icon(icon, size: 24, color: textColor),
             const SizedBox(width: 12),
             Text(
               text,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -254,17 +238,11 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       decoration: BoxDecoration(
         color: AppColors.errorRed.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.errorRed.withOpacity(0.3),
-        ),
+        border: Border.all(color: AppColors.errorRed.withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.error_outline,
-            color: AppColors.errorRed,
-            size: 20,
-          ),
+          Icon(Icons.error_outline, color: AppColors.errorRed, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -294,7 +272,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   }
 
   Future<void> _handleFacebookSignIn() async {
-    await _performSignIn(() => context.read<AuthService>().signInWithFacebook());
+    await _performSignIn(
+      () => context.read<AuthService>().signInWithFacebook(),
+    );
   }
 
   Future<void> _performSignIn(Future<bool> Function() signInFunction) async {
@@ -318,7 +298,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       final success = await signInFunction().timeout(
         const Duration(seconds: 60),
         onTimeout: () {
-          debugPrint('Sign-in timed out (backend or network took too long)');
           return false;
         },
       );
@@ -337,7 +316,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     } on TimeoutException {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Request timed out. Check your connection and try again.';
+          _errorMessage =
+              'Request timed out. Check your connection and try again.';
           _isLoading = false;
         });
       }

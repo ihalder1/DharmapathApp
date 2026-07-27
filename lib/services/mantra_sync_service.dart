@@ -19,9 +19,11 @@ class MantraSyncService {
       if (node is Map<String, dynamic>) {
         result.add(Map<String, dynamic>.from(node));
       } else if (node is Map) {
-        result.add(Map<String, dynamic>.from(
-          node.map((k, v) => MapEntry(k.toString(), v)),
-        ));
+        result.add(
+          Map<String, dynamic>.from(
+            node.map((k, v) => MapEntry(k.toString(), v)),
+          ),
+        );
       } else if (node is List) {
         for (final item in node) {
           walk(item);
@@ -34,7 +36,9 @@ class MantraSyncService {
   }
 
   /// Normalize decoded metadata so `mantras` is always a flat list of maps.
-  static Map<String, dynamic> normalizeMetadataMantras(Map<String, dynamic> jsonData) {
+  static Map<String, dynamic> normalizeMetadataMantras(
+    Map<String, dynamic> jsonData,
+  ) {
     final flat = flattenMantrasToMaps(jsonData['mantras']);
     return Map<String, dynamic>.from(jsonData)..['mantras'] = flat;
   }
@@ -55,53 +59,25 @@ class MantraSyncService {
   // Fetch songs from API
   static Future<Map<String, dynamic>?> fetchSongsFromAPI() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🔄 FETCHING SONGS FROM API');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
-      
+
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
         return null;
       }
 
       final url = '${ApiConfig.baseUrl}${ApiConfig.songsEndpoint}';
       final headers = ApiConfig.getHeaders(accessToken: token);
 
-      print('📤 REQUEST DETAILS:');
-      print('   Method: GET');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   FULL TOKEN: $token');
-
       final response = await AuthenticatedHttp.get(Uri.parse(url));
-
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        print('✅ FETCH SONGS SUCCESS');
-        print('   Total Count: ${responseData['total_count']}');
-        print('   Last Updated: ${responseData['last_updated']}');
-        print('═══════════════════════════════════════════════════════════');
         return responseData;
       } else {
-        print('❌ FETCH SONGS FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
         return null;
       }
     } catch (e, stackTrace) {
-      print('❌ FETCH SONGS ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
       return null;
     }
   }
@@ -109,61 +85,59 @@ class MantraSyncService {
   // Load local metadata.json (from writable location first, then assets)
   static Future<Map<String, dynamic>> loadLocalMetadata() async {
     try {
-      print('📂 Loading local metadata.json...');
-      
       // Skip file operations on web
       if (kIsWeb) {
-        print('Web platform detected, loading from assets only');
         String jsonString;
         try {
           jsonString = await rootBundle.loadString('Media/metadata.json');
         } catch (e) {
-          jsonString = await rootBundle.loadString('assets/Media/metadata.json');
+          jsonString = await rootBundle.loadString(
+            'assets/Media/metadata.json',
+          );
         }
-        final Map<String, dynamic> jsonData =
-            normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
-        print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from assets');
+        final Map<String, dynamic> jsonData = normalizeMetadataMantras(
+          json.decode(jsonString) as Map<String, dynamic>,
+        );
         return jsonData;
       }
-      
+
       // First try to load from writable location (synced metadata)
       try {
         final Directory appDir = await getApplicationDocumentsDirectory();
-        final String mediaPath = path.join(appDir.path, 'Media', 'metadata.json');
+        final String mediaPath = path.join(
+          appDir.path,
+          'Media',
+          'metadata.json',
+        );
         final File metadataFile = File(mediaPath);
-        
+
         if (await metadataFile.exists()) {
-          print('Loading from synced metadata: $mediaPath');
           final String jsonString = await metadataFile.readAsString();
-          final Map<String, dynamic> jsonData =
-              normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
-          print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from synced metadata');
+          final Map<String, dynamic> jsonData = normalizeMetadataMantras(
+            json.decode(jsonString) as Map<String, dynamic>,
+          );
           return jsonData;
         }
-      } catch (e) {
-        print('Could not load from synced metadata: $e');
-      }
-      
+      } catch (e) {}
+
       // Fallback to assets - try multiple paths
-      print('Falling back to assets metadata.json');
       String jsonString;
       try {
         jsonString = await rootBundle.loadString('Media/metadata.json');
       } catch (e1) {
-        print('Failed to load from Media/metadata.json, trying assets/Media/metadata.json: $e1');
         try {
-          jsonString = await rootBundle.loadString('assets/Media/metadata.json');
+          jsonString = await rootBundle.loadString(
+            'assets/Media/metadata.json',
+          );
         } catch (e2) {
-          print('Failed to load from assets/Media/metadata.json: $e2');
           rethrow;
         }
       }
-      final Map<String, dynamic> jsonData =
-          normalizeMetadataMantras(json.decode(jsonString) as Map<String, dynamic>);
-      print('✅ Loaded ${(jsonData['mantras'] as List).length} mantras from assets');
+      final Map<String, dynamic> jsonData = normalizeMetadataMantras(
+        json.decode(jsonString) as Map<String, dynamic>,
+      );
       return jsonData;
     } catch (e) {
-      print('❌ Error loading local metadata: $e');
       return {'mantras': []};
     }
   }
@@ -171,36 +145,26 @@ class MantraSyncService {
   // Save metadata.json to writable location (app documents directory)
   static Future<void> saveLocalMetadata(Map<String, dynamic> metadata) async {
     try {
-      print('💾 Saving metadata.json...');
-      
       // Skip file operations on web
       if (kIsWeb) {
-        print('Web platform detected, skipping file save');
-        print('Updated metadata (would be saved):');
-        print(const JsonEncoder.withIndent('    ').convert(metadata));
         return;
       }
-      
+
       // Save to app's documents directory (writable location)
       final Directory appDir = await getApplicationDocumentsDirectory();
       final String mediaPath = path.join(appDir.path, 'Media');
       final Directory mediaDir = Directory(mediaPath);
-      
+
       if (!await mediaDir.exists()) {
         await mediaDir.create(recursive: true);
       }
-      
+
       final File metadataFile = File(path.join(mediaPath, 'metadata.json'));
-      final String jsonString = const JsonEncoder.withIndent('    ').convert(metadata);
+      final String jsonString = const JsonEncoder.withIndent(
+        '    ',
+      ).convert(metadata);
       await metadataFile.writeAsString(jsonString);
-      
-      print('✅ Saved metadata.json to: ${metadataFile.path}');
-    } catch (e, stackTrace) {
-      print('❌ Error saving metadata.json: $e');
-      print('Stack trace: $stackTrace');
-      print('Updated metadata (would be saved):');
-      print(const JsonEncoder.withIndent('    ').convert(metadata));
-    }
+    } catch (e, stackTrace) {}
   }
 
   // Download icon image (only if not already present under Documents/Media).
@@ -208,7 +172,6 @@ class MantraSyncService {
     try {
       // Skip file operations on web
       if (kIsWeb) {
-        print('Web platform detected, skipping icon download');
         return false;
       }
 
@@ -222,28 +185,21 @@ class MantraSyncService {
 
       final File iconFile = File(path.join(mediaPath, localIconName));
       if (await iconFile.exists()) {
-        print('⏭️ Icon already on disk, skipping download: ${iconFile.path}');
         return true;
       }
 
-      print('📥 Downloading icon: $iconUrl -> $localIconName');
-
-      final response = await http.get(Uri.parse(iconUrl)).timeout(
-        const Duration(seconds: 30),
-      );
+      final response = await http
+          .get(Uri.parse(iconUrl))
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         await iconFile.writeAsBytes(response.bodyBytes);
 
-        print('✅ Downloaded icon to: ${iconFile.path}');
         return true;
       } else {
-        print('❌ Failed to download icon: Status ${response.statusCode}');
         return false;
       }
     } catch (e, stackTrace) {
-      print('❌ Error downloading icon: $e');
-      print('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -253,13 +209,13 @@ class MantraSyncService {
     if (dateString == null || dateString.isEmpty) {
       return null;
     }
-    
+
     try {
       // Try ISO 8601 format first (2025-12-22T07:42:24.648Z)
       if (dateString.contains('T')) {
         return DateTime.parse(dateString);
       }
-      
+
       // Try YYYY-MM-DD HH:MM:SS format
       if (dateString.contains(' ')) {
         final parts = dateString.split(' ');
@@ -269,10 +225,9 @@ class MantraSyncService {
           return DateTime.parse('${datePart}T$timePart');
         }
       }
-      
+
       return DateTime.parse(dateString);
     } catch (e) {
-      print('❌ Error parsing date "$dateString": $e');
       return null;
     }
   }
@@ -280,36 +235,26 @@ class MantraSyncService {
   // Sync mantras from API with local metadata
   static Future<bool> syncMantras() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🔄 STARTING MANTRA SYNC');
-      print('═══════════════════════════════════════════════════════════');
-      
       // 1. Fetch songs from API
       final apiResponse = await fetchSongsFromAPI();
       if (apiResponse == null) {
-        print('❌ Failed to fetch songs from API');
         return false;
       }
 
       final List<dynamic> apiSongs = songsFromApiResponse(apiResponse);
       if (apiSongs.isEmpty) {
-        print('❌ No songs list in API response (expected data.songs or songs)');
         return false;
       }
       final String? globalLastUpdated = apiResponse['last_updated'];
       final DateTime? globalLastUpdatedDate = parseDate(globalLastUpdated);
-      final DateTime defaultLastUpdated = parseDate('2025-01-01T07:42:24.648Z') ?? DateTime(2025, 1, 1);
-
-      print('📊 API Response:');
-      print('   Songs count: ${apiSongs.length}');
-      print('   Global last_updated: $globalLastUpdated');
+      final DateTime defaultLastUpdated =
+          parseDate('2025-01-01T07:42:24.648Z') ?? DateTime(2025, 1, 1);
 
       // 2. Load local metadata
       final Map<String, dynamic> localMetadata = await loadLocalMetadata();
-      final List<dynamic> localMantras = List.from(localMetadata['mantras'] ?? []);
-      
-      print('📊 Local Metadata:');
-      print('   Mantras count: ${localMantras.length}');
+      final List<dynamic> localMantras = List.from(
+        localMetadata['mantras'] ?? [],
+      );
 
       // 3. Create a map of local mantras by mantra_file for quick lookup
       final Map<String, Map<String, dynamic>> localMantrasMap = {};
@@ -321,17 +266,18 @@ class MantraSyncService {
       }
 
       final pricingRegion = await LocationPricingService.getPricingRegion();
-      final currencyCode =
-          LocationPricingService.currencyCodeForRegion(pricingRegion);
-      print('   Pricing region: $pricingRegion ($currencyCode)');
+      final currencyCode = LocationPricingService.currencyCodeForRegion(
+        pricingRegion,
+      );
 
       // 4. Process each API song
       final List<Map<String, dynamic>> updatedMantras = [];
       final Set<String> apiFileNames = {};
 
       for (var apiSong in apiSongs) {
-        final Map<String, dynamic> apiMap =
-            Map<String, dynamic>.from(apiSong as Map);
+        final Map<String, dynamic> apiMap = Map<String, dynamic>.from(
+          apiSong as Map,
+        );
         final String fileName = apiMap['file_name'] ?? '';
         final String id = apiMap['id'] ?? '';
         final resolved = LocationPricingService.resolveSongPricing(
@@ -342,19 +288,14 @@ class MantraSyncService {
         final String iconUrl = apiMap['icon'] ?? '';
         final String? songLastUpdated =
             apiMap['last_updated'] ?? apiMap['created_at'];
-        
+
         apiFileNames.add(fileName);
 
         // Get last_updated for this song (use song's last_updated or global or default)
-        DateTime songLastUpdatedDate = parseDate(songLastUpdated) ?? 
-                                      globalLastUpdatedDate ?? 
-                                      defaultLastUpdated;
-
-        print('\n📝 Processing: $fileName');
-        print('   ID: $id');
-        print('   Price: $selectedPrice ($currencyCode)');
-        print('   Icon URL: $iconUrl');
-        print('   Last Updated: ${songLastUpdatedDate.toIso8601String()}');
+        DateTime songLastUpdatedDate =
+            parseDate(songLastUpdated) ??
+            globalLastUpdatedDate ??
+            defaultLastUpdated;
 
         // Check if file exists in local list
         final localMantra = localMantrasMap[fileName];
@@ -363,32 +304,23 @@ class MantraSyncService {
           final String? localLastModified = localMantra['last_modified'];
           final DateTime? localLastModifiedDate = parseDate(localLastModified);
 
-          print('   ✅ Found in local list');
-          print('   Local last_modified: $localLastModified');
-          if (localLastModifiedDate != null) {
-            print('   Local last_modified (parsed): ${localLastModifiedDate.toIso8601String()}');
-            print('   API last_updated (parsed): ${songLastUpdatedDate.toIso8601String()}');
-            print('   Comparison: API isAfter Local = ${songLastUpdatedDate.isAfter(localLastModifiedDate)}');
-            print('   Time difference: ${songLastUpdatedDate.difference(localLastModifiedDate).inSeconds} seconds');
-          }
+          if (localLastModifiedDate != null) {}
 
           bool needsUpdate = false;
           if (localLastModifiedDate == null) {
             needsUpdate = true;
-            print('   ⚠️  Local has no last_modified, will update');
           } else {
             // Normalize both dates to UTC for accurate comparison
             final apiDateUtc = songLastUpdatedDate.toUtc();
             final localDateUtc = localLastModifiedDate.toUtc();
-            
+
             // Only update if API date is significantly newer (more than 1 second difference)
             // This handles timezone and precision issues
-            if (apiDateUtc.isAfter(localDateUtc.add(const Duration(seconds: 1)))) {
+            if (apiDateUtc.isAfter(
+              localDateUtc.add(const Duration(seconds: 1)),
+            )) {
               needsUpdate = true;
-              print('   ⚠️  API is newer, will update');
-            } else {
-              print('   ✓ Local is up to date (API: ${apiDateUtc.toIso8601String()}, Local: ${localDateUtc.toIso8601String()})');
-            }
+            } else {}
           }
 
           if (needsUpdate) {
@@ -400,15 +332,19 @@ class MantraSyncService {
               pricingRegion,
             );
             // Save in ISO 8601 format (UTC) for accurate comparison
-            updatedMantra['last_modified'] = songLastUpdatedDate.toUtc().toIso8601String();
-            
+            updatedMantra['last_modified'] = songLastUpdatedDate
+                .toUtc()
+                .toIso8601String();
+
             // Extract icon name from URL or use existing
             String iconName = updatedMantra['icon'] as String? ?? '$id.jpg';
             if (iconUrl.isNotEmpty) {
               // Extract extension from URL or use .jpg
               final uri = Uri.parse(iconUrl);
               final urlPath = uri.path;
-              final extension = path.extension(urlPath).isNotEmpty ? path.extension(urlPath) : '.jpg';
+              final extension = path.extension(urlPath).isNotEmpty
+                  ? path.extension(urlPath)
+                  : '.jpg';
               iconName = '$id$extension';
               updatedMantra['icon'] = iconName;
             }
@@ -419,8 +355,6 @@ class MantraSyncService {
             if (iconUrl.isNotEmpty) {
               await downloadIcon(iconUrl, iconName);
             }
-
-            print('   ✅ Updated local record');
           } else {
             // Keep existing record but always refresh price/currency fields.
             final updatedMantra = Map<String, dynamic>.from(localMantra);
@@ -433,14 +367,15 @@ class MantraSyncService {
           }
         } else {
           // Case B: File not found - add new entry
-          print('   ➕ Not found in local list, adding new entry');
 
           // Extract icon name from URL
           String iconName = '$id.jpg';
           if (iconUrl.isNotEmpty) {
             final uri = Uri.parse(iconUrl);
             final urlPath = uri.path;
-            final extension = path.extension(urlPath).isNotEmpty ? path.extension(urlPath) : '.jpg';
+            final extension = path.extension(urlPath).isNotEmpty
+                ? path.extension(urlPath)
+                : '.jpg';
             iconName = '$id$extension';
           }
 
@@ -463,8 +398,6 @@ class MantraSyncService {
           if (iconUrl.isNotEmpty) {
             await downloadIcon(iconUrl, iconName);
           }
-
-          print('   ✅ Added new entry');
         }
       }
 
@@ -474,28 +407,16 @@ class MantraSyncService {
         final fileName = localMantra['mantra_file'] as String?;
         if (fileName != null && !apiFileNames.contains(fileName)) {
           toRemove.add(fileName);
-          print('🗑️  Will remove: $fileName (not in API response)');
         }
       }
 
       // 5. Save updated metadata
-      final updatedMetadata = {
-        'mantras': updatedMantras,
-      };
+      final updatedMetadata = {'mantras': updatedMantras};
 
       await saveLocalMetadata(updatedMetadata);
 
-      print('\n✅ SYNC COMPLETE');
-      print('   Updated mantras: ${updatedMantras.length}');
-      print('   Removed mantras: ${toRemove.length}');
-      print('═══════════════════════════════════════════════════════════');
-
       return true;
     } catch (e, stackTrace) {
-      print('❌ SYNC ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
       return false;
     }
   }
@@ -512,8 +433,7 @@ class MantraSyncService {
       'M-GANESH-001': 'Ganesh Mantra',
       'M-SHANI-001': 'Shani Dev Mantra',
     };
-    
+
     return nameMap[id] ?? id.replaceAll('M-', '').replaceAll('-001', ' Mantra');
   }
 }
-

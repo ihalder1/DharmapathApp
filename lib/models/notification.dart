@@ -23,7 +23,9 @@ class NotificationItem {
       createdAt: _parseDateTime(
         json['created_at'] ?? json['sent_at'] ?? json['timestamp'],
       ),
-      isRead: _parseReadFlag(json['read_flag'] ?? json['is_read'] ?? json['read']),
+      isRead: _parseReadFlag(
+        json['read_flag'] ?? json['is_read'] ?? json['read'],
+      ),
       type: json['type']?.toString(),
       status: json['status']?.toString(),
     );

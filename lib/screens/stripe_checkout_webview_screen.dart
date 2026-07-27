@@ -1,5 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+
+import '../security/stripe_checkout_url_policy.dart';
 
 /// Result after closing Stripe Checkout in a WebView (UPI flow — not PaymentSheet).
 class StripeCheckoutWebViewResult {
@@ -14,9 +20,11 @@ class StripeCheckoutWebViewResult {
   });
 }
 
-/// Opens [checkoutUrl] (Stripe Checkout). On success redirect, pops with a session id for
-/// [PaymentService.verifyCheckoutSession]. Backend should use a `success_url` that either
-/// includes Stripe’s `session_id` query param or returns to a non-Stripe https URL after checkout.
+/// Application-owned Stripe Checkout surface.
+///
+/// Stripe Checkout requires JavaScript. No JavaScript channels or native
+/// objects are exposed, and all top-level navigation is denied unless allowed
+/// by [StripeCheckoutUrlPolicy].
 class StripeCheckoutWebViewScreen extends StatefulWidget {
   final String checkoutUrl;
   final String checkoutSessionId;
@@ -34,75 +42,111 @@ class StripeCheckoutWebViewScreen extends StatefulWidget {
 
 class _StripeCheckoutWebViewScreenState
     extends State<StripeCheckoutWebViewScreen> {
+  static const StripeCheckoutUrlPolicy _urlPolicy = StripeCheckoutUrlPolicy();
+
   late final WebViewController _controller;
-  bool _sawStripeCheckoutHost = false;
   bool _finished = false;
+  bool _ready = false;
+  String? _errorMessage;
 
-  bool _isStripeHosted(String host) {
-    final h = host.toLowerCase();
-    return h.contains('stripe.com');
-  }
-
-  void _completeIfNeeded({required String sessionIdForVerify}) {
+  void _finish(StripeCheckoutWebViewResult result) {
     if (_finished || !mounted) return;
     _finished = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      Navigator.of(context).pop(
-        StripeCheckoutWebViewResult(
-          completedRedirect: true,
-          sessionIdForVerify: sessionIdForVerify,
-        ),
-      );
+    Navigator.of(context).pop(result);
+  }
+
+  NavigationDecision _handleNavigation(NavigationRequest request) {
+    final callback = _urlPolicy.classifyCallbackUrl(request.url);
+    if (_finished) return NavigationDecision.prevent;
+
+    switch (callback.type) {
+      case StripeCheckoutCallbackType.success:
+        // Bind the callback to the session created for this authenticated flow.
+        // The caller still asks the backend to verify authoritative paid state.
+        if (callback.sessionId == widget.checkoutSessionId) {
+          _finish(
+            StripeCheckoutWebViewResult(
+              completedRedirect: true,
+              sessionIdForVerify: widget.checkoutSessionId,
+            ),
+          );
+        } else {
+          setState(() {
+            _errorMessage = 'The checkout response could not be validated.';
+          });
+        }
+        return NavigationDecision.prevent;
+      case StripeCheckoutCallbackType.cancel:
+        _finish(const StripeCheckoutWebViewResult(cancelled: true));
+        return NavigationDecision.prevent;
+      case StripeCheckoutCallbackType.none:
+        break;
+    }
+
+    if (_urlPolicy.isAllowedStripeNavigation(request.url)) {
+      return NavigationDecision.navigate;
+    }
+
+    // mailto:, tel:, arbitrary custom schemes and unknown HTTPS hosts are
+    // intentionally rejected. This checkout has no documented need to launch
+    // them externally.
+    return NavigationDecision.prevent;
+  }
+
+  Future<void> _configureAndLoad(Uri initialUrl) async {
+    final platformController = _controller.platform;
+    if (platformController is AndroidWebViewController) {
+      await AndroidWebViewController.enableDebugging(false);
+      await platformController.setAllowFileAccess(false);
+      await platformController.setAllowContentAccess(false);
+      await platformController.setGeolocationEnabled(false);
+      await platformController.setMediaPlaybackRequiresUserGesture(true);
+      await platformController.setMixedContentMode(MixedContentMode.neverAllow);
+      await platformController.setOnShowFileSelector((_) async => <String>[]);
+    } else if (platformController is WebKitWebViewController) {
+      await platformController.setInspectable(false);
+      await platformController.setAllowsLinkPreview(false);
+      await platformController.setAllowsBackForwardNavigationGestures(false);
+    }
+
+    if (!mounted || _finished) return;
+    await _controller.loadRequest(initialUrl);
+    if (!mounted) return;
+    setState(() {
+      _ready = true;
     });
   }
 
   @override
   void initState() {
     super.initState();
-    final initial = Uri.tryParse(widget.checkoutUrl);
-    _sawStripeCheckoutHost =
-        initial != null && _isStripeHosted(initial.host);
 
     _controller = WebViewController()
+      // Required by Stripe Checkout; no JavaScript channel is registered.
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (String url) {
-            final uri = Uri.tryParse(url);
-            if (uri != null && _isStripeHosted(uri.host)) {
-              _sawStripeCheckoutHost = true;
-            }
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            final uri = Uri.tryParse(request.url);
-            if (uri == null) return NavigationDecision.navigate;
-
-            final fromQuery = uri.queryParameters['session_id']?.trim();
-            if (fromQuery != null && fromQuery.isNotEmpty) {
-              _completeIfNeeded(sessionIdForVerify: fromQuery);
-              return NavigationDecision.prevent;
-            }
-
-            final host = uri.host.toLowerCase();
-            final onStripe = _isStripeHosted(host);
-            final leftStripeFlow = _sawStripeCheckoutHost &&
-                !onStripe &&
-                (uri.scheme == 'https' ||
-                    uri.scheme == 'http' ||
-                    uri.scheme == 'mantrasutra');
-            if (leftStripeFlow) {
-              _completeIfNeeded(
-                sessionIdForVerify: widget.checkoutSessionId,
-              );
-              return NavigationDecision.prevent;
-            }
-
-            return NavigationDecision.navigate;
+          onNavigationRequest: _handleNavigation,
+          onWebResourceError: (error) {
+            if (error.isForMainFrame != true || !mounted || _finished) return;
+            setState(() {
+              _errorMessage = 'Secure checkout could not be loaded.';
+            });
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.checkoutUrl));
+      );
+
+    final initialUrl = _urlPolicy.validateInitialCheckoutUrl(
+      widget.checkoutUrl,
+    );
+
+    if (initialUrl == null ||
+        !_urlPolicy.validateSessionId(widget.checkoutSessionId)) {
+      _errorMessage = 'The checkout link returned by the server is invalid.';
+      return;
+    }
+
+    unawaited(_configureAndLoad(initialUrl));
   }
 
   @override
@@ -113,15 +157,23 @@ class _StripeCheckoutWebViewScreenState
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () {
-            if (_finished || !mounted) return;
-            _finished = true;
-            Navigator.of(context).pop(
-              const StripeCheckoutWebViewResult(cancelled: true),
-            );
+            _finish(const StripeCheckoutWebViewResult(cancelled: true));
           },
         ),
       ),
-      body: WebViewWidget(controller: _controller),
+      body: _errorMessage != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(_errorMessage!, textAlign: TextAlign.center),
+              ),
+            )
+          : Stack(
+              children: [
+                WebViewWidget(controller: _controller),
+                if (!_ready) const Center(child: CircularProgressIndicator()),
+              ],
+            ),
     );
   }
 }

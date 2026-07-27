@@ -47,6 +47,10 @@ app.*.map.json
 /android/.gradle/
 /android/local.properties
 /android/app/google-services.json
+/android/key.properties
+/android/app/mantrasutra-release.jks
+*.jks
+*.keystore
 
 # iOS
 /ios/Pods/
@@ -88,7 +92,6 @@ command.txt
 **/flutter_export_environment.sh
 
 # Dependencies
-pubspec.lock
 **/Podfile.lock
 
 # IDE

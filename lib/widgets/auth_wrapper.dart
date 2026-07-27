@@ -43,7 +43,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         });
       }
     } catch (e) {
-      debugPrint('Auth initialization error: $e');
       if (mounted) {
         setState(() {
           _isInitialized = true;
@@ -55,47 +54,19 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Consumer<AuthService>(
       builder: (context, authService, child) {
-        debugPrint('AuthWrapper rebuild - isLoggedIn: ${authService.isLoggedIn}, user: ${authService.currentUser?.email}, token: ${authService.accessToken != null ? "SET" : "NULL"}');
-        
         // Show login screen if not logged in
         if (!authService.isLoggedIn) {
-          debugPrint('AuthWrapper: Showing LoginScreen');
           return const LoginScreen();
         }
-        
+
         // Show home screen if logged in
-        debugPrint('AuthWrapper: Showing HomeScreen');
         return const HomeScreen();
       },
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

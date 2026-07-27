@@ -10,43 +10,22 @@ class SongService {
   // Fetch songs from API
   static Future<List<Mantra>> getSongs() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🎵 FETCHING SONGS FROM API');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
-      
+
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
         return [];
       }
 
       final url = '${ApiConfig.baseUrl}${ApiConfig.songsEndpoint}';
       final headers = ApiConfig.getHeaders(accessToken: token);
 
-      print('📤 REQUEST DETAILS:');
-      print('   Method: GET');
-      print('   URL: $url');
-      print('   Headers: ${json.encode(headers)}');
-      print('   FULL TOKEN: $token');
-
       final response = await AuthenticatedHttp.get(Uri.parse(url));
-
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Headers: ${response.headers}');
-      print('   Response Body: ${response.body}');
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         final List<dynamic> songs = responseData['data']?['songs'] ?? [];
-        
-        print('✅ FETCH SONGS SUCCESS');
-        print('   Songs count: ${songs.length}');
-        print('═══════════════════════════════════════════════════════════');
-        
+
         final pricingRegion = await LocationPricingService.getPricingRegion();
 
         // Convert API response to Mantra objects
@@ -69,24 +48,16 @@ class SongService {
             purchasedCount: 0,
           );
         }).toList();
-        
+
         return mantras;
       } else {
-        print('❌ FETCH SONGS FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
         return [];
       }
     } catch (e, stackTrace) {
-      print('❌ FETCH SONGS ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
       return [];
     }
   }
-  
+
   // Generate name from ID (e.g., M-RAM-001 -> Shri Rama Mantra)
   static String _generateNameFromId(String id) {
     final nameMap = {
@@ -98,7 +69,7 @@ class SongService {
       'M-GANESH-001': 'Ganesh Mantra',
       'M-SHANI-001': 'Shani Dev Mantra',
     };
-    
+
     return nameMap[id] ?? id.replaceAll('M-', '').replaceAll('-001', ' Mantra');
   }
 
@@ -109,40 +80,22 @@ class SongService {
   /// Per-song owned license count from GET purchase/songs (`available_count`, etc.).
   static Future<Map<String, int>> getPurchasedSongCounts() async {
     try {
-      print('═══════════════════════════════════════════════════════════');
-      print('🛒 FETCHING PURCHASED SONGS FROM API');
-      print('═══════════════════════════════════════════════════════════');
-      
       final authService = AuthService();
       final token = authService.accessToken;
-      
+
       if (token == null) {
-        print('❌ ERROR: No authentication token found');
-        print('═══════════════════════════════════════════════════════════');
         return {};
       }
 
-      final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
-
-      print('📤 REQUEST DETAILS:');
-      print('   Method: GET');
-      print('   URL: $url');
-      print('═══════════════════════════════════════════════════════════');
+      final url = Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}',
+      );
 
       final response = await AuthenticatedHttp.get(url);
 
-      print('📥 RESPONSE DETAILS:');
-      print('   Status Code: ${response.statusCode}');
-      print('   Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════');
-
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
-        
-        print('✅ FETCH PURCHASED SONGS SUCCESS');
-        print('   Response data type: ${responseData.runtimeType}');
-        print('   Response data: $responseData');
-        
+
         final Map<String, int> counts = {};
 
         void addCount(String rawId, int delta) {
@@ -150,17 +103,16 @@ class SongService {
           if (k.isEmpty || delta <= 0) return;
           counts[k] = (counts[k] ?? 0) + delta;
         }
-        
+
         // Handle different response formats:
         // - available_songs: [{"song_id":"F-AARATI-001","available_count":2}, ...]
         // - songs_ids / song_ids on root or nested under `data`
         // - List of objects with mantra_ids (legacy)
-        
+
         if (responseData is Map<String, dynamic>) {
           void addFromAvailableSongs(Map<String, dynamic> m) {
             if (!m.containsKey('available_songs')) return;
             final list = m['available_songs'] as List<dynamic>? ?? [];
-            print('   Found available_songs with ${list.length} items');
             for (final item in list) {
               if (item is! Map) continue;
               final row = Map<String, dynamic>.from(item);
@@ -176,7 +128,6 @@ class SongService {
               }
               if (n < 1) n = 1;
               addCount(songId, n);
-              print('     → song_id: $songId  available_count: $n');
             }
           }
 
@@ -189,69 +140,48 @@ class SongService {
           // Format 1: Direct object with songs_ids
           if (responseData.containsKey('songs_ids')) {
             final songsIds = responseData['songs_ids'] as List<dynamic>? ?? [];
-            print('   Found songs_ids field with ${songsIds.length} items');
             for (var songId in songsIds) {
               final songIdString = songId.toString().trim();
               if (songIdString.isNotEmpty) {
                 addCount(songIdString, 1);
-                print('     → Purchased song: $songIdString');
               }
             }
           } else if (responseData.containsKey('song_ids')) {
             // Also check for song_ids (without 's')
             final songsIds = responseData['song_ids'] as List<dynamic>? ?? [];
-            print('   Found song_ids field with ${songsIds.length} items');
             for (var songId in songsIds) {
               final songIdString = songId.toString().trim();
               if (songIdString.isNotEmpty) {
                 addCount(songIdString, 1);
-                print('     → Purchased song: $songIdString');
               }
             }
           }
         } else if (responseData is List) {
           // Format 2: List of objects with mantra_ids
-          print('   Purchased songs records count: ${responseData.length}');
           for (var record in responseData) {
             if (record is Map<String, dynamic>) {
               // Get mantra_ids array from each record
               final mantraIds = record['mantra_ids'] as List<dynamic>? ?? [];
-              print('   - Record: recording_id=${record['recording_id']}, mantra_ids count=${mantraIds.length}');
-              
+
               // Add each mantra_id to the list
               for (var mantraId in mantraIds) {
                 final mantraIdString = mantraId.toString().trim();
                 if (mantraIdString.isNotEmpty) {
                   addCount(mantraIdString, 1);
-                  print('     → Purchased mantra: $mantraIdString');
                 }
               }
             }
           }
         }
-        
-        print('   Total distinct purchased song IDs: ${counts.length}');
-        print('═══════════════════════════════════════════════════════════');
+
         return counts;
       } else if (response.statusCode == 404) {
         // 404 means no songs have been purchased yet - this is a normal case, not an error
-        print('ℹ️  NO PURCHASED SONGS FOUND (404)');
-        print('   Status: ${response.statusCode}');
-        print('   Message: No songs have been purchased yet');
-        print('═══════════════════════════════════════════════════════════');
         return {};
       } else {
-        print('❌ FETCH PURCHASED SONGS FAILED');
-        print('   Status: ${response.statusCode}');
-        print('   Body: ${response.body}');
-        print('═══════════════════════════════════════════════════════════');
         return {};
       }
     } catch (e, stackTrace) {
-      print('❌ FETCH PURCHASED SONGS ERROR:');
-      print('   Error: $e');
-      print('   StackTrace: $stackTrace');
-      print('═══════════════════════════════════════════════════════════');
       return {};
     }
   }
@@ -298,7 +228,9 @@ class SongService {
     required String currency,
     required List<String> songIds,
   }) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}');
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.purchasedSongsEndpoint}',
+    );
     final urlExact = url.toString();
     Map<String, String>? headers;
     String? bodyExact;
@@ -308,9 +240,6 @@ class SongService {
       final token = authService.accessToken;
 
       if (token == null) {
-        print(
-          '[SongService] sendPurchaseData — no access token; URL (exact): $urlExact',
-        );
         return false;
       }
 
