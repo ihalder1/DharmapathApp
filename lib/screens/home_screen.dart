@@ -538,6 +538,27 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    if (_voiceService.recordings.length >= 5) {
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Recording Limit Reached'),
+            content: const Text(
+              'You have reached the recording limit. Please delete at least one recording to proceed.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
     // startRecording() handles permission checking internally, so we don't need to check here
     final success = await _voiceService.startRecording();
     if (success) {
@@ -1973,7 +1994,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    if (_currentInferredPlaying == song && _isPlaying) {
+    if (_isInferredSongPlaying(song)) {
       await _audioPlayer.stop();
       setState(() {
         _isPlaying = false;
@@ -2033,7 +2054,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!await file.exists() || await file.length() == 0) return;
 
     try {
-      if (_currentInferredPlaying == song && _isPlaying) {
+      if (_isInferredSongPlaying(song)) {
         await _audioPlayer.pause();
         setState(() {
           _isPlaying = false;
@@ -2078,6 +2099,10 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
+  }
+
+  bool _isInferredSongPlaying(InferredSong song) {
+    return _isPlaying && _currentInferredPlaying?.inferredId == song.inferredId;
   }
 
   // Audio playback methods
@@ -3054,10 +3079,28 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 children: [
                   // Instructions
-                  const Text(
-                    'Read the text clearly in a quiet environment',
-                    style: TextStyle(fontSize: 16, color: Colors.black87),
-                    textAlign: TextAlign.center,
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySaffron.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.primarySaffron.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: const Text(
+                      'Read the text clearly in a quiet environment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
 
                   const SizedBox(height: 6),
@@ -3757,7 +3800,7 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               onPressed: hasLocal ? () => _playInferredMantra(song) : null,
               icon: Icon(
-                _currentInferredPlaying == song && _isPlaying
+                _isInferredSongPlaying(song)
                     ? Icons.pause_circle_filled
                     : Icons.play_circle_filled,
                 color: hasLocal
