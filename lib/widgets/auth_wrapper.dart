@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
+import 'voice_consent_gate.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -64,8 +65,12 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           return const LoginScreen();
         }
 
-        // Show home screen if logged in
-        return const HomeScreen();
+        // Consent is a root-level gate: HomeScreen is not created until the
+        // authenticated user accepts the current consent version.
+        return VoiceConsentGate(
+          userId: authService.currentUser!.id,
+          child: const HomeScreen(),
+        );
       },
     );
   }

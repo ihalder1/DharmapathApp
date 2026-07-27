@@ -17,6 +17,7 @@ class ApiConfig {
   static const String listRecordingAndSongsEndpoint =
       '/auth/profile/list-recording-and-songs';
   static const String logoutEndpoint = '/auth/logout';
+  static const String consentEndpoint = '/auth/consent';
   static const String putDeviceInfoEndpoint = '/auth/put-device-info';
 
   // Songs endpoint

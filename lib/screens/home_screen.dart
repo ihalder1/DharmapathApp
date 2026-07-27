@@ -4719,13 +4719,19 @@ class _HomeScreenState extends State<HomeScreen> {
         await NotificationService.refresh();
         if (mounted) {
           _loadUnreadNotificationCount();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'The Mantra is getting generated and you will be notified shortly',
+          await showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Request Submitted'),
+              content: const Text(
+                'Your mantra generation request has been submitted and it may take 5 minutes to 24 hours depending on the request traffic.',
               ),
-              backgroundColor: AppColors.successGreen,
-              duration: Duration(seconds: 4),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
             ),
           );
         }
