@@ -40,7 +40,7 @@ dependencies:
   
   # File Management
   path_provider: ^2.1.1
-  file_picker: ^8.0.0+1
+  file_selector: ^1.0.3
   
   # Image & Media
   cached_network_image: ^3.3.0

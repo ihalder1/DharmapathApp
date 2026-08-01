@@ -72,9 +72,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>This app needs access to microphone to record voice mantras for spiritual practice.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to photo library to save and share recordings.</string>
+	<string>MantraSutra uses the microphone to record your voice during mantra practice.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

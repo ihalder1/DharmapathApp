@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1813,33 +1813,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _saveInferredSongToDevice(InferredSong song, String path) async {
     try {
-      final bytes = await File(path).readAsBytes();
       final fileName = _inferredSongExportFileName(song);
-      final dialogTitle = Platform.isIOS
-          ? 'Save to Files'
-          : 'Save mantra to device';
-
-      final savedPath = await FilePicker.platform.saveFile(
-        dialogTitle: dialogTitle,
-        fileName: fileName,
-        type: FileType.custom,
-        allowedExtensions: const ['mp3'],
-        bytes: bytes,
+      const mp3Type = XTypeGroup(
+        label: 'MP3 audio',
+        extensions: <String>['mp3'],
+        mimeTypes: <String>['audio/mpeg'],
       );
+      final saveLocation = await getSaveLocation(
+        suggestedName: fileName,
+        acceptedTypeGroups: const <XTypeGroup>[mp3Type],
+      );
+      if (saveLocation == null) return;
+
+      final source = XFile(path, mimeType: 'audio/mpeg', name: fileName);
+      await source.saveTo(saveLocation.path);
 
       if (!mounted) return;
-      if (savedPath != null && savedPath.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              Platform.isIOS
-                  ? 'Mantra saved to Files.'
-                  : 'Mantra saved to your device.',
-            ),
-            backgroundColor: AppColors.successGreen,
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Platform.isIOS
+                ? 'Mantra saved to Files.'
+                : 'Mantra saved to your device.',
           ),
-        );
-      }
+          backgroundColor: AppColors.successGreen,
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
