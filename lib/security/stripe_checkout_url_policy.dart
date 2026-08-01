@@ -1,5 +1,21 @@
 enum StripeCheckoutCallbackType { none, success, cancel }
 
+enum StripeCheckoutNavigationAction { allow, block }
+
+final class StripeCheckoutNavigationDecision {
+  const StripeCheckoutNavigationDecision({
+    required this.action,
+    required this.reason,
+    required this.matchedPolicyRule,
+  });
+
+  final StripeCheckoutNavigationAction action;
+  final String reason;
+  final String matchedPolicyRule;
+
+  bool get isAllowed => action == StripeCheckoutNavigationAction.allow;
+}
+
 final class StripeCheckoutCallback {
   const StripeCheckoutCallback._(this.type, this.sessionId);
 
@@ -21,12 +37,22 @@ final class StripeCheckoutCallback {
 final class StripeCheckoutUrlPolicy {
   const StripeCheckoutUrlPolicy();
 
-  static const Set<String> allowedStripeHosts = <String>{
+  /// Exact hosts approved for top-level Checkout navigation and redirects.
+  static const Set<String> allowedMainFrameStripeHosts = <String>{
     'checkout.stripe.com',
     // Stripe uses this exact host for hosted redirect/return handling.
     'hooks.stripe.com',
     'payments.stripe.com',
     'pm-redirects.stripe.com',
+  };
+
+  /// Exact hosts approved inside Stripe Checkout frames.
+  ///
+  /// `js.stripe.com` serves Stripe's hosted lightbox/UPI UI. It is deliberately
+  /// not approved for top-level navigation.
+  static const Set<String> allowedSubframeStripeHosts = <String>{
+    ...allowedMainFrameStripeHosts,
+    'js.stripe.com',
   };
 
   static const String callbackScheme = 'mantrasutra';
@@ -47,10 +73,56 @@ final class StripeCheckoutUrlPolicy {
   }
 
   bool isAllowedStripeNavigation(String value) {
+    return decideNavigation(value, isMainFrame: true).isAllowed;
+  }
+
+  StripeCheckoutNavigationDecision decideNavigation(
+    String value, {
+    required bool isMainFrame,
+  }) {
     final uri = _parse(value);
-    return uri != null &&
-        _isSecureWebUri(uri) &&
-        allowedStripeHosts.contains(uri.host.toLowerCase());
+    if (uri == null) {
+      return const StripeCheckoutNavigationDecision(
+        action: StripeCheckoutNavigationAction.block,
+        reason: 'invalid_url',
+        matchedPolicyRule: 'valid_absolute_url_required',
+      );
+    }
+    if (!_isSecureWebUri(uri)) {
+      return StripeCheckoutNavigationDecision(
+        action: StripeCheckoutNavigationAction.block,
+        reason: 'insecure_or_unsupported_url',
+        matchedPolicyRule: isMainFrame
+            ? 'main_frame_https_only'
+            : 'subframe_https_only',
+      );
+    }
+
+    final host = uri.host.toLowerCase();
+    final approvedHosts = isMainFrame
+        ? allowedMainFrameStripeHosts
+        : allowedSubframeStripeHosts;
+    if (approvedHosts.contains(host)) {
+      return StripeCheckoutNavigationDecision(
+        action: StripeCheckoutNavigationAction.allow,
+        reason: isMainFrame
+            ? 'approved_stripe_main_frame_host'
+            : 'approved_stripe_subframe_host',
+        matchedPolicyRule: isMainFrame
+            ? 'exact_main_frame_stripe_host'
+            : 'exact_subframe_stripe_host',
+      );
+    }
+
+    return StripeCheckoutNavigationDecision(
+      action: StripeCheckoutNavigationAction.block,
+      reason: isMainFrame
+          ? 'non_stripe_main_frame_host'
+          : 'non_stripe_subframe_host',
+      matchedPolicyRule: isMainFrame
+          ? 'main_frame_host_not_allowlisted'
+          : 'subframe_host_not_allowlisted',
+    );
   }
 
   StripeCheckoutCallback classifyCallbackUrl(String value) {

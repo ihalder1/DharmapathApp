@@ -49,9 +49,6 @@ class FirebaseMessagingService {
       );
     }
 
-    final token = await _messaging.getToken();
-    if (token == null || token.isEmpty) {}
-
     final initial = await _messaging.getInitialMessage();
     if (initial != null) {}
 
@@ -59,7 +56,7 @@ class FirebaseMessagingService {
   }
 
   static Future<void> _requestPermission() async {
-    final settings = await _messaging.requestPermission(
+    await _messaging.requestPermission(
       alert: true,
       announcement: false,
       badge: true,
@@ -186,6 +183,20 @@ class FirebaseMessagingService {
 
   static Future<void> _registerDeviceAfterLoginSafe(String userId) async {
     try {
+      // On Apple platforms Firebase cannot issue an FCM token until APNs has
+      // supplied its native token. Checking first avoids getToken() throwing
+      // firebase_messaging/apns-token-not-set during a fast app launch.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        final apnsToken = await _messaging.getAPNSToken();
+        if (apnsToken == null || apnsToken.isEmpty) {
+          // Listen now so Firebase can register the device when the token
+          // becomes available, without delaying login or app startup.
+          final deviceId = await getOrCreateDeviceId();
+          await initTokenRefreshListener(userId, deviceId);
+          return;
+        }
+      }
+
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) {
         return;

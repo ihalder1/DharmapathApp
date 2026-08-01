@@ -38,7 +38,17 @@ Future<void> main() {
 
     if (firebaseReady) {
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      await FirebaseMessagingService.initialize();
+      try {
+        await FirebaseMessagingService.initialize();
+      } catch (error, stackTrace) {
+        // Push notifications are optional at startup. A transient native-token
+        // failure must not prevent the Flutter UI from being mounted.
+        SafeLog.error(
+          'firebase_messaging_initialization_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
 
     // Lock orientation to portrait only
@@ -48,11 +58,21 @@ Future<void> main() {
     ]);
 
     // Initialize Stripe (publishable key, url scheme + Android return URL for 3DS / redirects)
-    Stripe.publishableKey = ApiConfig.stripePublishableKey;
-    Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
-    Stripe.urlScheme = 'mantrasutra';
-    Stripe.setReturnUrlSchemeOnAndroid = true;
-    await Stripe.instance.applySettings();
+    const stripeUrlScheme = 'mantrasutra';
+    try {
+      Stripe.publishableKey = ApiConfig.stripePublishableKey;
+      Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
+      Stripe.urlScheme = stripeUrlScheme;
+      Stripe.setReturnUrlSchemeOnAndroid = true;
+      await Stripe.instance.applySettings();
+    } catch (error, stackTrace) {
+      SafeLog.error(
+        'stripe_initialization_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
 
     // Request microphone permission at startup
     await Permission.microphone.request();

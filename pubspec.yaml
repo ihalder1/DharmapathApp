@@ -16,7 +16,7 @@ dependencies:
   
   # Audio Recording & Playback
   record: ^6.2.1
-  audioplayers: ^5.2.1
+  audioplayers: ^6.7.1
   permission_handler: ^12.0.3
   
   # State Management

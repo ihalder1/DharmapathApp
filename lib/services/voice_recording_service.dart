@@ -1120,51 +1120,6 @@ class VoiceRecordingService {
     }
   }
 
-  // Download recording file from backend by name
-  Future<bool> _downloadRecordingFromBackend(String name) async {
-    try {
-      final response = await http
-          .get(
-            Uri.parse(
-              'https://mock-api.colab-app.com/api/recordings/download?name=$name',
-            ),
-            headers: {'Authorization': 'Bearer mock-token'},
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        // Get app directory
-        final directory = await getApplicationDocumentsDirectory();
-        final recordingsDir = Directory('${directory.path}/recordings');
-        if (!await recordingsDir.exists()) {
-          await recordingsDir.create(recursive: true);
-        }
-
-        const extension = 'm4a';
-        final file = File('${recordingsDir.path}/$name.$extension');
-        await file.writeAsBytes(response.bodyBytes);
-
-        // Add to local recordings list
-        final recording = VoiceRecording(
-          id: _uuid.v4(),
-          name: name,
-          language: 'English', // Default, could be enhanced
-          filePath: file.path,
-          createdAt: DateTime.now(),
-        );
-        _recordings.add(recording);
-
-        return true;
-      } else {
-        return false;
-      }
-    } on TimeoutException {
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
   // Sync recordings between local storage and backend
   // Note: loadRecordings() now automatically syncs with backend
   // This method is kept for backward compatibility

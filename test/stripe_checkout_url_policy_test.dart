@@ -82,6 +82,17 @@ void main() {
       }
     });
 
+    test('does not approve js.stripe.com as a main-frame host', () {
+      final decision = policy.decideNavigation(
+        'https://js.stripe.com/v3/lightbox-inner.html',
+        isMainFrame: true,
+      );
+
+      expect(decision.isAllowed, isFalse);
+      expect(decision.reason, 'non_stripe_main_frame_host');
+      expect(decision.matchedPolicyRule, 'main_frame_host_not_allowlisted');
+    });
+
     test('rejects unknown hosts, lookalikes, HTTP, IPs and custom ports', () {
       final rejected = <String>[
         'https://example.com/pay',
@@ -102,6 +113,59 @@ void main() {
       for (final value in rejected) {
         expect(policy.isAllowedStripeNavigation(value), isFalse, reason: value);
       }
+    });
+  });
+
+  group('Stripe non-main-frame navigation', () {
+    test('allows exact approved Stripe HTTPS subframe hosts', () {
+      final accepted = <String>[
+        'https://checkout.stripe.com/c/pay/cs_test_example',
+        'https://js.stripe.com/v3/lightbox-inner-example.html',
+        'https://js.stripe.com:443/v3/lightbox-inner-example.html',
+        'https://hooks.stripe.com/redirect/complete',
+        'https://payments.stripe.com/payment_methods/test_payment',
+        'https://pm-redirects.stripe.com/return/example',
+      ];
+
+      for (final value in accepted) {
+        final decision = policy.decideNavigation(value, isMainFrame: false);
+        expect(decision.isAllowed, isTrue, reason: value);
+        expect(decision.reason, 'approved_stripe_subframe_host', reason: value);
+        expect(
+          decision.matchedPolicyRule,
+          'exact_subframe_stripe_host',
+          reason: value,
+        );
+      }
+    });
+
+    test('blocks insecure, malformed, lookalike and unrelated subframes', () {
+      final rejected = <String>[
+        'http://js.stripe.com/v3/lightbox-inner.html',
+        'https://stripe.com.attacker.example/frame',
+        'https://evilstripe.com/frame',
+        'https://example.com/frame',
+        'https://js.stripe.com.attacker.example/frame',
+        'https://js.stripe.com:8443/frame',
+        'not a url',
+        '',
+      ];
+
+      for (final value in rejected) {
+        final decision = policy.decideNavigation(value, isMainFrame: false);
+        expect(decision.isAllowed, isFalse, reason: value);
+      }
+    });
+
+    test('does not implicitly approve arbitrary stripe.com subdomains', () {
+      final decision = policy.decideNavigation(
+        'https://unapproved.stripe.com/frame',
+        isMainFrame: false,
+      );
+
+      expect(decision.isAllowed, isFalse);
+      expect(decision.reason, 'non_stripe_subframe_host');
+      expect(decision.matchedPolicyRule, 'subframe_host_not_allowlisted');
     });
   });
 

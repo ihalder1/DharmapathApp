@@ -230,7 +230,6 @@ class PaymentService {
         body: bodyExact,
         mergeHeaders: {'Idempotency-Key': idempotencyKey},
       );
-
       PaymentHttpLog.log(
         operation: 'createCheckoutSession',
         method: 'POST',

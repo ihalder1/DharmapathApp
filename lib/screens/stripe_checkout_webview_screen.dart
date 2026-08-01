@@ -1,11 +1,11 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../security/stripe_checkout_url_policy.dart';
+import '../utils/safe_log.dart';
 
 /// Result after closing Stripe Checkout in a WebView (UPI flow — not PaymentSheet).
 class StripeCheckoutWebViewResult {
@@ -56,8 +56,15 @@ class _StripeCheckoutWebViewScreenState
   }
 
   NavigationDecision _handleNavigation(NavigationRequest request) {
+    final uri = Uri.tryParse(request.url);
     final callback = _urlPolicy.classifyCallbackUrl(request.url);
-    if (_finished) return NavigationDecision.prevent;
+    final policyDecision = _urlPolicy.decideNavigation(
+      request.url,
+      isMainFrame: request.isMainFrame,
+    );
+    if (_finished) {
+      return NavigationDecision.prevent;
+    }
 
     switch (callback.type) {
       case StripeCheckoutCallbackType.success:
@@ -71,6 +78,7 @@ class _StripeCheckoutWebViewScreenState
             ),
           );
         } else {
+          SafeLog.warning('stripe_checkout_callback_session_mismatch');
           setState(() {
             _errorMessage = 'The checkout response could not be validated.';
           });
@@ -83,13 +91,23 @@ class _StripeCheckoutWebViewScreenState
         break;
     }
 
-    if (_urlPolicy.isAllowedStripeNavigation(request.url)) {
+    if (policyDecision.isAllowed) {
       return NavigationDecision.navigate;
     }
 
     // mailto:, tel:, arbitrary custom schemes and unknown HTTPS hosts are
     // intentionally rejected. This checkout has no documented need to launch
     // them externally.
+    SafeLog.warning(
+      'stripe_checkout_navigation_blocked',
+      metadata: {
+        'scheme': uri?.scheme,
+        'host': uri?.host,
+        'isMainFrame': request.isMainFrame,
+        'reason': policyDecision.reason,
+        'matchedPolicyRule': policyDecision.matchedPolicyRule,
+      },
+    );
     return NavigationDecision.prevent;
   }
 
@@ -128,6 +146,16 @@ class _StripeCheckoutWebViewScreenState
         NavigationDelegate(
           onNavigationRequest: _handleNavigation,
           onWebResourceError: (error) {
+            final errorUri = Uri.tryParse(error.url ?? '');
+            SafeLog.error(
+              'stripe_checkout_web_resource_failed',
+              metadata: {
+                'host': errorUri?.host,
+                'errorCode': error.errorCode,
+                'errorType': error.errorType?.name,
+                'isForMainFrame': error.isForMainFrame,
+              },
+            );
             if (error.isForMainFrame != true || !mounted || _finished) return;
             setState(() {
               _errorMessage = 'Secure checkout could not be loaded.';
@@ -142,6 +170,15 @@ class _StripeCheckoutWebViewScreenState
 
     if (initialUrl == null ||
         !_urlPolicy.validateSessionId(widget.checkoutSessionId)) {
+      SafeLog.warning(
+        'stripe_checkout_initial_request_rejected',
+        metadata: {
+          'urlValid': initialUrl != null,
+          'sessionIdValid': _urlPolicy.validateSessionId(
+            widget.checkoutSessionId,
+          ),
+        },
+      );
       _errorMessage = 'The checkout link returned by the server is invalid.';
       return;
     }

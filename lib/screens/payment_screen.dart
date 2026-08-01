@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 import '../constants/app_colors.dart';
@@ -9,6 +10,7 @@ import '../services/notification_service.dart';
 import '../services/song_service.dart';
 import '../models/mantra.dart';
 import '../security/payment_identifiers.dart';
+import '../utils/safe_log.dart';
 import 'stripe_checkout_webview_screen.dart';
 
 enum _PaymentPhase {
@@ -129,7 +131,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _ensurePaymentIntentForCard() async {
-    if (_clientSecret != null && _paymentIntentId != null) return;
+    if (_clientSecret != null && _paymentIntentId != null) {
+      return;
+    }
 
     final products = _checkoutProducts();
     if (products.isEmpty) {
@@ -214,7 +218,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
         currency: currency,
         songIds: songIds,
       );
-    } catch (e) {}
+    } catch (e, stackTrace) {
+      SafeLog.error(
+        'purchase_finalization_metadata_failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
 
     final purchasedItems = List<Mantra>.from(widget.cartItems);
     for (final mantra in purchasedItems) {
@@ -304,7 +314,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _busyAction = null;
         });
       }
-    } on StripeException catch (e) {
+    } on StripeException catch (e, stackTrace) {
       if (e.error.code == FailureCode.Canceled) {
         if (mounted) {
           setState(() {
@@ -315,6 +325,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
         }
         return;
       }
+      SafeLog.error(
+        'stripe_card_payment_failed',
+        error: e,
+        stackTrace: stackTrace,
+        metadata: {
+          'failureCode': e.error.code.name,
+          'stripeErrorCode': e.error.stripeErrorCode,
+          'declineCode': e.error.declineCode,
+          'errorType': e.error.type,
+        },
+      );
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -323,7 +344,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
               e.error.message ?? 'Payment failed. Please try again.';
         });
       }
+    } on PlatformException catch (e, stackTrace) {
+      SafeLog.error(
+        'stripe_card_platform_failure',
+        error: e,
+        stackTrace: stackTrace,
+        metadata: {'code': e.code},
+      );
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _busyAction = null;
+          _errorMessage = 'Payment failed. Please try again.';
+        });
+      }
     } catch (e, stackTrace) {
+      SafeLog.error('card_payment_failed', error: e, stackTrace: stackTrace);
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -486,6 +522,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         });
       }
     } catch (e, stackTrace) {
+      SafeLog.error('upi_payment_failed', error: e, stackTrace: stackTrace);
       if (mounted) {
         setState(() {
           _isLoading = false;
