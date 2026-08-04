@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import '../security/payment_identifiers.dart';
 import 'auth_service.dart';
@@ -14,6 +16,129 @@ class PaymentService {
       'Flutter WebView. Set success_url to '
       'mantrasutra://payment/success?session_id={CHECKOUT_SESSION_ID} and '
       'cancel_url to mantrasutra://payment/cancel.';
+
+  // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+  static String _sanitizeUpiDiagnosticText(Object? value) {
+    if (value == null) return 'null';
+    var sanitized = value.toString();
+    sanitized = sanitized.replaceAll(
+      RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(
+        r'(authorization|access[_-]?token|refresh[_-]?token|token|cookie|secret|email|phone|address)\s*[:=]\s*[^\s,;}]+',
+        caseSensitive: false,
+      ),
+      '[REDACTED_SENSITIVE_FIELD]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\b(?:pk|sk)_(?:live|test)_[A-Za-z0-9_]+\b'),
+      '[REDACTED_STRIPE_KEY]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'https?://[^\s,;}]+', caseSensitive: false),
+      '[REDACTED_URL]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\b[^\s@]+@[^\s@]+\.[^\s@]+\b'),
+      '[REDACTED_EMAIL]',
+    );
+    return sanitized.length <= 500
+        ? sanitized
+        : '${sanitized.substring(0, 500)}...[TRUNCATED]';
+  }
+
+  // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+  static Map<String, dynamic> _sanitizedCheckoutSessionResponse(
+    String responseBody,
+    Map<String, String> responseHeaders,
+  ) {
+    try {
+      final decoded = json.decode(responseBody);
+      if (decoded is! Map) {
+        return {
+          'success': false,
+          'errorCode': 'non_object_response',
+          'checkoutSessionIdPresent': false,
+          'checkoutUrlPresent': false,
+        };
+      }
+      final root = Map<String, dynamic>.from(decoded);
+      final data = root['data'] is Map
+          ? Map<String, dynamic>.from(root['data'] as Map)
+          : const <String, dynamic>{};
+      final nestedError = root['error'];
+      final error = nestedError is Map
+          ? Map<String, dynamic>.from(nestedError)
+          : const <String, dynamic>{};
+      final errorCode =
+          root['errorCode'] ??
+          root['error_code'] ??
+          root['code'] ??
+          error['code'];
+      final errorType =
+          root['errorType'] ?? root['error_type'] ?? error['type'];
+      final errorMessage =
+          root['errorMessage'] ??
+          root['error_message'] ??
+          root['message'] ??
+          error['message'];
+      final stripeRequestId =
+          root['stripeRequestId'] ??
+          root['stripe_request_id'] ??
+          root['requestId'] ??
+          root['request_id'] ??
+          data['stripeRequestId'] ??
+          data['stripe_request_id'] ??
+          responseHeaders['stripe-request-id'] ??
+          responseHeaders['request-id'];
+      final checkoutSessionId =
+          root['checkoutSessionId'] ??
+          root['checkout_session_id'] ??
+          root['sessionId'] ??
+          root['session_id'] ??
+          data['checkoutSessionId'] ??
+          data['checkout_session_id'] ??
+          data['sessionId'] ??
+          data['session_id'];
+      final checkoutUrl =
+          root['checkoutUrl'] ??
+          root['checkout_url'] ??
+          root['url'] ??
+          data['checkoutUrl'] ??
+          data['checkout_url'] ??
+          data['url'];
+      return {
+        'success': root['success'],
+        'error': nestedError is bool ? nestedError : nestedError != null,
+        'errorCode': errorCode == null
+            ? null
+            : _sanitizeUpiDiagnosticText(errorCode),
+        'errorType': errorType == null
+            ? null
+            : _sanitizeUpiDiagnosticText(errorType),
+        'errorMessage': errorMessage == null
+            ? null
+            : _sanitizeUpiDiagnosticText(errorMessage),
+        'stripeRequestId': stripeRequestId == null
+            ? null
+            : _sanitizeUpiDiagnosticText(stripeRequestId),
+        'checkoutSessionIdPresent':
+            checkoutSessionId != null &&
+            checkoutSessionId.toString().isNotEmpty,
+        'checkoutUrlPresent':
+            checkoutUrl != null && checkoutUrl.toString().isNotEmpty,
+      }..removeWhere((_, value) => value == null);
+    } catch (_) {
+      return {
+        'success': false,
+        'errorCode': 'unparseable_response',
+        'checkoutSessionIdPresent': false,
+        'checkoutUrlPresent': false,
+      };
+    }
+  }
 
   /// Create Payment Intent (card).
   /// Body: `{ "_instructions", "currency", "products": [ { "productId", "productName", "unitAmount" } ] }`.
@@ -225,10 +350,43 @@ class PaymentService {
       };
       bodyExact = json.encode(requestBody);
 
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      final endpointUri = Uri.parse(url);
+      final productIds = products
+          .map((product) => product['productId'])
+          .whereType<String>()
+          .toList(growable: false);
+      final amountSmallestUnit = products.fold<int>(0, (sum, product) {
+        final unitAmount = product['unitAmount'];
+        return sum + (unitAmount is int ? unitAmount : 0);
+      });
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] Checkout-session request prepared; method=POST; '
+        'endpoint=${ApiConfig.createCheckoutSessionEndpoint}; '
+        'backendHost=${endpointUri.host}; '
+        'requestFieldNames=${requestBody.keys.toList(growable: false)}; '
+        'productFieldNames=${products.isEmpty ? const <String>[] : products.first.keys.toList(growable: false)}; '
+        'amountSmallestUnit=$amountSmallestUnit; '
+        'currency=${currency.toLowerCase()}; quantity=${products.length}; '
+        'paymentMethodType=upi; productIds=$productIds; '
+        'orderId=$idempotencyKey',
+      );
+      debugPrint('[STRIPE_UPI_DEBUG] Stage backend request sent=true');
+
       final response = await AuthenticatedHttp.paymentPost(
         Uri.parse(url),
         body: bodyExact,
         mergeHeaders: {'Idempotency-Key': idempotencyKey},
+      );
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint('[STRIPE_UPI_DEBUG] Stage backend response received=true');
+      final sanitizedResponse = _sanitizedCheckoutSessionResponse(
+        response.body,
+        response.headers,
+      );
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] Checkout-session backend response; '
+        'statusCode=${response.statusCode}; sanitizedBody=$sanitizedResponse',
       );
       PaymentHttpLog.log(
         operation: 'createCheckoutSession',
@@ -245,14 +403,25 @@ class PaymentService {
         return json.decode(response.body) as Map<String, dynamic>;
       }
       return null;
-    } catch (e, stackTrace) {
+    } catch (error, stackTrace) {
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] Checkout-session exception; '
+        'runtimeType=${error.runtimeType}; '
+        'httpExceptionType=${error is http.ClientException ? error.runtimeType : 'not_http_client_exception'}; '
+        'statusCode=unavailable; '
+        'endpoint=${ApiConfig.createCheckoutSessionEndpoint}; '
+        'message=${_sanitizeUpiDiagnosticText(error)}; '
+        'sanitizedResponse=unavailable',
+      );
+      debugPrint('[STRIPE_UPI_DEBUG] Stack trace:\n$stackTrace');
       PaymentHttpLog.logError(
         operation: 'createCheckoutSession',
         method: 'POST',
         urlExact: url,
         requestHeaders: headers,
         requestBodyExact: bodyExact,
-        error: e,
+        error: error,
         stackTrace: stackTrace,
       );
       return null;

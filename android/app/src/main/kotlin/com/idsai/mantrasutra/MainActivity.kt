@@ -1,4 +1,4 @@
-package com.example.colab_app_ui
+package com.idsai.mantrasutra
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

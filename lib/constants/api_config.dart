@@ -1,10 +1,12 @@
 class ApiConfig {
   // Base API URL
-  static const String baseUrl = 'https://d2d52ldvp3fzee.cloudfront.net/v1';
+  // Development: https://api-online.prod.mantrasutra.ids-ai.net/v1
+  static const String baseUrl = 'https://api-online.mantrasutra.ids-ai.net/v1';
 
   // Payment Base URL
+  // Development: https://api-online.prod.mantrasutra.ids-ai.net/v1
   static const String paymentBaseUrl =
-      'https://d2d52ldvp3fzee.cloudfront.net/v1';
+      'https://api-online.mantrasutra.ids-ai.net/v1';
 
   // Auth endpoints
   static const String googleSignInEndpoint = '/auth/google-signin';
@@ -27,8 +29,9 @@ class ApiConfig {
   static const String generateMantraEndpoint = '/auth/profile/generate-mantra';
 
   /// Async mantra generation job (prod).
+  // Development: https://api-online.prod.mantrasutra.ids-ai.net/prod
   static const String createJobBaseUrl =
-      'https://d2d52ldvp3fzee.cloudfront.net/prod';
+      'https://api-online.mantrasutra.ids-ai.net/prod';
   static const String createJobEndpoint = '/create-job';
 
   // Voice Recording endpoint
@@ -54,14 +57,14 @@ class ApiConfig {
 
   // Google OAuth Configuration
   static const String googleClientId =
-      '333289829093-pg9e6o14ulmqflanirvosu9qgpjdbt3p.apps.googleusercontent.com';
+      '305683539721-g6t0uenf1tnqla74j4e04g2q3cm2r1ct.apps.googleusercontent.com';
 
   // Facebook App Configuration (for native SDK)
-  static const String facebookAppId = '25154563447566829';
+  static const String facebookAppId = '1682167649562322';
 
   // Stripe Configuration
   static const String stripePublishableKey =
-      'pk_test_51SYdd7RAucXK6Yre6JYajbvLMAN1XDV0CPZeg6mhHbc1T8ho0xRGabKUmj03NqEypK0anKga8puVJb8nWePzrVN600NJ7Tv81s';
+      'pk_live_51Th7j07TBSV3YzcAwVE7AkIr1XrhgR4bxPEhTkHq7w1dIwXaR274C9fsbztvEoLkuNkCiiZazRtEDa91shaWT2ZC007ORUXb6s';
 
   // Headers
   static Map<String, String> getHeaders({String? accessToken}) {

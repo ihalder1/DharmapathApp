@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
+import '../constants/api_config.dart';
 import '../constants/app_colors.dart';
 import '../services/payment_service.dart';
 import '../services/auth_service.dart';
@@ -390,6 +391,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   int get _checkoutUnitCount => widget.cartItems.length;
 
   Future<void> _handleUpiCheckout() async {
+    // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+    final backendHost = Uri.parse(ApiConfig.paymentBaseUrl).host;
+    debugPrint(
+      '[STRIPE_UPI_DEBUG] UPI checkout started; '
+      'amount=${widget.totalAmount}; currency=${widget.currencyCode}; '
+      'productCount=${widget.cartItems.length}; backendHost=$backendHost',
+    );
     setState(() {
       _isLoading = true;
       _busyAction = 'upi';
@@ -434,6 +442,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
         'session_id',
       ]);
 
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] Stage checkout session ID received='
+        '${checkoutSessionId != null}',
+      );
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] Stage checkout URL received=${checkoutUrl != null}',
+      );
+
       if (checkoutUrl == null || checkoutSessionId == null) {
         throw Exception('Invalid checkout session response from server');
       }
@@ -452,6 +469,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       if (!mounted) return;
 
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint('[STRIPE_UPI_DEBUG] Stage WebView opening attempted=true');
       final result = await Navigator.of(context)
           .push<StripeCheckoutWebViewResult>(
             MaterialPageRoute(
@@ -521,13 +540,20 @@ class _PaymentScreenState extends State<PaymentScreen> {
           _busyAction = null;
         });
       }
-    } catch (e, stackTrace) {
-      SafeLog.error('upi_payment_failed', error: e, stackTrace: stackTrace);
+    } catch (error, stackTrace) {
+      // TEMPORARY STRIPE UPI DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[STRIPE_UPI_DEBUG] UPI checkout handler exception; '
+        'runtimeType=${error.runtimeType}; messageType=sanitized_by_service; '
+        'stackTraceFollows=true',
+      );
+      debugPrint('[STRIPE_UPI_DEBUG] Stack trace:\n$stackTrace');
+      SafeLog.error('upi_payment_failed', error: error, stackTrace: stackTrace);
       if (mounted) {
         setState(() {
           _isLoading = false;
           _busyAction = null;
-          _errorMessage = e.toString();
+          _errorMessage = error.toString();
         });
       }
     }

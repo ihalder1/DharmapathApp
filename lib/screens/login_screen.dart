@@ -268,16 +268,28 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _handleGoogleSignIn() async {
-    await _performSignIn(() => context.read<AuthService>().signInWithGoogle());
+    // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+    await _performSignIn(() async {
+      final result = await context.read<AuthService>().signInWithGoogle();
+      debugPrint('[GOOGLE_AUTH_DEBUG] UI caller received result=$result');
+      return result;
+    }, googleAuthDiagnostics: true);
   }
 
   Future<void> _handleFacebookSignIn() async {
-    await _performSignIn(
-      () => context.read<AuthService>().signInWithFacebook(),
-    );
+    // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+    await _performSignIn(() async {
+      final result = await context.read<AuthService>().signInWithFacebook();
+      debugPrint('[FACEBOOK_AUTH_DEBUG] UI caller received result=$result');
+      return result;
+    }, facebookAuthDiagnostics: true);
   }
 
-  Future<void> _performSignIn(Future<bool> Function() signInFunction) async {
+  Future<void> _performSignIn(
+    Future<bool> Function() signInFunction, {
+    bool googleAuthDiagnostics = false,
+    bool facebookAuthDiagnostics = false,
+  }) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
@@ -306,6 +318,20 @@ class _LoginScreenState extends State<LoginScreen>
         // AuthWrapper will rebuild and show HomeScreen; clear spinner if still mounted.
         clearLoading();
       } else {
+        // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+        if (googleAuthDiagnostics) {
+          debugPrint(
+            '[GOOGLE_AUTH_DEBUG] UI entering generic sign-in error branch; '
+            'message="Sign in failed. Please try again."',
+          );
+        }
+        // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+        if (facebookAuthDiagnostics) {
+          debugPrint(
+            '[FACEBOOK_AUTH_DEBUG] UI entering generic sign-in error branch; '
+            'message="Sign in failed. Please try again."',
+          );
+        }
         if (mounted) {
           setState(() {
             _errorMessage = 'Sign in failed. Please try again.';

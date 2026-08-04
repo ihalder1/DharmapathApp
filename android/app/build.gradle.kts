@@ -39,7 +39,7 @@ if (isReleaseBuildRequested && (!keyPropertiesFile.exists() || missingSigningPro
 }
 
 android {
-    namespace = "com.example.colab_app_ui"
+    namespace = "com.idsai.mantrasutra"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -49,7 +49,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.colab_app_ui"
+        applicationId = "com.idsai.mantrasutra"
         minSdk = 29
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

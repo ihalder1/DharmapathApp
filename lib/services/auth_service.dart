@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
@@ -98,22 +99,47 @@ class AuthService extends ChangeNotifier {
 
   // Google Sign In
   Future<bool> signInWithGoogle() async {
+    // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+    final configuredClientId = kIsWeb ? ApiConfig.googleClientId : null;
+    final configuredServerClientId = ApiConfig.googleClientId;
+    debugPrint(
+      '[GOOGLE_AUTH_DEBUG] Sign-in started; platform='
+      '${kIsWeb ? 'web' : defaultTargetPlatform.name}; '
+      'clientId=${_clientIdDiagnostic(configuredClientId)}; '
+      'serverClientId=${_clientIdDiagnostic(configuredServerClientId)}',
+    );
     try {
       // Sign out first to ensure a fresh sign-in
       await _googleSignIn.signOut();
 
       // Trigger the authentication flow
+      debugPrint('[GOOGLE_AUTH_DEBUG] Opening native Google account chooser');
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      debugPrint(
+        '[GOOGLE_AUTH_DEBUG] Google account object returned='
+        '${googleUser != null}',
+      );
 
       if (googleUser == null) {
+        debugPrint('[GOOGLE_AUTH_DEBUG] User cancelled Google Sign-In');
         return false;
       }
 
       // Obtain the auth details from the request
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+      debugPrint(
+        '[GOOGLE_AUTH_DEBUG] Google authentication received; '
+        'idTokenPresent=${googleAuth.idToken != null}; '
+        'idTokenLength=${googleAuth.idToken?.length ?? 0}; '
+        'accessTokenPresent=${googleAuth.accessToken != null}; '
+        'accessTokenLength=${googleAuth.accessToken?.length ?? 0}',
+      );
 
       if (googleAuth.idToken == null) {
+        debugPrint(
+          '[GOOGLE_AUTH_DEBUG] Cannot call backend: idToken is absent',
+        );
         return false;
       }
 
@@ -142,7 +168,17 @@ class AuthService extends ChangeNotifier {
           );
         }
 
-        await _saveSession();
+        try {
+          await _saveSession();
+          debugPrint(
+            '[GOOGLE_AUTH_DEBUG] Application token storage succeeded=true',
+          );
+        } catch (_) {
+          debugPrint(
+            '[GOOGLE_AUTH_DEBUG] Application token storage succeeded=false',
+          );
+          rethrow;
+        }
 
         // Verify final state before notifying
         final finalIsLoggedIn = _currentUser != null && _accessToken != null;
@@ -155,18 +191,161 @@ class AuthService extends ChangeNotifier {
         _accessToken = null;
         return false;
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      if (error is PlatformException &&
+          const {
+            'canceled',
+            'cancelled',
+            'sign_in_canceled',
+            'sign_in_cancelled',
+          }.contains(error.code.toLowerCase())) {
+        debugPrint('[GOOGLE_AUTH_DEBUG] User cancelled Google Sign-In');
+        _currentUser = null;
+        return false;
+      }
+      debugPrint(
+        '[GOOGLE_AUTH_DEBUG] Google Sign-In exception; '
+        'type=${error.runtimeType}; '
+        'message=${_sanitizeDiagnosticMessage(error.toString())}',
+      );
+      if (error is PlatformException) {
+        debugPrint(
+          '[GOOGLE_AUTH_DEBUG] PlatformException; code=${error.code}; '
+          'message=${_sanitizeDiagnosticMessage(error.message)}',
+        );
+      }
+      debugPrint('[GOOGLE_AUTH_DEBUG] Stack trace:\n$stackTrace');
       _currentUser = null;
       return false;
     }
   }
 
+  // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+  String _clientIdDiagnostic(String? clientId) {
+    if (clientId == null) return 'null';
+    final suffix = clientId.length <= 8
+        ? clientId
+        : clientId.substring(clientId.length - 8);
+    return 'configured(last8=$suffix)';
+  }
+
+  // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+  String _sanitizeDiagnosticMessage(Object? message) {
+    if (message == null) return 'null';
+    var sanitized = message.toString();
+    sanitized = sanitized.replaceAll(
+      RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(
+        r'(access[_-]?token|refresh[_-]?token|token|authorization|cookie|secret)\s*[:=]\s*[^\s,;}]+',
+        caseSensitive: false,
+      ),
+      '[REDACTED_SENSITIVE_FIELD]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'),
+      '[REDACTED_TOKEN]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\b[A-Za-z0-9_+\-/=]{40,}\b'),
+      '[REDACTED_LONG_VALUE]',
+    );
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\b[^\s@]+@[^\s@]+\.[^\s@]+\b'),
+      '[REDACTED_EMAIL]',
+    );
+    return sanitized.length <= 500
+        ? sanitized
+        : '${sanitized.substring(0, 500)}...[TRUNCATED]';
+  }
+
+  // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+  Map<String, dynamic> _sanitizedGoogleAuthResponse(String responseBody) {
+    try {
+      final decoded = json.decode(responseBody);
+      if (decoded is! Map) {
+        return {'error': true, 'errorCode': 'non_object_response'};
+      }
+      final body = Map<String, dynamic>.from(decoded);
+      final nestedError = body['error'];
+      final errorMap = nestedError is Map
+          ? Map<String, dynamic>.from(nestedError)
+          : const <String, dynamic>{};
+      final rawErrorMessage =
+          body['errorMessage'] ?? body['message'] ?? errorMap['message'];
+      final rawErrorCode =
+          body['errorCode'] ?? body['code'] ?? errorMap['code'];
+      return {
+        'success': body['success'],
+        'error': nestedError is bool ? nestedError : body['error'] != null,
+        'errorCode': rawErrorCode == null
+            ? null
+            : _sanitizeDiagnosticMessage(rawErrorCode),
+        'errorMessage': rawErrorMessage == null
+            ? null
+            : _sanitizeDiagnosticMessage(rawErrorMessage),
+      }..removeWhere((_, value) => value == null);
+    } catch (_) {
+      return {'error': true, 'errorCode': 'unparseable_response'};
+    }
+  }
+
   // Facebook Sign In
   Future<bool> signInWithFacebook() async {
+    // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+    const configuredAppId = ApiConfig.facebookAppId;
+    final appIdSuffix = configuredAppId.length <= 6
+        ? configuredAppId
+        : configuredAppId.substring(configuredAppId.length - 6);
+    final clientTokenConfigured =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    debugPrint(
+      '[FACEBOOK_AUTH_DEBUG] Sign-in started; '
+      'platform=${kIsWeb ? 'web' : defaultTargetPlatform.name}; '
+      'appIdConfigured=${configuredAppId.isNotEmpty}; '
+      'appIdLast6=$appIdSuffix; '
+      'clientTokenConfigured=$clientTokenConfigured',
+    );
     try {
-      final LoginResult result = await FacebookAuth.instance.login(
-        permissions: ['email', 'public_profile'],
+      const requestedPermissions = ['email', 'public_profile'];
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Opening native/web Facebook login flow; '
+        'requestedPermissions=$requestedPermissions',
       );
+      final LoginResult result = await FacebookAuth.instance.login(
+        permissions: requestedPermissions,
+      );
+
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Facebook login result; '
+        'status=${result.status.name}; '
+        'accessTokenPresent=${result.accessToken != null}; '
+        'accessTokenLength=${result.accessToken?.tokenString.length ?? 0}; '
+        'message=${_sanitizeDiagnosticMessage(result.message)}; '
+        'errorCodeUnavailable=true',
+      );
+      switch (result.status) {
+        case LoginStatus.success:
+          debugPrint('[FACEBOOK_AUTH_DEBUG] Login status branch=success');
+          break;
+        case LoginStatus.cancelled:
+          debugPrint('[FACEBOOK_AUTH_DEBUG] Login status branch=cancelled');
+          break;
+        case LoginStatus.failed:
+          debugPrint('[FACEBOOK_AUTH_DEBUG] Login status branch=failed');
+          break;
+        case LoginStatus.operationInProgress:
+          debugPrint(
+            '[FACEBOOK_AUTH_DEBUG] Login status branch=operationInProgress',
+          );
+          break;
+      }
 
       if (result.status == LoginStatus.success && result.accessToken != null) {
         final String? facebookAccessToken = result.accessToken!.tokenString;
@@ -235,9 +414,53 @@ class AuthService extends ChangeNotifier {
       } else {
         return false;
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Facebook Sign-In exception; '
+        'type=${error.runtimeType}; '
+        'message=${_sanitizeDiagnosticMessage(error.toString())}',
+      );
+      if (error is PlatformException) {
+        debugPrint(
+          '[FACEBOOK_AUTH_DEBUG] PlatformException; code=${error.code}; '
+          'message=${_sanitizeDiagnosticMessage(error.message)}',
+        );
+      }
+      debugPrint('[FACEBOOK_AUTH_DEBUG] Stack trace:\n$stackTrace');
       _currentUser = null;
       return false;
+    }
+  }
+
+  // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+  Map<String, dynamic> _sanitizedFacebookAuthResponse(String responseBody) {
+    try {
+      final decoded = json.decode(responseBody);
+      if (decoded is! Map) {
+        return {'error': true, 'errorCode': 'non_object_response'};
+      }
+      final body = Map<String, dynamic>.from(decoded);
+      final nestedError = body['error'];
+      final errorMap = nestedError is Map
+          ? Map<String, dynamic>.from(nestedError)
+          : const <String, dynamic>{};
+      final rawErrorCode =
+          body['errorCode'] ?? body['code'] ?? errorMap['code'];
+      final rawErrorMessage =
+          body['errorMessage'] ?? body['message'] ?? errorMap['message'];
+      return {
+        'success': body['success'],
+        'error': nestedError is bool ? nestedError : body['error'] != null,
+        'errorCode': rawErrorCode == null
+            ? null
+            : _sanitizeDiagnosticMessage(rawErrorCode),
+        'errorMessage': rawErrorMessage == null
+            ? null
+            : _sanitizeDiagnosticMessage(rawErrorMessage),
+      }..removeWhere((_, value) => value == null);
+    } catch (_) {
+      return {'error': true, 'errorCode': 'unparseable_response'};
     }
   }
 
@@ -254,6 +477,14 @@ class AuthService extends ChangeNotifier {
         },
       });
 
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      final baseUri = Uri.parse(ApiConfig.baseUrl);
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Calling backend; '
+        'endpoint=${ApiConfig.facebookSignInEndpoint}; '
+        'baseUrlHost=${baseUri.host}; '
+        'requestTokenNonEmpty=${facebookAccessToken.isNotEmpty}',
+      );
       final response = await http
           .post(
             Uri.parse(
@@ -263,6 +494,12 @@ class AuthService extends ChangeNotifier {
             body: requestBody,
           )
           .timeout(const Duration(seconds: 60));
+
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Backend response; status=${response.statusCode}; '
+        'sanitizedBody=${_sanitizedFacebookAuthResponse(response.body)}',
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> responseData;
@@ -358,7 +595,21 @@ class AuthService extends ChangeNotifier {
       } else {
         return false;
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      // TEMPORARY FACEBOOK AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      debugPrint(
+        '[FACEBOOK_AUTH_DEBUG] Backend request exception; '
+        'type=${error.runtimeType}; '
+        'message=${_sanitizeDiagnosticMessage(error.toString())}; '
+        'endpoint=${ApiConfig.facebookSignInEndpoint}',
+      );
+      if (error is PlatformException) {
+        debugPrint(
+          '[FACEBOOK_AUTH_DEBUG] PlatformException; code=${error.code}; '
+          'message=${_sanitizeDiagnosticMessage(error.message)}',
+        );
+      }
+      debugPrint('[FACEBOOK_AUTH_DEBUG] Stack trace:\n$stackTrace');
       return false;
     }
   }
@@ -422,6 +673,15 @@ class AuthService extends ChangeNotifier {
       });
 
       // Make API call to backend
+      // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      if (provider == 'google') {
+        final baseUri = Uri.parse(ApiConfig.baseUrl);
+        debugPrint(
+          '[GOOGLE_AUTH_DEBUG] Calling backend; '
+          'endpoint=${ApiConfig.googleSignInEndpoint}; '
+          'baseUrlHost=${baseUri.host}; requestTokenNonEmpty=${idToken.isNotEmpty}',
+        );
+      }
       final response = await http
           .post(
             Uri.parse('${ApiConfig.baseUrl}${ApiConfig.googleSignInEndpoint}'),
@@ -429,6 +689,13 @@ class AuthService extends ChangeNotifier {
             body: requestBody,
           )
           .timeout(const Duration(seconds: 30));
+
+      if (provider == 'google') {
+        debugPrint(
+          '[GOOGLE_AUTH_DEBUG] Backend response; status=${response.statusCode}; '
+          'sanitizedBody=${_sanitizedGoogleAuthResponse(response.body)}',
+        );
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
@@ -510,7 +777,23 @@ class AuthService extends ChangeNotifier {
       } else {
         return false;
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      // TEMPORARY GOOGLE AUTH DIAGNOSTICS — REMOVE BEFORE RELEASE
+      if (provider == 'google') {
+        debugPrint(
+          '[GOOGLE_AUTH_DEBUG] Backend request exception; '
+          'type=${error.runtimeType}; '
+          'message=${_sanitizeDiagnosticMessage(error.toString())}; '
+          'endpoint=${ApiConfig.googleSignInEndpoint}',
+        );
+        if (error is PlatformException) {
+          debugPrint(
+            '[GOOGLE_AUTH_DEBUG] PlatformException; code=${error.code}; '
+            'message=${_sanitizeDiagnosticMessage(error.message)}',
+          );
+        }
+        debugPrint('[GOOGLE_AUTH_DEBUG] Stack trace:\n$stackTrace');
+      }
       return false;
     }
   }
