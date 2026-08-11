@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
 import '../constants/api_config.dart';
@@ -7,12 +8,19 @@ import 'mantra_sync_service.dart';
 import 'authenticated_http.dart';
 import 'location_pricing_service.dart';
 import 'song_service.dart';
+import 'cart_quantity_policy.dart' as cart_quantity_policy;
 
 class MantraService {
   static const int maxCartTotalQuantity = 30;
 
   static List<Mantra> _mantras = [];
   static List<Mantra> _cart = [];
+
+  @visibleForTesting
+  static TargetPlatform? debugTargetPlatformOverride;
+
+  static bool get supportsMultipleCartQuantity => cart_quantity_policy
+      .supportsMultipleCartQuantity(platform: debugTargetPlatformOverride);
 
   /// Whether [additional] more unit(s) can be added without exceeding [maxCartTotalQuantity].
   static bool canAddCartUnits([int additional = 1]) {
@@ -131,14 +139,21 @@ class MantraService {
 
   // Add mantra to cart (quantity 1). Returns false if cart is at [maxCartTotalQuantity].
   static Future<bool> addToCart(Mantra mantra) async {
-    if (!canAddCartUnits(1)) return false;
-
     final existingIndex = _cart.indexWhere((item) => item.name == mantra.name);
     if (existingIndex != -1) {
+      if (!supportsMultipleCartQuantity) {
+        if (_cart[existingIndex].cartQuantity != 1) {
+          _cart[existingIndex] = _cart[existingIndex].copyWith(cartQuantity: 1);
+          await _saveCart();
+        }
+        return false;
+      }
+      if (!canAddCartUnits(1)) return false;
       _cart[existingIndex] = _cart[existingIndex].copyWith(
         cartQuantity: _cart[existingIndex].cartQuantity + 1,
       );
     } else {
+      if (!canAddCartUnits(1)) return false;
       _cart.add(mantra.copyWith(isInCart: true, cartQuantity: 1));
       final index = _mantras.indexWhere((item) => item.name == mantra.name);
       if (index != -1) {
@@ -150,12 +165,18 @@ class MantraService {
   }
 
   static Future<bool> incrementCartQuantity(Mantra mantra) async {
-    if (!canAddCartUnits(1)) return false;
-
     final index = _cart.indexWhere((item) => item.name == mantra.name);
     if (index == -1) {
       return addToCart(mantra);
     }
+    if (!supportsMultipleCartQuantity) {
+      if (_cart[index].cartQuantity != 1) {
+        _cart[index] = _cart[index].copyWith(cartQuantity: 1);
+        await _saveCart();
+      }
+      return false;
+    }
+    if (!canAddCartUnits(1)) return false;
     _cart[index] = _cart[index].copyWith(
       cartQuantity: _cart[index].cartQuantity + 1,
     );
@@ -167,7 +188,7 @@ class MantraService {
     final index = _cart.indexWhere((item) => item.name == mantra.name);
     if (index == -1) return;
     final qty = _cart[index].cartQuantity;
-    if (qty <= 1) {
+    if (!supportsMultipleCartQuantity || qty <= 1) {
       await removeFromCart(mantra);
     } else {
       _cart[index] = _cart[index].copyWith(cartQuantity: qty - 1);
@@ -183,11 +204,17 @@ class MantraService {
 
   /// Total units across all cart lines (e.g. 2 mantras × 3 each = 6).
   static int getCartTotalQuantity() {
+    if (!supportsMultipleCartQuantity) return _cart.length;
     return _cart.fold(0, (sum, m) => sum + m.cartQuantity);
   }
 
   /// One entry per purchased unit (for payment APIs and song_ids).
   static List<Mantra> expandCartForCheckout() {
+    if (!supportsMultipleCartQuantity) {
+      return _cart
+          .map((mantra) => mantra.copyWith(cartQuantity: 1))
+          .toList(growable: false);
+    }
     final expanded = <Mantra>[];
     for (final m in _cart) {
       for (var i = 0; i < m.cartQuantity; i++) {
@@ -239,9 +266,34 @@ class MantraService {
     await _saveCart();
   }
 
+  /// Removes only Android cart rows completed by a paid Google Play order.
+  static Future<void> removeCartProductsByStoreIds(
+    Iterable<String> storeProductIds,
+  ) async {
+    final ids = storeProductIds.map((id) => id.trim()).toSet();
+    if (ids.isEmpty) return;
+    _cart.removeWhere(
+      (item) => ids.contains(item.storeProductIdAndroid?.trim()),
+    );
+    for (var index = 0; index < _mantras.length; index++) {
+      final storeId = _mantras[index].storeProductIdAndroid?.trim();
+      if (storeId != null && ids.contains(storeId)) {
+        _mantras[index] = _mantras[index].copyWith(isInCart: false);
+      }
+    }
+    await _saveCart();
+  }
+
   // Save cart to SharedPreferences
   static Future<void> _saveCart() async {
     try {
+      if (!supportsMultipleCartQuantity) {
+        final seen = <String>{};
+        _cart = _cart
+            .where((mantra) => seen.add(mantra.name))
+            .map((mantra) => mantra.copyWith(cartQuantity: 1))
+            .toList();
+      }
       final prefs = await SharedPreferences.getInstance();
       final cartNames = _cart.map((m) => m.name).toList();
       await prefs.setStringList('cart_items', cartNames);
@@ -299,7 +351,11 @@ class MantraService {
       }
 
       _cart.clear();
+      final restoredNames = <String>{};
       for (final name in cartNames) {
+        if (!supportsMultipleCartQuantity && !restoredNames.add(name)) {
+          continue;
+        }
         final mantra = _mantras.firstWhere(
           (m) => m.name == name,
           orElse: () =>
@@ -309,7 +365,13 @@ class MantraService {
         if (mantra.mantraFile.isNotEmpty) {
           final qty = savedQuantities[name] ?? 1;
           _cart.add(
-            mantra.copyWith(isInCart: true, cartQuantity: qty < 1 ? 1 : qty),
+            mantra.copyWith(
+              isInCart: true,
+              cartQuantity: cart_quantity_policy.normalizedCartQuantity(
+                qty,
+                platform: debugTargetPlatformOverride,
+              ),
+            ),
           );
           final index = _mantras.indexWhere((item) => item.name == mantra.name);
           if (index != -1) {

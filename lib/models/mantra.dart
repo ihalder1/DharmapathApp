@@ -4,6 +4,7 @@ class Mantra {
   final String name;
   final String mantraFile;
   final String icon;
+  final String? storeProductIdAndroid;
   // final int playtime; // in seconds - COMMENTED OUT
   final double price;
   final String currencyCode;
@@ -19,6 +20,7 @@ class Mantra {
     required this.name,
     required this.mantraFile,
     required this.icon,
+    this.storeProductIdAndroid,
     // required this.playtime, // COMMENTED OUT
     required this.price,
     this.currencyCode = 'INR',
@@ -57,6 +59,7 @@ class Mantra {
       name: json['name'] ?? '',
       mantraFile: json['mantra_file'] ?? '',
       icon: json['icon'] ?? '',
+      storeProductIdAndroid: _optionalString(json['store_product_id_android']),
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
       price: price,
       currencyCode: currencyCode,
@@ -96,6 +99,7 @@ class Mantra {
           json['mantra_file'] ??
           '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
+      storeProductIdAndroid: _optionalString(json['store_product_id_android']),
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
       price: price,
       currencyCode: currencyCode,
@@ -112,6 +116,8 @@ class Mantra {
       'name': name,
       'mantra_file': mantraFile,
       'icon': icon,
+      if (storeProductIdAndroid != null)
+        'store_product_id_android': storeProductIdAndroid,
       // 'playtime': playtime, // COMMENTED OUT
       'price': price,
       'currency_code': currencyCode,
@@ -123,6 +129,7 @@ class Mantra {
     String? name,
     String? mantraFile,
     String? icon,
+    String? storeProductIdAndroid,
     // int? playtime, // COMMENTED OUT
     double? price,
     String? currencyCode,
@@ -135,6 +142,8 @@ class Mantra {
       name: name ?? this.name,
       mantraFile: mantraFile ?? this.mantraFile,
       icon: icon ?? this.icon,
+      storeProductIdAndroid:
+          storeProductIdAndroid ?? this.storeProductIdAndroid,
       // playtime: playtime ?? this.playtime, // COMMENTED OUT
       price: price ?? this.price,
       currencyCode: currencyCode ?? this.currencyCode,
@@ -151,6 +160,16 @@ class Mantra {
 
   // Helper method to format price
   String get formattedPrice => formatMoney(price, currencyCode);
+
+  /// Backend song/product ID (for example `F-AARATI-001`).
+  String get internalProductId {
+    final value = mantraFile.trim();
+    final slash = value.lastIndexOf(RegExp(r'[/\\]'));
+    final fileName = slash >= 0 ? value.substring(slash + 1) : value;
+    return fileName.toLowerCase().endsWith('.mp3')
+        ? fileName.substring(0, fileName.length - 4)
+        : fileName;
+  }
 
   /// e.g. `USD 2.00`, `INR 99`
   static String formatMoney(double amount, String currencyCode) {
@@ -171,5 +190,10 @@ class Mantra {
       default:
         return 'INR';
     }
+  }
+
+  static String? _optionalString(dynamic value) {
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty ? null : text;
   }
 }

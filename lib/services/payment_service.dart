@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
+import '../models/android_purchase.dart';
 import '../security/payment_identifiers.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
 import 'payment_http_log.dart';
+import 'play_billing_diagnostics.dart';
 
 class PaymentService {
   static const String _createIntentInstructions =
@@ -548,6 +550,282 @@ class PaymentService {
     }
 
     return CheckoutSessionVerifyOutcome.unknown;
+  }
+
+  static Future<PreparedPurchase> prepareAndroidPurchase({
+    required String currency,
+    required List<AndroidCartProduct> products,
+    AndroidPaymentDiagnosticCallback? onDiagnostic,
+  }) async {
+    playBillingLog(
+      'operation=prepare platform=android currency=${currency.toLowerCase()} '
+      'products=${products.map((item) => {'internalId': item.internalProductId, 'storeId': item.storeProductId, 'quantity': item.quantity}).toList()}',
+    );
+    final response = await AuthenticatedHttp.paymentPost(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.prepareAndroidPurchaseEndpoint}',
+      ),
+      body: jsonEncode({
+        'platform': 'android',
+        'currency': currency.toLowerCase(),
+        'products': products.map((item) => item.toPrepareJson()).toList(),
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final safeError = safeAndroidBillingErrorFromBody(response.body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'prepare',
+          stage: 'http_failure',
+          httpStatus: response.statusCode,
+          backendStatus: safeError.status,
+          safeCode: safeError.code,
+          safeMessage: safeError.message,
+        ),
+      );
+      playBillingLog(
+        'operation=prepare httpStatus=${response.statusCode} '
+        '${_safeAndroidBillingError(response.body)}',
+      );
+      throw AndroidBillingHttpException(
+        operation: 'prepare',
+        httpStatus: response.statusCode,
+        safeCode: safeError.code,
+        safeMessage: safeError.message,
+      );
+    }
+    try {
+      final body = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      final data = _androidBillingData(body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'prepare',
+          stage: 'http_success',
+          httpStatus: response.statusCode,
+          backendStatus: _safeStatus(data),
+        ),
+      );
+      final prepared = PreparedPurchase.fromJson(body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'prepare',
+          stage: 'parsed',
+          httpStatus: response.statusCode,
+          backendStatus: _safeStatus(data),
+          orderId: prepared.orderId,
+          storeProductIds: prepared.storeProducts
+              .map((item) => item.storeProductId)
+              .toList(growable: false),
+          linkTokenPresent: prepared.linkToken.isNotEmpty,
+        ),
+      );
+      playBillingLog(
+        'operation=prepare httpStatus=${response.statusCode} '
+        'bodyShape=${_androidBillingBodyShape(body)} '
+        'hasOrderId=${prepared.orderId.isNotEmpty} '
+        'hasLinkToken=${prepared.linkToken.isNotEmpty} '
+        'storeProductIds=${prepared.storeProducts.map((item) => item.storeProductId).toList()} '
+        'backendStatus=${_safeStatus(data)}',
+      );
+      return prepared;
+    } catch (error) {
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'prepare',
+          stage: 'parse_failure',
+          httpStatus: response.statusCode,
+          errorType: error.runtimeType.toString(),
+          safeMessage: sanitizePlayBillingDiagnostic(error),
+        ),
+      );
+      playBillingLog(
+        'operation=prepare parseFailure=true httpStatus=${response.statusCode} '
+        'exceptionType=${error.runtimeType}',
+      );
+      rethrow;
+    }
+  }
+
+  static Future<PurchaseVerification> verifyAndroidPurchase({
+    required String orderId,
+    required String purchaseToken,
+    required String storeProductId,
+    AndroidPaymentDiagnosticCallback? onDiagnostic,
+  }) async {
+    playBillingLog(
+      'operation=verify order=$orderId product=$storeProductId request=start',
+    );
+    final response = await AuthenticatedHttp.paymentPost(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.verifyAndroidPurchaseEndpoint}',
+      ),
+      body: jsonEncode({
+        'orderId': orderId,
+        'platform': 'android',
+        'purchaseToken': purchaseToken,
+        'storeProductId': storeProductId,
+      }),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final safeError = safeAndroidBillingErrorFromBody(response.body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'verify',
+          stage: 'http_failure',
+          httpStatus: response.statusCode,
+          backendStatus: safeError.status,
+          safeCode: safeError.code,
+          safeMessage: safeError.message,
+        ),
+      );
+      playBillingLog(
+        'operation=verify order=$orderId product=$storeProductId '
+        'httpStatus=${response.statusCode} '
+        '${_safeAndroidBillingError(response.body)}',
+      );
+      throw AndroidBillingHttpException(
+        operation: 'verify',
+        httpStatus: response.statusCode,
+        safeCode: safeError.code,
+        safeMessage: safeError.message,
+      );
+    }
+    try {
+      final body = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'verify',
+          stage: 'http_success',
+          httpStatus: response.statusCode,
+        ),
+      );
+      final verification = PurchaseVerification.fromJson(body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'verify',
+          stage: 'parsed',
+          httpStatus: response.statusCode,
+          backendStatus: verification.status,
+          accepted: verification.accepted,
+          paid: verification.paid,
+        ),
+      );
+      playBillingLog(
+        'operation=verify order=$orderId product=$storeProductId '
+        'httpStatus=${response.statusCode} status=${verification.status} '
+        'accepted=${verification.accepted} paid=${verification.paid}',
+      );
+      return verification;
+    } catch (error) {
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'verify',
+          stage: 'parse_failure',
+          httpStatus: response.statusCode,
+          errorType: error.runtimeType.toString(),
+          safeMessage: sanitizePlayBillingDiagnostic(error),
+        ),
+      );
+      playBillingLog(
+        'operation=verify order=$orderId product=$storeProductId '
+        'parseFailure=true httpStatus=${response.statusCode} '
+        'exceptionType=${error.runtimeType}',
+      );
+      rethrow;
+    }
+  }
+
+  static Map<String, dynamic> _androidBillingData(Map<String, dynamic> body) {
+    final data = body['data'];
+    return data is Map ? Map<String, dynamic>.from(data) : body;
+  }
+
+  static String _androidBillingBodyShape(Map<String, dynamic> body) {
+    final data = body['data'];
+    if (data is Map) return 'object_with_data_object';
+    if (data is List) return 'object_with_data_list';
+    return 'object';
+  }
+
+  static String _safeStatus(Map<String, dynamic> data) =>
+      (data['status'] ?? data['paymentStatus'] ?? data['payment_status'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+
+  static String _safeAndroidBillingError(String responseBody) {
+    try {
+      final body = Map<String, dynamic>.from(jsonDecode(responseBody) as Map);
+      final data = _androidBillingData(body);
+      final rawCode = (data['code'] ?? data['errorCode'] ?? data['error_code'])
+          ?.toString()
+          .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '');
+      final code = rawCode?.substring(0, rawCode.length.clamp(0, 64));
+      final hasMessage = data['message'] != null || data['error'] is String;
+      return 'errorCode=${code == null || code.isEmpty ? 'unknown' : code} '
+          'hasMessage=$hasMessage bodyShape=${_androidBillingBodyShape(body)}';
+    } catch (_) {
+      return 'errorCode=unparseable hasMessage=false bodyShape=unknown';
+    }
+  }
+
+  static Future<PurchaseVerification> getAndroidPurchaseOrder(
+    String orderId, {
+    AndroidPaymentDiagnosticCallback? onDiagnostic,
+  }) async {
+    final response = await AuthenticatedHttp.paymentGet(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.androidPurchaseOrderEndpoint(orderId)}',
+      ),
+    );
+    playBillingLog(
+      'order lookup order=$orderId httpStatus=${response.statusCode}',
+    );
+    if (response.statusCode != 200) {
+      final safeError = safeAndroidBillingErrorFromBody(response.body);
+      onDiagnostic?.call(
+        AndroidPaymentDiagnostic(
+          operation: 'order_lookup',
+          stage: 'http_failure',
+          httpStatus: response.statusCode,
+          safeCode: safeError.code,
+          safeMessage: safeError.message,
+          backendStatus: safeError.status,
+        ),
+      );
+      throw StateError('purchase_order_failed_${response.statusCode}');
+    }
+    final verification = PurchaseVerification.fromJson(
+      Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+    );
+    onDiagnostic?.call(
+      AndroidPaymentDiagnostic(
+        operation: 'order_lookup',
+        stage: 'parsed',
+        httpStatus: response.statusCode,
+        backendStatus: verification.status,
+        accepted: verification.accepted,
+        paid: verification.paid,
+      ),
+    );
+    return verification;
+  }
+
+  static Future<PurchaseVerification> restoreAndroidPurchases(
+    List<Map<String, String>> purchases,
+  ) async {
+    final response = await AuthenticatedHttp.paymentPost(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.restoreAndroidPurchasesEndpoint}',
+      ),
+      body: jsonEncode({'platform': 'android', 'purchases': purchases}),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw StateError('restore_purchase_failed_${response.statusCode}');
+    }
+    return PurchaseVerification.fromJson(
+      Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+    );
   }
 }
 

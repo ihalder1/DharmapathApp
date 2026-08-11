@@ -2,7 +2,8 @@
     "mantras": [
             {
               "name": "Aarati Mantra",
-              "mantra_file": "F-AARATI-001.mp3",
+            "mantra_file": "F-AARATI-001.mp3",
+            "store_product_id_android": "song_f_aarati_001",
               "icon": "F-AARATI-001.png",
               "price_in": 99,
               "price_other": 4.99,
@@ -11,7 +12,8 @@
             },
             {
               "name": "Brahma Mantra",
-              "mantra_file": "F-BRAHMA-001.mp3",
+            "mantra_file": "F-BRAHMA-001.mp3",
+            "store_product_id_android": "song_f_brahma_001",
               "icon": "F-BRAHMA-001.png",
               "price_in": 89,
               "price_other": 3.99,
@@ -20,7 +22,8 @@
             },
             {
               "name": "Devi Mantra",
-              "mantra_file": "F-DEVI-001.mp3",
+            "mantra_file": "F-DEVI-001.mp3",
+            "store_product_id_android": "song_f_devi_001",
               "icon": "F-DEVI-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -29,7 +32,8 @@
             },
             {
               "name": "Maa Durga Mantra",
-              "mantra_file": "F-DURGA-001.mp3",
+            "mantra_file": "F-DURGA-001.mp3",
+            "store_product_id_android": "song_f_durga_001",
               "icon": "F-DURGA-001.png",
               "price_in": 89,
               "price_other": 4.99,
@@ -38,7 +42,8 @@
             },
             {
               "name": "Ganapataye Mantra",
-              "mantra_file": "F-GANAPATAYE-001.mp3",
+            "mantra_file": "F-GANAPATAYE-001.mp3",
+            "store_product_id_android": "song_f_ganapataye_001",
               "icon": "F-GANAPATAYE-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -47,7 +52,8 @@
             },
             {
               "name": "Gayatri Mantra",
-              "mantra_file": "F-GAYATRI-001.mp3",
+            "mantra_file": "F-GAYATRI-001.mp3",
+            "store_product_id_android": "song_f_gayatri_001",
               "icon": "F-GAYATRI-001.png",
               "price_in": 99,
               "price_other": 4.99,
@@ -56,7 +62,8 @@
             },
             {
               "name": "Shri Jagannath Mantra",
-              "mantra_file": "F-JAGANNATH-001.mp3",
+            "mantra_file": "F-JAGANNATH-001.mp3",
+            "store_product_id_android": "song_f_jagannath_001",
               "icon": "F-JAGANNATH-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -65,7 +72,8 @@
             },
             {
               "name": "Shri Krishna Mantra",
-              "mantra_file": "F-KRISHNA-001.mp3",
+            "mantra_file": "F-KRISHNA-001.mp3",
+            "store_product_id_android": "song_f_krishna_001",
               "icon": "F-KRISHNA-001.png",
               "price_in": 89,
               "price_other": 3.99,
@@ -74,8 +82,9 @@
             },
             {
               "name": "Maa Mahalakshmi Mantra",
-              "mantra_file": "M-MAHALAKSHMI-001.mp3",
-              "icon": "M-MAHALAKSHMI-001.png",
+            "mantra_file": "F-MAHALAKSHMI-001.mp3",
+            "store_product_id_android": "song_f_mahalakshmi_001",
+              "icon": "F-MAHALAKSHMI-001.png",
               "price_in": 99,
               "price_other": 4.99,
               "price": 201,
@@ -83,7 +92,8 @@
             },
             {
               "name": "Mahamrityunjay Mantra",
-              "mantra_file": "F-MAHAMRITYUNJAY-001.mp3",
+            "mantra_file": "F-MAHAMRITYUNJAY-001.mp3",
+            "store_product_id_android": "song_f_mahamrityunjay_001",
               "icon": "F-MAHAMRITYUNJAY-001.png",
               "price_in": 99,
               "price_other": 5.99,
@@ -92,7 +102,8 @@
             },
             {
               "name": "Sri Radha Mantra",
-              "mantra_file": "F-RADHE-001.mp3",
+            "mantra_file": "F-RADHE-001.mp3",
+            "store_product_id_android": "song_f_radhe_001",
               "icon": "F-RADHE-001.png",
               "price_in": 89,
               "price_other": 3.99,  
@@ -100,7 +111,8 @@
             },
             {
               "name": "Maa Saraswati Mantra",
-              "mantra_file": "F-SARASWATI-001.mp3",
+            "mantra_file": "F-SARASWATI-001.mp3",
+            "store_product_id_android": "song_f_saraswati_001",
               "icon": "F-SARASWATI-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -109,7 +121,8 @@
             },
             {
               "name": "Shri Shanidev Mantra",
-              "mantra_file": "F-SHANIDEV-001.mp3",
+            "mantra_file": "F-SHANIDEV-001.mp3",
+            "store_product_id_android": "song_f_shanidev_001",
               "icon": "F-SHANIDEV-001.png",
               "price_in": 99,
               "price_other": 3.99,  
@@ -117,7 +130,8 @@
             },
             {
               "name": "Shiva Mantra",
-              "mantra_file": "F-SHIVA-001.mp3",
+            "mantra_file": "F-SHIVA-001.mp3",
+            "store_product_id_android": "song_f_shiva_001",
               "icon": "F-SHIVA-001.png",
               "price_in": 99,
               "price_other": 4.99,
@@ -126,7 +140,8 @@
             },
             {
               "name": "Shree Rama Mantra",
-              "mantra_file": "F-SHREERAM-001.mp3",
+            "mantra_file": "F-SHREERAM-001.mp3",
+            "store_product_id_android": "song_f_shreeram_001",
               "icon": "F-SHREERAM-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -135,7 +150,8 @@
             },
             {
               "name": "Surya Deva Mantra",
-              "mantra_file": "F-SURYA-001.mp3",
+            "mantra_file": "F-SURYA-001.mp3",
+            "store_product_id_android": "song_f_surya_001",
               "icon": "F-SURYA-001.png",
               "price_in": 99,
               "price_other": 3.99,
@@ -144,7 +160,8 @@
             },
             {
               "name": "Shri Vishnu Mantra",
-              "mantra_file": "F-VISHNU-001.mp3",
+            "mantra_file": "F-VISHNU-001.mp3",
+            "store_product_id_android": "song_f_vishnu_001",
               "icon": "F-VISHNU-001.png",
               "price_in": 99,
               "price_other": 4.99,      
@@ -153,7 +170,8 @@
             },
             {
               "name": "Hanuman Mantra",
-              "mantra_file": "M-HANUMAN-001.mp3",
+            "mantra_file": "M-HANUMAN-001.mp3",
+            "store_product_id_android": "song_m_hanuman_001",
               "icon": "M-HANUMAN-001.png",
               "price_in": 99,
               "price_other": 4.99,
@@ -162,7 +180,8 @@
             },
             {
               "name": "Hare Krishna Mantra",
-              "mantra_file": "M-HAREKRISHNA-001.mp3",
+            "mantra_file": "M-HAREKRISHNA-001.mp3",
+            "store_product_id_android": "song_m_harekrishna_001",
               "icon": "M-HAREKRISHNA-001.png",
               "price_in": 89,
               "price_other": 4.99,
@@ -171,7 +190,8 @@
             },
             {
               "name": "Maa Jagatdhatri Mantra",
-              "mantra_file": "M-JAGADHATRI-001.mp3",
+            "mantra_file": "M-JAGADHATRI-001.mp3",
+            "store_product_id_android": "song_m_jagadhatri_001",
               "icon": "M-JAGADHATRI-001.png",
               "price_in": 99,
               "price_other": 4.99,
@@ -180,7 +200,8 @@
             },
             {
               "name": "Maa Mahakali Mantra",
-              "mantra_file": "M-MAHAKALI-001.mp3",
+            "mantra_file": "M-MAHAKALI-001.mp3",
+            "store_product_id_android": "song_m_mahakali_001",
               "icon": "M-MAHAKALI-001.png",
               "price_in": 99,
               "price_other": 5.99,

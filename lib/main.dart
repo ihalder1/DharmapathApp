@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -57,21 +58,24 @@ Future<void> main() {
       DeviceOrientation.portraitDown,
     ]);
 
-    // Initialize Stripe (publishable key, url scheme + Android return URL for 3DS / redirects)
-    const stripeUrlScheme = 'mantrasutra';
-    try {
-      Stripe.publishableKey = ApiConfig.stripePublishableKey;
-      Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
-      Stripe.urlScheme = stripeUrlScheme;
-      Stripe.setReturnUrlSchemeOnAndroid = true;
-      await Stripe.instance.applySettings();
-    } catch (error, stackTrace) {
-      SafeLog.error(
-        'stripe_initialization_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      rethrow;
+    // Android mantra checkout uses Google Play Billing. Keep the existing
+    // Stripe setup unchanged for the other platforms (including iOS).
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      const stripeUrlScheme = 'mantrasutra';
+      try {
+        Stripe.publishableKey = ApiConfig.stripePublishableKey;
+        Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
+        Stripe.urlScheme = stripeUrlScheme;
+        Stripe.setReturnUrlSchemeOnAndroid = true;
+        await Stripe.instance.applySettings();
+      } catch (error, stackTrace) {
+        SafeLog.error(
+          'stripe_initialization_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        rethrow;
+      }
     }
 
     // Request microphone permission at startup

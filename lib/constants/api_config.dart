@@ -54,6 +54,13 @@ class ApiConfig {
       '/payments/create-checkout-session';
   static const String verifyCheckoutSessionEndpoint =
       '/payments/verify-session';
+  static const String prepareAndroidPurchaseEndpoint =
+      '/payments/prepare-purchase';
+  static const String verifyAndroidPurchaseEndpoint =
+      '/payments/verify-purchase';
+  static String androidPurchaseOrderEndpoint(String orderId) =>
+      '/payments/orders/${Uri.encodeComponent(orderId)}';
+  static const String restoreAndroidPurchasesEndpoint = '/payments/restore';
 
   // Google OAuth Configuration
   static const String googleClientId =

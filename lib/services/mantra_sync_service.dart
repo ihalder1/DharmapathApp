@@ -142,6 +142,24 @@ class MantraSyncService {
     }
   }
 
+  /// Load the bundled catalogue used as the canonical source for display names.
+  static Future<Map<String, dynamic>> _loadBundledMetadata() async {
+    String jsonString;
+    try {
+      jsonString = await rootBundle.loadString('Media/metadata.json');
+    } catch (_) {
+      jsonString = await rootBundle.loadString('assets/Media/metadata.json');
+    }
+    return normalizeMetadataMantras(
+      json.decode(jsonString) as Map<String, dynamic>,
+    );
+  }
+
+  static String _catalogueFileKey(Object? value) {
+    final fileName = value?.toString().trim() ?? '';
+    return path.basename(fileName).toLowerCase();
+  }
+
   // Save metadata.json to writable location (app documents directory)
   static Future<void> saveLocalMetadata(Map<String, dynamic> metadata) async {
     try {
@@ -255,13 +273,24 @@ class MantraSyncService {
       final List<dynamic> localMantras = List.from(
         localMetadata['mantras'] ?? [],
       );
+      final bundledMetadata = await _loadBundledMetadata();
+      final bundledMantras = List<dynamic>.from(
+        bundledMetadata['mantras'] ?? [],
+      );
 
       // 3. Create a map of local mantras by mantra_file for quick lookup
       final Map<String, Map<String, dynamic>> localMantrasMap = {};
       for (var mantra in localMantras) {
-        final fileName = mantra['mantra_file'] as String?;
-        if (fileName != null) {
-          localMantrasMap[fileName] = Map<String, dynamic>.from(mantra);
+        final fileKey = _catalogueFileKey(mantra['mantra_file']);
+        if (fileKey.isNotEmpty) {
+          localMantrasMap[fileKey] = Map<String, dynamic>.from(mantra);
+        }
+      }
+      final Map<String, Map<String, dynamic>> bundledMantrasMap = {};
+      for (var mantra in bundledMantras) {
+        final fileKey = _catalogueFileKey(mantra['mantra_file']);
+        if (fileKey.isNotEmpty) {
+          bundledMantrasMap[fileKey] = Map<String, dynamic>.from(mantra);
         }
       }
 
@@ -298,7 +327,9 @@ class MantraSyncService {
             defaultLastUpdated;
 
         // Check if file exists in local list
-        final localMantra = localMantrasMap[fileName];
+        final fileKey = _catalogueFileKey(fileName);
+        final bundledMantra = bundledMantrasMap[fileKey];
+        final localMantra = localMantrasMap[fileKey] ?? bundledMantra;
         if (localMantra != null) {
           // Case A: File exists - check if needs update
           final String? localLastModified = localMantra['last_modified'];
@@ -326,6 +357,10 @@ class MantraSyncService {
           if (needsUpdate) {
             // Update the record
             final updatedMantra = Map<String, dynamic>.from(localMantra);
+            if (bundledMantra?['name'] is String &&
+                (bundledMantra!['name'] as String).trim().isNotEmpty) {
+              updatedMantra['name'] = bundledMantra['name'];
+            }
             LocationPricingService.applyApiPricingToMetadata(
               updatedMantra,
               apiMap,
@@ -358,6 +393,10 @@ class MantraSyncService {
           } else {
             // Keep existing record but always refresh price/currency fields.
             final updatedMantra = Map<String, dynamic>.from(localMantra);
+            if (bundledMantra?['name'] is String &&
+                (bundledMantra!['name'] as String).trim().isNotEmpty) {
+              updatedMantra['name'] = bundledMantra['name'];
+            }
             LocationPricingService.applyApiPricingToMetadata(
               updatedMantra,
               apiMap,

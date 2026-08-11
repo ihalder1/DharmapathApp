@@ -10,6 +10,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 import '../constants/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/profile_service.dart';
@@ -17,16 +18,21 @@ import '../services/mantra_service.dart';
 import '../services/voice_recording_service.dart';
 import '../services/notification_service.dart';
 import '../services/inferred_mantras_service.dart';
+import '../services/play_billing_service.dart';
+import '../services/cart_quantity_policy.dart';
 import '../models/mantra.dart';
 import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
 import 'login_screen.dart';
 import 'payment_screen.dart';
+import 'google_play_checkout_screen.dart';
 import 'contact_us_screen.dart';
 
 /// Synced mantra icons are stored under Documents/Media; resolve once per filename.
 final Map<String, Future<String?>> _mantraLocalIconPathFutures = {};
+
+bool get _usesGooglePlayBilling => isAndroidPlayBillingPlatform();
 
 Future<String?> _mantraLocalIconPathIfExists(String iconName) {
   if (kIsWeb) return Future<String?>.value(null);
@@ -76,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Mantra> _mantras = [];
   List<Mantra> _filteredMantras = [];
   bool _isLoadingMantras = false;
+  Map<String, PlayProductPrice> _playProductPrices = {};
 
   final InferredMantrasService _inferredMantrasService =
       InferredMantrasService();
@@ -348,6 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _applyMantraList(mantras);
       });
+      await _loadGooglePlayPrices(mantras);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -364,6 +372,99 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadGooglePlayPrices(List<Mantra> mantras) async {
+    if (!_usesGooglePlayBilling) return;
+
+    final productIds = mantras
+        .map((mantra) => mantra.storeProductIdAndroid)
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (productIds.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _playProductPrices = {};
+      });
+      return;
+    }
+
+    try {
+      await PlayBillingService.initialize();
+      final prices = await PlayBillingService.queryProducts(productIds);
+      if (!mounted) return;
+      setState(() {
+        _playProductPrices = prices;
+      });
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        _playProductPrices = {};
+      });
+    }
+  }
+
+  String _catalogPrice(Mantra mantra) {
+    if (!_usesGooglePlayBilling) return mantra.formattedPrice;
+
+    final productId = mantra.storeProductIdAndroid?.trim();
+    if (productId == null || productId.isEmpty) {
+      return 'Price unavailable';
+    }
+    return _playProductPrices[productId]?.formattedPrice ?? 'Price unavailable';
+  }
+
+  String _formatGooglePlayMicros(int amountMicros, String currencyCode) {
+    return NumberFormat.currency(
+      name: currencyCode,
+    ).format(amountMicros / 1000000);
+  }
+
+  String _googlePlayCartLineTotal(Mantra mantra, int quantity) {
+    final productId = mantra.storeProductIdAndroid?.trim();
+    if (productId == null || productId.isEmpty) {
+      return 'Price unavailable';
+    }
+
+    final product = _playProductPrices[productId];
+    if (product == null || product.currencyCode.trim().isEmpty) {
+      return 'Price unavailable';
+    }
+
+    return _formatGooglePlayMicros(
+      product.priceAmountMicros * quantity,
+      product.currencyCode,
+    );
+  }
+
+  String _googlePlayCartTotal(List<Mantra> cartItems) {
+    String? currencyCode;
+    var totalMicros = 0;
+
+    for (final mantra in cartItems) {
+      final productId = mantra.storeProductIdAndroid?.trim();
+      if (productId == null || productId.isEmpty) {
+        return 'Price unavailable';
+      }
+
+      final product = _playProductPrices[productId];
+      final productCurrency = product?.currencyCode.trim();
+      if (product == null ||
+          productCurrency == null ||
+          productCurrency.isEmpty ||
+          (currencyCode != null && currencyCode != productCurrency)) {
+        return 'Price unavailable';
+      }
+
+      currencyCode = productCurrency;
+      totalMicros += product.priceAmountMicros * mantra.cartQuantity;
+    }
+
+    if (currencyCode == null) return 'Price unavailable';
+    return _formatGooglePlayMicros(totalMicros, currencyCode);
   }
 
   // Filter mantras based on search query
@@ -2528,7 +2629,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
-                      mantra.formattedPrice,
+                      _catalogPrice(mantra),
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -2677,12 +2778,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
-                  style: const TextStyle(fontSize: 11, color: Colors.blue),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'VAT/GST applicable',
+                    style: TextStyle(fontSize: 9, color: Colors.black87),
+                  ),
+                  Text(
+                    'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
+                    style: const TextStyle(fontSize: 11, color: Colors.blue),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2807,12 +2914,18 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 6),
 
               // Mantra count info
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
-                  style: const TextStyle(fontSize: 12, color: Colors.blue),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'VAT/GST applicable',
+                    style: TextStyle(fontSize: 10, color: Colors.black87),
+                  ),
+                  Text(
+                    'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
+                    style: const TextStyle(fontSize: 12, color: Colors.blue),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
 
@@ -2872,7 +2985,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 // ),
                                 // const SizedBox(height: 4),
                                 Text(
-                                  mantra.formattedPrice,
+                                  _catalogPrice(mantra),
                                   style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -2998,12 +3111,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Price
               Text(
-                mantra.formattedPrice,
+                _catalogPrice(mantra),
                 style: const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   color: AppColors.primarySaffron,
                 ),
+                textAlign: TextAlign.center,
               ),
               _buildPurchasedCountHint(mantra, fontSize: 9, compact: true),
 
@@ -4121,7 +4235,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final cartUnitCount = MantraService.getCartTotalQuantity();
     final total = MantraService.getCartTotal();
     final cartCurrencyCode = MantraService.getCartCurrencyCode();
-    final totalDisplay = Mantra.formatMoney(total, cartCurrencyCode);
+    final totalDisplay = _usesGooglePlayBilling
+        ? _googlePlayCartTotal(cartItems)
+        : Mantra.formatMoney(total, cartCurrencyCode);
 
     return Container(
       width: double.infinity,
@@ -4266,7 +4382,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                       if (quantity > 1)
                                         Text(
-                                          '${mantra.formattedPrice} each',
+                                          '${_catalogPrice(mantra)} each',
                                           style: TextStyle(
                                             fontSize: 10,
                                             color: AppColors.white.withOpacity(
@@ -4278,13 +4394,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
 
-                                _buildCartQuantityStepper(mantra, quantity),
-
-                                const SizedBox(width: 6),
+                                if (MantraService
+                                    .supportsMultipleCartQuantity) ...[
+                                  _buildCartQuantityStepper(mantra, quantity),
+                                  const SizedBox(width: 6),
+                                ],
 
                                 // Line total
                                 Text(
-                                  mantra.formattedLineTotal(),
+                                  _usesGooglePlayBilling
+                                      ? _googlePlayCartLineTotal(
+                                          mantra,
+                                          quantity,
+                                        )
+                                      : mantra.formattedLineTotal(),
                                   style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -4342,12 +4465,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           final paymentSuccess = await Navigator.push<bool>(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => PaymentScreen(
-                                totalAmount: total,
-                                currencyCode: cartCurrencyCode,
-                                cartItems:
-                                    MantraService.expandCartForCheckout(),
-                              ),
+                              builder: (context) {
+                                final checkoutItems =
+                                    MantraService.expandCartForCheckout();
+                                if (!kIsWeb &&
+                                    defaultTargetPlatform ==
+                                        TargetPlatform.android) {
+                                  return GooglePlayCheckoutScreen(
+                                    cartItems: checkoutItems,
+                                  );
+                                }
+                                return PaymentScreen(
+                                  totalAmount: total,
+                                  currencyCode: cartCurrencyCode,
+                                  cartItems: checkoutItems,
+                                );
+                              },
                             ),
                           );
 
