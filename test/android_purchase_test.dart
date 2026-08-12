@@ -1,14 +1,18 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:colab_app_ui/models/android_purchase.dart';
 import 'package:colab_app_ui/models/mantra.dart';
 import 'package:colab_app_ui/services/cart_quantity_policy.dart';
+import 'package:colab_app_ui/services/location_pricing_service.dart';
 import 'package:colab_app_ui/services/mantra_service.dart';
 import 'package:colab_app_ui/services/play_billing_service.dart';
 import 'package:colab_app_ui/services/play_billing_diagnostics.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const billingChannel = MethodChannel('com.idsai.mantrasutra/play_billing');
   Mantra mantra(String id, String storeId, String name) => Mantra(
     name: name,
     mantraFile: '$id.mp3',
@@ -50,6 +54,8 @@ void main() {
   });
 
   tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(billingChannel, null);
     await MantraService.clearCart();
     MantraService.debugTargetPlatformOverride = null;
   });
@@ -110,6 +116,21 @@ void main() {
     },
   );
 
+  test('regional tax price labels follow country pricing tiers', () {
+    expect(
+      LocationPricingService.taxPriceLabel(PricingRegion.india),
+      '95 INR + GST',
+    );
+    expect(
+      LocationPricingService.taxPriceLabel(PricingRegion.southAsia),
+      '1 USD + VAT/GST',
+    );
+    expect(
+      LocationPricingService.taxPriceLabel(PricingRegion.other),
+      '2 USD + VAT/GST',
+    );
+  });
+
   test('stale Aarati context does not match visible Brahma and Devi', () {
     final stale = purchaseContext(['song_f_aarati_001']);
     final visible = cartProducts(['song_f_brahma_001', 'song_f_devi_001']);
@@ -124,35 +145,30 @@ void main() {
     expect(stored.matchesCart(visible), isTrue);
   });
 
-  test('launch validation rejects product outside visible cart', () {
-    final active = purchaseContext(['song_f_brahma_001', 'song_f_devi_001']);
+  PlayPurchase playPurchase(List<String> ids, {int state = 1}) => PlayPurchase(
+    purchaseToken: 'TOKEN',
+    products: ids,
+    purchaseState: state,
+    quantity: 1,
+    isAcknowledged: false,
+  );
+
+  test('launch validation rejects context outside visible cart', () {
+    final active = purchaseContext(['song_f_aarati_001']);
     final visible = cartProducts(['song_f_brahma_001', 'song_f_devi_001']);
 
     expect(
-      () => validatePlayLaunch(
-        context: active,
-        visibleCart: visible,
-        selectedProduct: const PreparedStoreProduct(
-          storeProductId: 'song_f_aarati_001',
-          quantity: 1,
-        ),
-        selectedIndex: 0,
-      ),
+      () => validatePlayLaunch(context: active, visibleCart: visible),
       throwsStateError,
     );
   });
 
-  test('launch validation accepts selected visible order product', () {
+  test('launch validation accepts complete visible order', () {
     final active = purchaseContext(['song_f_brahma_001', 'song_f_devi_001']);
     final visible = cartProducts(['song_f_brahma_001', 'song_f_devi_001']);
 
     expect(
-      () => validatePlayLaunch(
-        context: active,
-        visibleCart: visible,
-        selectedProduct: active.products.first,
-        selectedIndex: 0,
-      ),
+      () => validatePlayLaunch(context: active, visibleCart: visible),
       returnsNormally,
     );
   });
@@ -162,14 +178,113 @@ void main() {
     final visible = cartProducts(['song_f_brahma_001']);
 
     expect(
+      () => validatePlayLaunch(context: active, visibleCart: visible),
+      throwsStateError,
+    );
+  });
+
+  test('two products are sent in one multi-product platform call', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(billingChannel, (call) async {
+          calls.add(call);
+          return <String, Object?>{'responseCode': 0};
+        });
+
+    await PlayBillingService.launchMultiProductPurchase(
+      productIds: const ['devi', 'brahma'],
+      obfuscatedAccountId: 'LINK',
+    );
+
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'launchMultiProductPurchase');
+    expect((calls.single.arguments as Map)['productIds'], ['devi', 'brahma']);
+  });
+
+  test('ten products are sent in one multi-product platform call', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(billingChannel, (call) async {
+          calls.add(call);
+          return <String, Object?>{'responseCode': 0};
+        });
+    final ids = List.generate(10, (index) => 'mantra_$index');
+
+    await PlayBillingService.launchMultiProductPurchase(
+      productIds: ids,
+      obfuscatedAccountId: 'LINK',
+    );
+
+    expect(calls, hasLength(1));
+    expect((calls.single.arguments as Map)['productIds'], ids);
+  });
+
+  test(
+    'multi-product launch rejects duplicate product IDs before platform',
+    () {
+      expect(
+        () => PlayBillingService.launchMultiProductPurchase(
+          productIds: const ['devi', 'devi'],
+          obfuscatedAccountId: 'LINK',
+        ),
+        throwsArgumentError,
+      );
+    },
+  );
+
+  test('launch validation rejects quantity other than one', () {
+    final invalid = AndroidPurchaseContext(
+      orderId: 'ORDER-1',
+      linkToken: 'LINK-1',
+      products: const [
+        PreparedStoreProduct(storeProductId: 'devi', quantity: 2),
+      ],
+      verifiedStoreProductIds: const {},
+      currentIndex: 0,
+      state: 'prepared',
+      createdAt: DateTime.utc(2026),
+    );
+    expect(
       () => validatePlayLaunch(
-        context: active,
-        visibleCart: visible,
-        selectedProduct: active.products.first,
-        selectedIndex: 0,
+        context: invalid,
+        visibleCart: cartProducts(['devi']),
       ),
       throwsStateError,
     );
+  });
+
+  test('purchase product set accepts ordering differences', () {
+    final active = purchaseContext(['devi', 'brahma']);
+    expect(
+      purchaseProductsMatch(active, playPurchase(['brahma', 'devi'])),
+      isTrue,
+    );
+  });
+
+  test('purchase product set rejects a missing product', () {
+    final active = purchaseContext(['devi', 'brahma']);
+    expect(purchaseProductsMatch(active, playPurchase(['devi'])), isFalse);
+  });
+
+  test('purchase product set rejects an unexpected product', () {
+    final active = purchaseContext(['devi', 'brahma']);
+    expect(
+      purchaseProductsMatch(active, playPurchase(['devi', 'hanuman'])),
+      isFalse,
+    );
+  });
+
+  test('purchase product set rejects duplicates', () {
+    final active = purchaseContext(['devi', 'brahma']);
+    expect(
+      purchaseProductsMatch(active, playPurchase(['devi', 'devi'])),
+      isFalse,
+    );
+  });
+
+  test('one-product legacy purchase remains an exact transaction match', () {
+    final active = purchaseContext(['devi']);
+    expect(purchaseProductsMatch(active, playPurchase(['devi'])), isTrue);
   });
 
   test('selective completion does not clear unrelated current cart', () async {

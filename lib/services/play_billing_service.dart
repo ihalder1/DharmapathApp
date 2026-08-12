@@ -148,17 +148,22 @@ final class PlayBillingService {
     return products;
   }
 
-  static Future<Map<Object?, Object?>> launchProductPurchase({
-    required String productId,
-    required int quantity,
+  static Future<Map<Object?, Object?>> launchMultiProductPurchase({
+    required Iterable<String> productIds,
     required String obfuscatedAccountId,
   }) async {
-    _debug('launching Play flow product=$productId quantity=$quantity');
+    final ids = productIds.toList(growable: false);
+    if (ids.isEmpty || ids.any((id) => id.trim().isEmpty)) {
+      throw ArgumentError.value(ids, 'productIds', 'must be non-empty');
+    }
+    if (ids.toSet().length != ids.length) {
+      throw ArgumentError.value(ids, 'productIds', 'must be unique');
+    }
+    _debug('MULTI_LAUNCH_REQUEST products=$ids');
     final response = await _methods.invokeMapMethod<Object?, Object?>(
-      'launchProductPurchase',
+      'launchMultiProductPurchase',
       <String, Object?>{
-        'productId': productId,
-        'quantity': quantity,
+        'productIds': ids,
         'obfuscatedAccountId': obfuscatedAccountId,
       },
     );

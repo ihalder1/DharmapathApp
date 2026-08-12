@@ -15,7 +15,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-/** Narrow Android-only bridge needed because Flutter's generic IAP API launches one product. */
+/** Narrow Android-only bridge for one-time multi-product purchases. */
 class GooglePlayBillingBridge(private val activity: Activity) :
     MethodChannel.MethodCallHandler,
     EventChannel.StreamHandler {
@@ -66,9 +66,8 @@ class GooglePlayBillingBridge(private val activity: Activity) :
             }
             }
             "queryProducts" -> queryProducts(call.argument<List<String>>("productIds").orEmpty(), result)
-            "launchProductPurchase" -> launchProductPurchase(
-                call.argument<String>("productId").orEmpty(),
-                call.argument<Int>("quantity") ?: 1,
+            "launchMultiProductPurchase" -> launchMultiProductPurchase(
+                call.argument<List<String>>("productIds").orEmpty(),
                 call.argument<String>("obfuscatedAccountId").orEmpty(),
                 result,
             )
@@ -132,23 +131,18 @@ class GooglePlayBillingBridge(private val activity: Activity) :
         }
     }
 
-    private fun launchProductPurchase(
-        productId: String,
-        quantity: Int,
+    private fun launchMultiProductPurchase(
+        productIds: List<String>,
         obfuscatedAccountId: String,
         channelResult: MethodChannel.Result,
     ) {
-        diagnostic("launch requested product=$productId quantity=$quantity")
-        if (productId.isBlank() || quantity < 1 || obfuscatedAccountId.isBlank()) {
-            channelResult.error("invalid_purchase", "Product, quantity and account ID are required.", null)
+        diagnostic("MULTI_LAUNCH_REQUEST products=$productIds")
+        if (productIds.isEmpty() || productIds.any(String::isBlank) || obfuscatedAccountId.isBlank()) {
+            channelResult.error("invalid_purchase", "Products and account ID are required.", null)
             return
         }
-        if (quantity != 1) {
-            channelResult.error(
-                "quantity_not_supported",
-                "Google Play Billing does not provide an API to preselect quantity.",
-                quantity,
-            )
+        if (productIds.distinct().size != productIds.size) {
+            channelResult.error("duplicate_products", "Google Play product IDs must be unique.", null)
             return
         }
         withReady { setup ->
@@ -156,46 +150,52 @@ class GooglePlayBillingBridge(private val activity: Activity) :
                 channelResult.error("billing_unavailable", setup.debugMessage, setup.responseCode)
                 return@withReady
             }
-            val cached = productDetails[productId]
-            diagnostic("ProductDetails product=$productId cacheHit=${cached != null}")
-            if (cached != null) {
-                launchLoadedProduct(cached, obfuscatedAccountId, channelResult)
+            val cached = productIds.mapNotNull(productDetails::get)
+            diagnostic("ProductDetails requested=${productIds.size} cached=${cached.size}")
+            if (cached.size == productIds.size) {
+                launchLoadedProducts(cached, obfuscatedAccountId, channelResult)
                 return@withReady
             }
-            val product = QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(productId)
-                .setProductType(BillingClient.ProductType.INAPP)
-                .build()
+            val products = productIds.map { productId ->
+                QueryProductDetailsParams.Product.newBuilder()
+                    .setProductId(productId)
+                    .setProductType(BillingClient.ProductType.INAPP)
+                    .build()
+            }
             billingClient.queryProductDetailsAsync(
-                QueryProductDetailsParams.newBuilder().setProductList(listOf(product)).build(),
+                QueryProductDetailsParams.newBuilder().setProductList(products).build(),
             ) { billingResult, details ->
-                val loaded = details.firstOrNull()
-                if (billingResult.responseCode != BillingClient.BillingResponseCode.OK || loaded == null) {
+                details.forEach { productDetails[it.productId] = it }
+                val loadedById = details.associateBy(ProductDetails::getProductId)
+                val loaded = productIds.mapNotNull(loadedById::get)
+                if (billingResult.responseCode != BillingClient.BillingResponseCode.OK || loaded.size != productIds.size) {
                     channelResult.error("product_unavailable", "Google Play product is unavailable.", billingResult.responseCode)
                     return@queryProductDetailsAsync
                 }
-                productDetails[loaded.productId] = loaded
-                diagnostic("ProductDetails resolved product=${loaded.productId}")
-                launchLoadedProduct(loaded, obfuscatedAccountId, channelResult)
+                diagnostic("ProductDetails resolved products=${loaded.map(ProductDetails::getProductId)}")
+                launchLoadedProducts(loaded, obfuscatedAccountId, channelResult)
             }
         }
     }
 
-    private fun launchLoadedProduct(
-        details: ProductDetails,
+    private fun launchLoadedProducts(
+        details: List<ProductDetails>,
         obfuscatedAccountId: String,
         channelResult: MethodChannel.Result,
     ) {
-        val productParamsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder()
-            .setProductDetails(details)
+        val productParams = details.map { detail ->
+            BillingFlowParams.ProductDetailsParams.newBuilder()
+                .setProductDetails(detail)
+                .build()
+        }
         val billingResult = billingClient.launchBillingFlow(
             activity,
             BillingFlowParams.newBuilder()
-                .setProductDetailsParamsList(listOf(productParamsBuilder.build()))
+                .setProductDetailsParamsList(productParams)
                 .setObfuscatedAccountId(obfuscatedAccountId)
                 .build(),
         )
-        diagnostic("launch response product=${details.productId} responseCode=${billingResult.responseCode}")
+        diagnostic("MULTI_LAUNCH_RESPONSE products=${details.map(ProductDetails::getProductId)} responseCode=${billingResult.responseCode}")
         channelResult.success(
             mapOf(
                 "responseCode" to billingResult.responseCode,

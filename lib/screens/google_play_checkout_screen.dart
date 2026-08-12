@@ -31,7 +31,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
   late final List<AndroidCartProduct> _cartProducts;
   StreamSubscription<PlayPurchaseUpdate>? _purchaseSubscription;
   Completer<_PlayStepResult>? _purchaseCompleter;
-  String? _waitingForStoreProductId;
+  Set<String>? _waitingForProductIds;
   AndroidPurchaseContext? _purchaseContext;
   bool _loading = true;
   bool _processing = false;
@@ -365,7 +365,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
         'sequence order=${context.orderId} active=${context.storeProductIds.toList()} '
         'visible=${_cartProducts.map((item) => item.storeProductId).toList()}',
       );
-      await _runPurchaseSequence(context);
+      await _runMultiProductPurchase(context);
     } on _CheckoutCancelled {
       _setError('Payment was cancelled. You can try again when ready.');
     } on _CheckoutPending {
@@ -430,6 +430,16 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
   }
 
   void _validatePreparedProducts(List<PreparedStoreProduct> prepared) {
+    if (_cartProducts.any((item) => item.quantity != 1) ||
+        prepared.any((item) => item.quantity != 1) ||
+        _cartProducts.map((item) => item.storeProductId).toSet().length !=
+            _cartProducts.length ||
+        prepared.map((item) => item.storeProductId).toSet().length !=
+            prepared.length) {
+      throw const FormatException(
+        'Android products must be distinct with quantity one',
+      );
+    }
     final expected = {
       for (final item in _cartProducts) item.storeProductId: item.quantity,
     };
@@ -444,166 +454,39 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     }
   }
 
-  Future<void> _runPurchaseSequence(AndroidPurchaseContext context) async {
-    var active = context;
-    for (
-      var index = active.currentIndex;
-      index < active.products.length;
-      index++
-    ) {
-      final product = active.products[index];
-      _processingStoreProductId = product.storeProductId;
-      if (active.verifiedStoreProductIds.contains(product.storeProductId)) {
-        continue;
-      }
-      _setStatus(
-        'Processing item ${index + 1} of ${active.products.length}...',
-      );
-      _tempDebug(
-        'PROCESS_ITEM ${index + 1}/${active.products.length}',
-        product: product.storeProductId,
-        orderId: active.orderId,
-        contextState: active.state,
-        currentIndex: index,
-      );
-      PlayBillingService.debug(
-        'processing product ${index + 1} of ${active.products.length}',
-      );
-      active = active.copyWith(currentIndex: index, state: 'opening_play');
-      await _saveContext(active);
-
-      try {
-        _tempDebug(
-          'LAUNCH_VALIDATE',
-          product: product.storeProductId,
-          orderId: active.orderId,
-          contextState: active.state,
-          currentIndex: index,
-          detail:
-              'visible=${_cartProducts.map((item) => item.storeProductId).toList()}',
-        );
-        validatePlayLaunch(
-          context: active,
-          visibleCart: _cartProducts,
-          selectedProduct: product,
-          selectedIndex: index,
-        );
-        playBillingLog(
-          'launch validation order=${active.orderId} '
-          'product=${product.storeProductId} valid=true',
-        );
-        _tempDebug(
-          'LAUNCH_VALID',
-          product: product.storeProductId,
-          orderId: active.orderId,
-          contextState: active.state,
-          currentIndex: index,
-        );
-      } catch (_) {
-        playBillingLog(
-          'launch validation order=${active.orderId} '
-          'product=${product.storeProductId} valid=false',
-        );
-        _tempDebug(
-          'LAUNCH_BLOCKED',
-          product: product.storeProductId,
-          orderId: active.orderId,
-          contextState: active.state,
-          currentIndex: index,
-        );
-        active = active.copyWith(state: 'safety_blocked');
-        await _saveContext(active);
-        throw const _CheckoutSafetyError();
-      }
-
-      final result = await _launchAndWait(active, product);
-      if (result.pending) {
-        active = active.copyWith(state: 'pending');
-        await _saveContext(active);
-        throw const _CheckoutPending();
-      }
-      final purchase = result.purchase!;
-      final verification = await _verifyPurchase(active, product, purchase);
-      final verified = {
-        ...active.verifiedStoreProductIds,
-        product.storeProductId,
-      };
-      active = active.copyWith(
-        verifiedStoreProductIds: verified,
-        currentIndex: index,
-        state: 'verified_pending_consumption',
-      );
-      _tempDebug(
-        'VERIFIED_PERSIST',
-        product: product.storeProductId,
-        orderId: active.orderId,
-        contextState: active.state,
-        currentIndex: active.currentIndex,
-      );
-      await _saveContext(active);
-      _tempDebug(
-        'VERIFIED_PERSISTED',
-        product: product.storeProductId,
-        orderId: active.orderId,
-        contextState: active.state,
-        currentIndex: active.currentIndex,
-      );
-      playBillingLog(
-        'verification statePersisted product=${product.storeProductId} '
-        'state=${active.state} currentIndex=${active.currentIndex}',
-      );
-
-      final consumed = await _consumeWithDiagnostics(
-        context: active,
-        productId: product.storeProductId,
-        purchaseToken: purchase.purchaseToken,
-      );
-      if (!consumed.completed) {
-        _tempDebug(
-          'CONSUME_FAILED',
-          product: product.storeProductId,
-          billingResponseCode: consumed.responseCode,
-          consumedCompleted: consumed.completed,
-          alreadyConsumed: consumed.alreadyConsumed,
-          error: consumed.safeDebugMessage,
-        );
-        throw const _ConsumptionPending();
-      }
-      _tempDebug(
-        'CONSUME_COMPLETE',
-        product: product.storeProductId,
-        billingResponseCode: consumed.responseCode,
-        consumedCompleted: consumed.completed,
-        alreadyConsumed: consumed.alreadyConsumed,
-      );
-      active = active.copyWith(
-        currentIndex: index + 1,
-        state: verification.paid ? 'paid' : 'partially_paid',
-      );
-      await _saveContext(active);
-      _tempDebug(
-        'CONTEXT_ADVANCE',
-        product: product.storeProductId,
-        orderId: active.orderId,
-        contextState: active.state,
-        currentIndex: active.currentIndex,
-      );
-      playBillingLog(
-        'consume stateAdvanced product=${product.storeProductId} '
-        'state=${active.state} currentIndex=${active.currentIndex}',
-      );
-
-      if (verification.paid) {
-        await _completePaidOrder(active, removeMatchingCartItems: true);
-        return;
-      }
+  Future<void> _runMultiProductPurchase(AndroidPurchaseContext context) async {
+    var active = context.copyWith(state: 'opening_play');
+    try {
+      validatePlayLaunch(context: active, visibleCart: _cartProducts);
+    } catch (_) {
+      await _saveContext(active.copyWith(state: 'safety_blocked'));
+      throw const _CheckoutSafetyError();
     }
-
-    final order = await PaymentService.getAndroidPurchaseOrder(
-      active.orderId,
-      onDiagnostic: _handlePaymentDiagnostic,
+    await _saveContext(active);
+    final result = await _launchAndWait(active);
+    if (result.pending) {
+      await _saveContext(active.copyWith(state: 'pending'));
+      throw const _CheckoutPending();
+    }
+    final purchase = result.purchase!;
+    final verification = await _verifyPurchase(active, purchase);
+    active = active.copyWith(
+      verifiedStoreProductIds: active.storeProductIds,
+      currentIndex: active.products.length,
+      state: 'verified_pending_consumption',
     );
-    if (order.paid) {
+    await _saveContext(active);
+    _tempDebug('VERIFIED_PERSISTED', orderId: active.orderId);
+    final consumed = await _consumeWithDiagnostics(
+      context: active,
+      purchaseToken: purchase.purchaseToken,
+    );
+    if (!consumed.completed) throw const _ConsumptionPending();
+    active = active.copyWith(
+      state: verification.paid ? 'paid' : verification.status,
+    );
+    await _saveContext(active);
+    if (verification.paid) {
       await _completePaidOrder(active, removeMatchingCartItems: true);
     } else {
       _setStatus(
@@ -612,59 +495,45 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     }
   }
 
-  Future<_PlayStepResult> _launchAndWait(
-    AndroidPurchaseContext context,
-    PreparedStoreProduct product,
-  ) async {
+  Future<_PlayStepResult> _launchAndWait(AndroidPurchaseContext context) async {
     final completer = Completer<_PlayStepResult>();
     _purchaseCompleter = completer;
-    _waitingForStoreProductId = product.storeProductId;
+    _waitingForProductIds = context.storeProductIds;
     _setStatus('Opening Google Play...');
     _tempDebug(
-      'PLAY_LAUNCH_REQUEST',
-      product: product.storeProductId,
+      'MULTI_LAUNCH_REQUEST',
       orderId: context.orderId,
       contextState: context.state,
       currentIndex: context.currentIndex,
-      detail: 'quantity=${product.quantity}',
+      detail: 'products=${context.storeProductIds.toList()}',
     );
-    final launch = await PlayBillingService.launchProductPurchase(
-      productId: product.storeProductId,
-      quantity: product.quantity,
+    final launch = await PlayBillingService.launchMultiProductPurchase(
+      productIds: context.storeProductIds,
       obfuscatedAccountId: context.linkToken,
     );
     final responseCode = launch['responseCode'] as int? ?? -1;
-    _tempDebug(
-      'PLAY_LAUNCH_RESPONSE',
-      product: product.storeProductId,
-      billingResponseCode: responseCode,
-    );
+    _tempDebug('MULTI_LAUNCH_RESPONSE', billingResponseCode: responseCode);
     if (responseCode == 7) {
       _purchaseCompleter = null;
-      _waitingForStoreProductId = null;
-      playBillingLog(
-        'launch item-already-owned order=${context.orderId} '
-        'product=${product.storeProductId}',
-      );
-      return _outstandingResultForProduct(context, product);
+      _waitingForProductIds = null;
+      return _outstandingResultForContext(context);
     }
     if (responseCode != 0) {
       _purchaseCompleter = null;
-      _waitingForStoreProductId = null;
+      _waitingForProductIds = null;
       throw PlatformException(code: 'billing_launch_failed');
     }
     return completer.future.timeout(const Duration(minutes: 10));
   }
 
-  Future<_PlayStepResult> _outstandingResultForProduct(
+  Future<_PlayStepResult> _outstandingResultForContext(
     AndroidPurchaseContext context,
-    PreparedStoreProduct product,
   ) async {
     final purchases = await _queryOutstandingWithDiagnostics();
     _logOutstanding(purchases);
     final matching = purchases.where(
       (purchase) =>
-          purchase.products.contains(product.storeProductId) &&
+          purchaseProductsMatch(context, purchase) &&
           (purchase.obfuscatedAccountId == null ||
               purchase.obfuscatedAccountId == context.linkToken),
     );
@@ -685,16 +554,29 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
           'purchases=${update.purchases.map((purchase) => {'products': purchase.products, 'state': _purchaseStateName(purchase.purchaseState), 'ack': purchase.isAcknowledged}).toList()}',
     );
     final completer = _purchaseCompleter;
-    final storeId = _waitingForStoreProductId;
-    if (completer == null || completer.isCompleted || storeId == null) return;
+    final expected = _waitingForProductIds;
+    if (completer == null || completer.isCompleted || expected == null) return;
     if (update.userCancelled) {
       completer.completeError(const _CheckoutCancelled());
       return;
     }
     final matching = update.purchases.where(
-      (purchase) => purchase.products.contains(storeId),
+      (purchase) =>
+          purchase.products.toSet().length == purchase.products.length &&
+          expected.length == purchase.products.length &&
+          expected.containsAll(purchase.products),
     );
     if (matching.isEmpty) {
+      if (update.purchases.isNotEmpty) {
+        _tempDebug(
+          'PURCHASE_SET_MATCH',
+          detail: 'value=false expected=$expected',
+        );
+        completer.completeError(const _CheckoutSafetyError());
+        _purchaseCompleter = null;
+        _waitingForProductIds = null;
+        return;
+      }
       if (update.responseCode != 0) {
         completer.completeError(PlatformException(code: 'purchase_failed'));
       }
@@ -702,14 +584,14 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     }
     final purchase = matching.first;
     if (purchase.isPending) {
-      PlayBillingService.debug('purchase state=PENDING product=$storeId');
+      PlayBillingService.debug('purchase state=PENDING products=$expected');
       completer.complete(const _PlayStepResult.pending());
     } else if (purchase.isPurchased && purchase.purchaseToken.isNotEmpty) {
-      PlayBillingService.debug('purchase state=PURCHASED product=$storeId');
+      PlayBillingService.debug('purchase state=PURCHASED products=$expected');
       completer.complete(_PlayStepResult.purchased(purchase));
     }
     _purchaseCompleter = null;
-    _waitingForStoreProductId = null;
+    _waitingForProductIds = null;
   }
 
   String _purchaseStateName(int state) => switch (state) {
@@ -720,59 +602,58 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
 
   Future<PurchaseVerification> _verifyPurchase(
     AndroidPurchaseContext context,
-    PreparedStoreProduct product,
     PlayPurchase purchase,
   ) async {
-    if (!context.storeProductIds.contains(product.storeProductId) ||
-        !purchase.products.contains(product.storeProductId)) {
+    final matches = purchaseProductsMatch(context, purchase);
+    _tempDebug(
+      'PURCHASE_SET_MATCH',
+      orderId: context.orderId,
+      detail: 'value=$matches products=${purchase.products}',
+    );
+    if (!matches) {
       throw const _CheckoutSafetyError();
     }
     if (!_verifyingTokens.add(purchase.purchaseToken)) {
       throw StateError('Purchase verification is already in progress');
     }
-    playBillingLog('verification start product=${product.storeProductId}');
+    playBillingLog('verification start order=${context.orderId}');
     _tempDebug(
       'VERIFY_REQUEST',
-      product: product.storeProductId,
       orderId: context.orderId,
       contextState: context.state,
       currentIndex: context.currentIndex,
     );
     try {
       _setStatus('Verifying purchase...');
-      PlayBillingService.debug(
-        'verifying purchase product=${product.storeProductId}',
-      );
+      PlayBillingService.debug('verifying purchase order=${context.orderId}');
       final result = await PaymentService.verifyAndroidPurchase(
         orderId: context.orderId,
         purchaseToken: purchase.purchaseToken,
-        storeProductId: product.storeProductId,
         onDiagnostic: _handlePaymentDiagnostic,
       );
       PlayBillingService.debug('backend verification status=${result.status}');
-      if (!result.accepted) {
+      if (!result.paid) {
         _tempDebug(
           'VERIFY_REJECTED',
-          product: product.storeProductId,
           orderId: context.orderId,
           backendStatus: result.status,
           accepted: result.accepted,
           paid: result.paid,
         );
         playBillingLog(
-          'verification rejected product=${product.storeProductId} '
+          'verification rejected order=${context.orderId} '
           'status=${result.status}',
         );
         throw StateError('Backend did not accept purchase verification');
       }
       playBillingLog(
-        'verification accepted product=${product.storeProductId} '
+        'verification accepted order=${context.orderId} '
         'status=${result.status}',
       );
       return result;
     } catch (error) {
       playBillingLog(
-        'verification exception product=${product.storeProductId} '
+        'verification exception order=${context.orderId} '
         'type=${error.runtimeType}',
       );
       rethrow;
@@ -884,115 +765,46 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       var active = stored;
       final purchases = await _queryOutstandingWithDiagnostics();
       _logOutstanding(purchases);
-      for (final product in active.products) {
-        final alreadyVerified = active.verifiedStoreProductIds.contains(
-          product.storeProductId,
-        );
-        playBillingLog(
-          'recovery product=${product.storeProductId} '
-          'contextState=${active.state} alreadyVerified=$alreadyVerified',
-        );
-        final matches = purchases.where(
-          (purchase) =>
-              purchase.products.contains(product.storeProductId) &&
-              (purchase.obfuscatedAccountId == null ||
-                  purchase.obfuscatedAccountId == active.linkToken),
-        );
-        if (matches.isEmpty) {
-          if (active.verifiedStoreProductIds.contains(product.storeProductId)) {
-            active = active.copyWith(
-              currentIndex: active.products.indexOf(product) + 1,
-              state: 'partially_paid',
-            );
-            await _contextStore.save(active);
-          }
-          continue;
-        }
+      final matches = purchases.where(
+        (purchase) =>
+            purchaseProductsMatch(active, purchase) &&
+            (purchase.obfuscatedAccountId == null ||
+                purchase.obfuscatedAccountId == active.linkToken),
+      );
+      if (matches.isNotEmpty) {
         final purchase = matches.first;
         if (purchase.isPending) {
-          _tempDebug(
-            'RECOVERY_PENDING',
-            product: product.storeProductId,
-            orderId: active.orderId,
-          );
           active = active.copyWith(state: 'pending');
-          await _contextStore.save(active);
-          if (matchesCurrentCart) _purchaseContext = active;
+          await _saveContext(active);
           _setStatus(
-            'Payment is pending. Your mantra credits will be available after '
-            'Google Play confirms the payment.',
+            'Payment is pending. Your mantra credits will be available after Google Play confirms the payment.',
           );
           return false;
         }
         if (purchase.isPurchased && purchase.purchaseToken.isNotEmpty) {
-          _tempDebug(
-            'RECOVERY_PURCHASED',
-            product: product.storeProductId,
-            orderId: active.orderId,
-          );
+          final alreadyVerified =
+              active.state == 'verified_pending_consumption' ||
+              active.storeProductIds.every(
+                active.verifiedStoreProductIds.contains,
+              );
           PurchaseVerification? verification;
           if (!alreadyVerified) {
-            playBillingLog(
-              'recovery retryVerification product=${product.storeProductId}',
-            );
-            verification = await _verifyPurchase(active, product, purchase);
+            verification = await _verifyPurchase(active, purchase);
             active = active.copyWith(
-              verifiedStoreProductIds: {
-                ...active.verifiedStoreProductIds,
-                product.storeProductId,
-              },
-              currentIndex: active.products.indexOf(product),
+              verifiedStoreProductIds: active.storeProductIds,
+              currentIndex: active.products.length,
               state: 'verified_pending_consumption',
             );
-            await _contextStore.save(active);
+            await _saveContext(active);
           }
-
-          if (alreadyVerified) {
-            _tempDebug(
-              'RECOVERY_VERIFY_ALREADY_RECORDED',
-              product: product.storeProductId,
-              orderId: active.orderId,
-              detail: 'value=true',
-            );
-          }
-
-          playBillingLog(
-            'recovery retryConsumption product=${product.storeProductId} '
-            'alreadyVerified=${active.verifiedStoreProductIds.contains(product.storeProductId)}',
-          );
-          _tempDebug(
-            'RECOVERY_CONSUME_RETRY',
-            product: product.storeProductId,
-            orderId: active.orderId,
-            contextState: active.state,
-            currentIndex: active.currentIndex,
-          );
           final consumed = await _consumeWithDiagnostics(
             context: active,
-            productId: product.storeProductId,
             purchaseToken: purchase.purchaseToken,
           );
-          playBillingLog(
-            'recovery retryConsumptionResult product=${product.storeProductId} '
-            'responseCode=${consumed.responseCode} completed=${consumed.completed}',
-          );
-          _tempDebug(
-            'RECOVERY_CONSUME_RESULT',
-            product: product.storeProductId,
-            billingResponseCode: consumed.responseCode,
-            consumedCompleted: consumed.completed,
-            alreadyConsumed: consumed.alreadyConsumed,
-          );
-          if (!consumed.completed) {
-            if (matchesCurrentCart) _purchaseContext = active;
-            return false;
-          }
-          active = active.copyWith(
-            currentIndex: active.products.indexOf(product) + 1,
-            state: verification?.paid == true ? 'paid' : 'partially_paid',
-          );
-          await _contextStore.save(active);
-          if (verification?.paid == true) {
+          if (!consumed.completed) return false;
+          if (verification?.paid == true || order.paid) {
+            active = active.copyWith(state: 'paid');
+            await _saveContext(active);
             await _completePaidOrder(
               active,
               removeMatchingCartItems: matchesCurrentCart,
@@ -1074,28 +886,21 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     final purchases = await _queryOutstandingWithDiagnostics();
     _logOutstanding(purchases);
     for (final purchase in purchases) {
-      final belongsToOrder = purchase.products.any(
-        context.storeProductIds.contains,
-      );
+      final belongsToOrder = purchaseProductsMatch(context, purchase);
       final accountMatches =
           purchase.obfuscatedAccountId == null ||
           purchase.obfuscatedAccountId == context.linkToken;
       if (!belongsToOrder || !accountMatches) continue;
       if (!purchase.isPurchased || purchase.purchaseToken.isEmpty) return false;
-      final productId = purchase.products.firstWhere(
-        context.storeProductIds.contains,
-      );
       playBillingLog(
-        'recovery paidOrder retryConsumption product=$productId '
-        'alreadyVerified=${context.verifiedStoreProductIds.contains(productId)}',
+        'recovery paidOrder retryConsumption products=${purchase.products}',
       );
       final consumed = await _consumeWithDiagnostics(
         context: context,
-        productId: productId,
         purchaseToken: purchase.purchaseToken,
       );
       playBillingLog(
-        'recovery paidOrder consumptionResult product=$productId '
+        'recovery paidOrder consumptionResult '
         'responseCode=${consumed.responseCode} completed=${consumed.completed}',
       );
       if (!consumed.completed) return false;
@@ -1105,34 +910,31 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
 
   Future<PlayConsumeResult> _consumeWithDiagnostics({
     required AndroidPurchaseContext context,
-    required String productId,
     required String purchaseToken,
   }) async {
     playBillingLog(
-      'consume start product=$productId state=${context.state} '
+      'consume start products=${context.storeProductIds.toList()} state=${context.state} '
       'currentIndex=${context.currentIndex}',
     );
     _tempDebug(
       'CONSUME_START',
-      product: productId,
       orderId: context.orderId,
       contextState: context.state,
       currentIndex: context.currentIndex,
     );
-    _tempDebug('CONSUME_CHANNEL_CALL', product: productId);
+    _tempDebug('CONSUME_CHANNEL_CALL');
     try {
       final consumed = await PlayBillingService.consumePurchase(
         purchaseToken,
-        storeProductId: productId,
+        storeProductId: context.storeProductIds.join(','),
       );
       playBillingLog(
-        'consume finish product=$productId responseCode=${consumed.responseCode} '
+        'consume finish responseCode=${consumed.responseCode} '
         'completed=${consumed.completed} '
         'alreadyConsumed=${consumed.alreadyConsumed}',
       );
       _tempDebug(
         'CONSUME_RESULT',
-        product: productId,
         billingResponseCode: consumed.responseCode,
         consumedCompleted: consumed.completed,
         alreadyConsumed: consumed.alreadyConsumed,
@@ -1143,12 +945,11 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       return consumed;
     } on PlatformException catch (error) {
       playBillingLog(
-        'consume platformException product=$productId code=${error.code} '
+        'consume platformException code=${error.code} '
         'message=${sanitizePlayBillingDiagnostic(error.message)}',
       );
       _tempDebug(
         'CONSUME_PLATFORM_ERROR',
-        product: productId,
         error: error,
         detail: 'code=${error.code}',
       );

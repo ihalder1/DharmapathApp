@@ -28,10 +28,10 @@ class ApiConfig {
   // Generate Mantra endpoint (legacy; voice job uses [createJobBaseUrl])
   static const String generateMantraEndpoint = '/auth/profile/generate-mantra';
 
-  /// Async mantra generation job (prod).
-  // Development: https://api-online.prod.mantrasutra.ids-ai.net/prod
+  /// Async mantra generation job.
+  // Development: https://api-online.prod.mantrasutra.ids-ai.net/v1
   static const String createJobBaseUrl =
-      'https://api-online.mantrasutra.ids-ai.net/prod';
+      'https://api-online.mantrasutra.ids-ai.net/v1';
   static const String createJobEndpoint = '/create-job';
 
   // Voice Recording endpoint

@@ -20,6 +20,7 @@ import '../services/notification_service.dart';
 import '../services/inferred_mantras_service.dart';
 import '../services/play_billing_service.dart';
 import '../services/cart_quantity_policy.dart';
+import '../services/location_pricing_service.dart';
 import '../models/mantra.dart';
 import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
@@ -416,6 +417,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return _playProductPrices[productId]?.formattedPrice ?? 'Price unavailable';
   }
+
+  String get _regionalTaxPriceLabel => LocationPricingService.taxPriceLabel(
+    LocationPricingService.cachedRegion ?? PricingRegion.other,
+  );
 
   String _formatGooglePlayMicros(int amountMicros, String currencyCode) {
     return NumberFormat.currency(
@@ -2781,9 +2786,9 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'VAT/GST applicable',
-                    style: TextStyle(fontSize: 9, color: Colors.black87),
+                  Text(
+                    _regionalTaxPriceLabel,
+                    style: const TextStyle(fontSize: 9, color: Colors.black87),
                   ),
                   Text(
                     'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
@@ -2917,9 +2922,9 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'VAT/GST applicable',
-                    style: TextStyle(fontSize: 10, color: Colors.black87),
+                  Text(
+                    _regionalTaxPriceLabel,
+                    style: const TextStyle(fontSize: 10, color: Colors.black87),
                   ),
                   Text(
                     'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',

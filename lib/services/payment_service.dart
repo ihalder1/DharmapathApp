@@ -649,12 +649,9 @@ class PaymentService {
   static Future<PurchaseVerification> verifyAndroidPurchase({
     required String orderId,
     required String purchaseToken,
-    required String storeProductId,
     AndroidPaymentDiagnosticCallback? onDiagnostic,
   }) async {
-    playBillingLog(
-      'operation=verify order=$orderId product=$storeProductId request=start',
-    );
+    playBillingLog('operation=verify order=$orderId request=start');
     final response = await AuthenticatedHttp.paymentPost(
       Uri.parse(
         '${ApiConfig.paymentBaseUrl}${ApiConfig.verifyAndroidPurchaseEndpoint}',
@@ -663,7 +660,6 @@ class PaymentService {
         'orderId': orderId,
         'platform': 'android',
         'purchaseToken': purchaseToken,
-        'storeProductId': storeProductId,
       }),
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
@@ -679,7 +675,7 @@ class PaymentService {
         ),
       );
       playBillingLog(
-        'operation=verify order=$orderId product=$storeProductId '
+        'operation=verify order=$orderId '
         'httpStatus=${response.statusCode} '
         '${_safeAndroidBillingError(response.body)}',
       );
@@ -711,7 +707,7 @@ class PaymentService {
         ),
       );
       playBillingLog(
-        'operation=verify order=$orderId product=$storeProductId '
+        'operation=verify order=$orderId '
         'httpStatus=${response.statusCode} status=${verification.status} '
         'accepted=${verification.accepted} paid=${verification.paid}',
       );
@@ -727,7 +723,7 @@ class PaymentService {
         ),
       );
       playBillingLog(
-        'operation=verify order=$orderId product=$storeProductId '
+        'operation=verify order=$orderId '
         'parseFailure=true httpStatus=${response.statusCode} '
         'exceptionType=${error.runtimeType}',
       );

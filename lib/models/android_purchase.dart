@@ -288,29 +288,27 @@ Map<String, dynamic> _responseData(Map<String, dynamic> body) {
 void validatePlayLaunch({
   required AndroidPurchaseContext context,
   required Iterable<AndroidCartProduct> visibleCart,
-  required PreparedStoreProduct selectedProduct,
-  required int selectedIndex,
 }) {
   final visible = visibleCart.toList(growable: false);
   if (!context.matchesCart(visible)) {
     throw StateError('Active purchase order does not match the visible cart');
   }
   if (context.isTerminal) throw StateError('Purchase order is terminal');
-  if (selectedIndex < 0 || selectedIndex >= context.products.length) {
-    throw RangeError.index(selectedIndex, context.products);
-  }
-  if (context.products[selectedIndex].storeProductId !=
-      selectedProduct.storeProductId) {
-    throw StateError('Selected product does not match the active order index');
-  }
-  if (selectedProduct.quantity != 1) {
+  if (context.products.any((product) => product.quantity != 1)) {
     throw StateError('Android purchase quantity must be one');
   }
-  if (!visible.any(
-    (product) => product.storeProductId == selectedProduct.storeProductId,
-  )) {
-    throw StateError('Selected product is not in the visible cart');
+  if (context.storeProductIds.length != context.products.length) {
+    throw StateError('Google Play product IDs must be unique');
   }
+}
+
+bool purchaseProductsMatch(
+  AndroidPurchaseContext context,
+  PlayPurchase purchase,
+) {
+  final actual = purchase.products.toSet();
+  return actual.length == purchase.products.length &&
+      _sameStringSet(context.storeProductIds, actual);
 }
 
 bool _sameStringSet(Set<String> left, Set<String> right) =>
