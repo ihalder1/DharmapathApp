@@ -2,10 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-// TEMPORARY GOOGLE PLAY BILLING UI DIAGNOSTICS.
-// REMOVE BEFORE PRODUCTION RELEASE.
-const bool temporaryPlayBillingUiDebug = true;
-
 const bool playBillingDiagnostics = bool.fromEnvironment(
   'PLAY_BILLING_DIAGNOSTICS',
 );

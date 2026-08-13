@@ -12,6 +12,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import '../constants/app_colors.dart';
+import '../services/account_service.dart';
 import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import '../services/mantra_service.dart';
@@ -73,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isMantraSelectionExpanded = false;
   bool _isRecordingsExpanded = false;
   bool _isMyMantrasExpanded = false;
+  bool _isDeleteAccountDialogOpen = false;
 
   // Notifications
   int _unreadNotificationCount = 0;
@@ -1388,14 +1390,36 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
         children: [
-          Center(child: _buildProfilePictureSection()),
-          const SizedBox(height: 4),
-          _buildNestedPersonalInfoCard(),
-          const SizedBox(height: 4),
-          _buildStatisticsRow(),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(child: _buildProfilePictureSection()),
+              const SizedBox(height: 4),
+              _buildNestedPersonalInfoCard(),
+              const SizedBox(height: 4),
+              _buildStatisticsRow(),
+            ],
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
+              tooltip: 'Delete account',
+              onPressed: _isDeleteAccountDialogOpen
+                  ? null
+                  : _showDeleteAccountDialog,
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(
+                Icons.delete_outline,
+                color: Colors.red,
+                size: 20,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -2788,7 +2812,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     _regionalTaxPriceLabel,
-                    style: const TextStyle(fontSize: 9, color: Colors.black87),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF006400),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Text(
                     'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
@@ -2924,7 +2952,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     _regionalTaxPriceLabel,
-                    style: const TextStyle(fontSize: 10, color: Colors.black87),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF006400),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Text(
                     'Showing ${_filteredMantras.length} of ${_mantras.length} mantras',
@@ -4419,6 +4451,23 @@ class _HomeScreenState extends State<HomeScreen> {
                                     color: AppColors.white,
                                   ),
                                 ),
+                                if (_usesGooglePlayBilling) ...[
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    tooltip: 'Remove ${mantra.name} from cart',
+                                    onPressed: () => _removeFromCart(mantra),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 32,
+                                      height: 32,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 20,
+                                      color: AppColors.white,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           );
@@ -4628,6 +4677,90 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showDeleteAccountDialog() async {
+    if (_isDeleteAccountDialogOpen) return;
+    setState(() => _isDeleteAccountDialogOpen = true);
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          var isSubmitting = false;
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) => AlertDialog(
+              title: const Text('Delete account?'),
+              content: const Text(
+                'This will permanently delete your account and associated '
+                'account data. This action cannot be undone.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          setDialogState(() => isSubmitting = true);
+                          final deleted = await AccountService()
+                              .deleteAccount();
+                          if (!mounted) return;
+
+                          if (!deleted) {
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Unable to delete your account. Please try again.',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          try {
+                            await MantraService.clearCart();
+                          } catch (_) {
+                            // Session cleanup must continue after server deletion.
+                          }
+                          NotificationService.clearCache();
+                          await context
+                              .read<AuthService>()
+                              .clearLocalSessionAfterAccountDeletion();
+                          if (!mounted) return;
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Delete account'),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _isDeleteAccountDialogOpen = false);
+    }
   }
 
   void _showLogoutDialog(BuildContext context) {

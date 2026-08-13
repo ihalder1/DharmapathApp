@@ -69,6 +69,33 @@ void main() {
     expect(MantraService.getCart().single.cartQuantity, 1);
   });
 
+  test(
+    'Android removal immediately updates checkout items and permits re-add',
+    () async {
+      final aarati = mantra('F-AARATI-001', 'song_f_aarati_001', 'Aarati');
+      final brahma = mantra('F-BRAHMA-001', 'song_f_brahma_001', 'Brahma');
+      await MantraService.addToCart(aarati);
+      await MantraService.addToCart(brahma);
+
+      await MantraService.removeFromCart(aarati);
+      await MantraService.removeFromCart(aarati);
+
+      expect(
+        MantraService.expandCartForCheckout().map(
+          (item) => item.storeProductIdAndroid,
+        ),
+        ['song_f_brahma_001'],
+      );
+      expect(await MantraService.addToCart(aarati), isTrue);
+      expect(
+        MantraService.expandCartForCheckout().map(
+          (item) => item.storeProductIdAndroid,
+        ),
+        ['song_f_brahma_001', 'song_f_aarati_001'],
+      );
+    },
+  );
+
   test('Android legacy persisted quantity is normalized to one', () {
     expect(
       normalizedCartQuantity(2, platform: TargetPlatform.android, isWeb: false),

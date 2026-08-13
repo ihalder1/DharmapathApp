@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -41,26 +40,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
   String? _error;
   String? _processingStoreProductId;
   final Set<String> _verifyingTokens = {};
-  String _debugStage = 'INITIALIZE';
-  String? _debugProduct;
-  String? _debugOrderId;
-  String? _debugContextState;
-  int? _debugCurrentIndex;
-  int? _debugHttpStatus;
-  String? _debugBackendStatus;
-  bool? _debugAccepted;
-  bool? _debugPaid;
-  int? _debugBillingResponseCode;
-  bool? _debugConsumedCompleted;
-  bool? _debugAlreadyConsumed;
-  String? _debugErrorType;
-  String? _debugErrorMessage;
-  final List<String> _debugEvents = [];
-
-  bool get _showTemporaryDebugPanel =>
-      temporaryPlayBillingUiDebug &&
-      !kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.android;
+  bool _purchaseCommitted = false;
 
   @override
   void initState() {
@@ -97,7 +77,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     Object? error,
     String? detail,
   }) {
-    if (!_showTemporaryDebugPanel) return;
     try {
       final safeDetail = detail == null
           ? null
@@ -114,34 +93,14 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
         if (httpStatus != null) 'http=$httpStatus',
         if (backendStatus != null && backendStatus.isNotEmpty)
           'backend=$backendStatus',
+        if (accepted != null) 'accepted=$accepted',
+        if (paid != null) 'paid=$paid',
         if (billingResponseCode != null) 'billing=$billingResponseCode',
         if (consumedCompleted != null) 'complete=$consumedCompleted',
+        if (alreadyConsumed != null) 'alreadyConsumed=$alreadyConsumed',
+        if (safeError != null && safeError.isNotEmpty) 'error=$safeError',
         if (safeDetail != null && safeDetail.isNotEmpty) safeDetail,
       ];
-      void update() {
-        _debugStage = stage;
-        _debugProduct = product ?? _debugProduct;
-        _debugOrderId = orderId ?? _debugOrderId;
-        _debugContextState = contextState ?? _debugContextState;
-        _debugCurrentIndex = currentIndex ?? _debugCurrentIndex;
-        _debugHttpStatus = httpStatus;
-        _debugBackendStatus = backendStatus;
-        _debugAccepted = accepted;
-        _debugPaid = paid;
-        _debugBillingResponseCode = billingResponseCode;
-        _debugConsumedCompleted = consumedCompleted;
-        _debugAlreadyConsumed = alreadyConsumed;
-        _debugErrorType = error?.runtimeType.toString();
-        _debugErrorMessage = safeError;
-        _debugEvents.add(parts.join(' '));
-        if (_debugEvents.length > 20) _debugEvents.removeAt(0);
-      }
-
-      if (mounted) {
-        setState(update);
-      } else {
-        update();
-      }
       playBillingLog(parts.join(' '));
     } catch (_) {
       // Diagnostics must never affect checkout behavior.
@@ -411,7 +370,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
         contextState: active?.state,
         currentIndex: active?.currentIndex,
         error: error,
-        detail: 'previousStage=$_debugStage',
       );
       if (playBillingDiagnostics) {
         debugPrintStack(
@@ -469,6 +427,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       throw const _CheckoutPending();
     }
     final purchase = result.purchase!;
+    _lockNavigationAfterPurchase();
     final verification = await _verifyPurchase(active, purchase);
     active = active.copyWith(
       verifiedStoreProductIds: active.storeProductIds,
@@ -588,6 +547,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       completer.complete(const _PlayStepResult.pending());
     } else if (purchase.isPurchased && purchase.purchaseToken.isNotEmpty) {
       PlayBillingService.debug('purchase state=PURCHASED products=$expected');
+      _lockNavigationAfterPurchase();
       completer.complete(_PlayStepResult.purchased(purchase));
     }
     _purchaseCompleter = null;
@@ -599,6 +559,11 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     2 => 'PENDING',
     _ => 'UNSPECIFIED',
   };
+
+  void _lockNavigationAfterPurchase() {
+    if (_purchaseCommitted || !mounted) return;
+    setState(() => _purchaseCommitted = true);
+  }
 
   Future<PurchaseVerification> _verifyPurchase(
     AndroidPurchaseContext context,
@@ -659,6 +624,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       rethrow;
     } finally {
       _verifyingTokens.remove(purchase.purchaseToken);
+      if (mounted) setState(() {});
     }
   }
 
@@ -1009,8 +975,24 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_purchaseCommitted,
+      child: _buildCheckoutScaffold(context),
+    );
+  }
+
+  Widget _buildCheckoutScaffold(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Google Play checkout')),
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          onPressed: _purchaseCommitted
+              ? null
+              : () => Navigator.maybePop(context),
+          icon: const BackButtonIcon(),
+        ),
+        title: const Text('Google Play checkout'),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -1020,11 +1002,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(item.productName),
-                    subtitle: Text(
-                      item.quantity > 1
-                          ? '${_prices[item.storeProductId]?.formattedPrice ?? 'Price unavailable'} × ${item.quantity}'
-                          : item.storeProductId,
-                    ),
                     trailing: Text(_lineTotal(item)),
                   ),
                 const Divider(),
@@ -1046,10 +1023,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
                     'One or more Google Play products are unavailable or use '
                     'a different currency.',
                   ),
-                if (_showTemporaryDebugPanel) ...[
-                  const SizedBox(height: 16),
-                  _buildTemporaryDebugPanel(),
-                ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed:
@@ -1073,58 +1046,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
                 ),
               ],
             ),
-    );
-  }
-
-  Widget _buildTemporaryDebugPanel() {
-    String value(Object? value) => value?.toString() ?? '-';
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF3CD),
-        border: Border.all(color: const Color(0xFFB26A00), width: 2),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DefaultTextStyle(
-        style: const TextStyle(
-          color: Colors.black,
-          fontSize: 11,
-          fontFamily: 'monospace',
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'TEMP PLAY BILLING DEBUG',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            const SizedBox(height: 6),
-            SelectableText(
-              'Stage: $_debugStage\n'
-              'Product: ${value(_debugProduct)}\n'
-              'Order: ${value(_debugOrderId)}\n'
-              'Context: ${value(_debugContextState)}\n'
-              'Index: ${value(_debugCurrentIndex)}\n'
-              'HTTP: ${value(_debugHttpStatus)}\n'
-              'Backend status: ${value(_debugBackendStatus)}\n'
-              'Accepted: ${value(_debugAccepted)}\n'
-              'Paid: ${value(_debugPaid)}\n'
-              'Billing response: ${value(_debugBillingResponseCode)}\n'
-              'Consume complete: ${value(_debugConsumedCompleted)}\n'
-              'Already consumed: ${value(_debugAlreadyConsumed)}\n'
-              'Error type: ${value(_debugErrorType)}\n'
-              'Error: ${value(_debugErrorMessage)}',
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'History:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 3),
-            SelectableText(_debugEvents.join('\n')),
-          ],
-        ),
-      ),
     );
   }
 

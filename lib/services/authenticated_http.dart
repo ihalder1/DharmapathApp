@@ -104,10 +104,15 @@ class AuthenticatedHttp {
     });
   }
 
-  static Future<http.Response> delete(Uri url, {Duration? timeout}) {
+  static Future<http.Response> delete(
+    Uri url, {
+    Object? body,
+    Duration? timeout,
+  }) {
     return _withMainAuth(
-      (headers) =>
-          http.delete(url, headers: headers).timeout(_timeout(timeout)),
+      (headers) => http
+          .delete(url, headers: headers, body: body)
+          .timeout(_timeout(timeout)),
     );
   }
 

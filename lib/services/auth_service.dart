@@ -1153,6 +1153,26 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Clears the local authenticated session after the backend has deleted the
+  /// application account. This intentionally does not call `/auth/logout`.
+  Future<void> clearLocalSessionAfterAccountDeletion() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Local credential cleanup must continue if provider sign-out fails.
+    } finally {
+      _currentUser = null;
+      _accessToken = null;
+      _refreshToken = null;
+      _tokenExpiry = null;
+      try {
+        await _clearPersistedSessionPreservingCart();
+      } finally {
+        notifyListeners();
+      }
+    }
+  }
+
   // Clear all session data (for testing)
   Future<void> clearSession() async {
     try {

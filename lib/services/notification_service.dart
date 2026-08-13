@@ -226,6 +226,10 @@ class NotificationService {
   static int get unreadCount =>
       _cachedNotifications.where((n) => !n.isRead).length;
 
+  static void clearCache() {
+    _cachedNotifications = [];
+  }
+
   /// GET `/auth/profile/notifications` — refreshes cache.
   static Future<List<NotificationItem>> refresh() async {
     try {

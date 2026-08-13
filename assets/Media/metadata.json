@@ -82,9 +82,9 @@
             },
             {
               "name": "Maa Mahalakshmi Mantra",
-            "mantra_file": "F-MAHALAKSHMI-001.mp3",
-            "store_product_id_android": "song_f_mahalakshmi_001",
-              "icon": "F-MAHALAKSHMI-001.png",
+            "mantra_file": "M-MAHALAKSHMI-001.mp3",
+            "store_product_id_android": "song_m_mahalakshmi_001",
+              "icon": "M-MAHALAKSHMI-001.png",
               "price_in": 99,
               "price_other": 4.99,
               "price": 201,
