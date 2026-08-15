@@ -51,9 +51,9 @@ class MantraService {
 
   /// Load catalog from local metadata, optionally syncing with API first.
   ///
-  /// When [syncCatalog] is true (initial / pull full refresh): runs **in parallel**
-  /// `GET` songs catalog sync and `GET` purchased counts, then loads metadata and
-  /// merges purchase state.
+  /// A full load performs only backend-authoritative catalogue reconciliation.
+  /// Purchase counts, cart restoration, pricing and asset downloads are separate
+  /// enrichment operations so they cannot hold the catalogue render gate.
   ///
   /// When [syncCatalog] is false (after checkout or similar): only
   /// [refreshPurchasedCountsOnly].
@@ -63,40 +63,20 @@ class MantraService {
     }
 
     try {
-      final syncFuture = MantraSyncService.syncMantras().catchError((
-        Object e,
-        StackTrace st,
-      ) {
-        return false;
-      });
-      final purchasedFuture = SongService.getPurchasedSongCounts().catchError((
-        Object e,
-        StackTrace st,
-      ) {
-        return <String, int>{};
-      });
-
-      final wait = await Future.wait<Object>([syncFuture, purchasedFuture]);
-      final syncResult = wait[0] as bool;
-      final purchasedCounts = wait[1] as Map<String, int>;
-
-      await _loadFromLocalJson();
-      _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
+      await MantraSyncService.syncMantras();
+      await _loadFromLocalJson(restoreCart: false, resolveRegion: false);
       return List<Mantra>.from(_mantras);
     } catch (e, stackTrace) {
-      await _loadFromLocalJson();
-      try {
-        final purchasedCounts = await SongService.getPurchasedSongCounts();
-        _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
-      } catch (_) {
-        // keep mantras without purchase merge
-      }
+      await _loadFromLocalJson(restoreCart: false, resolveRegion: false);
       return List<Mantra>.from(_mantras);
     }
   }
 
   // Load mantras from local JSON metadata
-  static Future<List<Mantra>> _loadFromLocalJson() async {
+  static Future<List<Mantra>> _loadFromLocalJson({
+    bool restoreCart = true,
+    bool resolveRegion = true,
+  }) async {
     try {
       final Map<String, dynamic> jsonData =
           await MantraSyncService.loadLocalMetadata();
@@ -105,7 +85,9 @@ class MantraService {
         throw Exception('metadata mantras missing or empty');
       }
 
-      final pricingRegion = await LocationPricingService.getPricingRegion();
+      final pricingRegion = resolveRegion
+          ? await LocationPricingService.getPricingRegion()
+          : LocationPricingService.cachedRegion;
       _mantras = raw
           .map(
             (json) => Mantra.fromJson(
@@ -117,7 +99,7 @@ class MantraService {
 
       for (var mantra in _mantras) {}
 
-      await _loadCart();
+      if (restoreCart) await _loadCart();
 
       return _mantras;
     } catch (e) {
@@ -125,6 +107,19 @@ class MantraService {
       _cart = [];
       return _mantras;
     }
+  }
+
+  static Future<List<Mantra>> restoreCartForCurrentCatalogue() async {
+    await _loadCart();
+    return List<Mantra>.from(_mantras);
+  }
+
+  static Future<List<Mantra>> refreshRegionalPricing() async {
+    return _loadFromLocalJson(restoreCart: false, resolveRegion: true);
+  }
+
+  static Future<List<Mantra>> reloadPersistedCatalogue() async {
+    return _loadFromLocalJson(restoreCart: false, resolveRegion: false);
   }
 
   // Get all mantras

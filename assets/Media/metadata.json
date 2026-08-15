@@ -2,6 +2,7 @@
     "mantras": [
             {
               "name": "Aarati Mantra",
+            "song_id": "F-AARATI-001",
             "mantra_file": "F-AARATI-001.mp3",
             "store_product_id_android": "song_f_aarati_001",
               "icon": "F-AARATI-001.png",
@@ -12,6 +13,7 @@
             },
             {
               "name": "Brahma Mantra",
+            "song_id": "F-BRAHMA-001",
             "mantra_file": "F-BRAHMA-001.mp3",
             "store_product_id_android": "song_f_brahma_001",
               "icon": "F-BRAHMA-001.png",
@@ -22,6 +24,7 @@
             },
             {
               "name": "Devi Mantra",
+            "song_id": "F-DEVI-001",
             "mantra_file": "F-DEVI-001.mp3",
             "store_product_id_android": "song_f_devi_001",
               "icon": "F-DEVI-001.png",
@@ -32,6 +35,7 @@
             },
             {
               "name": "Maa Durga Mantra",
+            "song_id": "F-DURGA-001",
             "mantra_file": "F-DURGA-001.mp3",
             "store_product_id_android": "song_f_durga_001",
               "icon": "F-DURGA-001.png",
@@ -42,6 +46,7 @@
             },
             {
               "name": "Ganapataye Mantra",
+            "song_id": "F-GANAPATAYE-001",
             "mantra_file": "F-GANAPATAYE-001.mp3",
             "store_product_id_android": "song_f_ganapataye_001",
               "icon": "F-GANAPATAYE-001.png",
@@ -52,6 +57,7 @@
             },
             {
               "name": "Gayatri Mantra",
+            "song_id": "F-GAYATRI-001",
             "mantra_file": "F-GAYATRI-001.mp3",
             "store_product_id_android": "song_f_gayatri_001",
               "icon": "F-GAYATRI-001.png",
@@ -62,6 +68,7 @@
             },
             {
               "name": "Shri Jagannath Mantra",
+            "song_id": "F-JAGANNATH-001",
             "mantra_file": "F-JAGANNATH-001.mp3",
             "store_product_id_android": "song_f_jagannath_001",
               "icon": "F-JAGANNATH-001.png",
@@ -72,6 +79,7 @@
             },
             {
               "name": "Shri Krishna Mantra",
+            "song_id": "F-KRISHNA-001",
             "mantra_file": "F-KRISHNA-001.mp3",
             "store_product_id_android": "song_f_krishna_001",
               "icon": "F-KRISHNA-001.png",
@@ -82,6 +90,7 @@
             },
             {
               "name": "Maa Mahalakshmi Mantra",
+            "song_id": "M-MAHALAKSHMI-001",
             "mantra_file": "M-MAHALAKSHMI-001.mp3",
             "store_product_id_android": "song_m_mahalakshmi_001",
               "icon": "M-MAHALAKSHMI-001.png",
@@ -92,6 +101,7 @@
             },
             {
               "name": "Mahamrityunjay Mantra",
+            "song_id": "F-MAHAMRITYUNJAY-001",
             "mantra_file": "F-MAHAMRITYUNJAY-001.mp3",
             "store_product_id_android": "song_f_mahamrityunjay_001",
               "icon": "F-MAHAMRITYUNJAY-001.png",
@@ -102,6 +112,7 @@
             },
             {
               "name": "Sri Radha Mantra",
+            "song_id": "F-RADHE-001",
             "mantra_file": "F-RADHE-001.mp3",
             "store_product_id_android": "song_f_radhe_001",
               "icon": "F-RADHE-001.png",
@@ -111,6 +122,7 @@
             },
             {
               "name": "Maa Saraswati Mantra",
+            "song_id": "F-SARASWATI-001",
             "mantra_file": "F-SARASWATI-001.mp3",
             "store_product_id_android": "song_f_saraswati_001",
               "icon": "F-SARASWATI-001.png",
@@ -121,6 +133,7 @@
             },
             {
               "name": "Shri Shanidev Mantra",
+            "song_id": "F-SHANIDEV-001",
             "mantra_file": "F-SHANIDEV-001.mp3",
             "store_product_id_android": "song_f_shanidev_001",
               "icon": "F-SHANIDEV-001.png",
@@ -130,6 +143,7 @@
             },
             {
               "name": "Shiva Mantra",
+            "song_id": "F-SHIVA-001",
             "mantra_file": "F-SHIVA-001.mp3",
             "store_product_id_android": "song_f_shiva_001",
               "icon": "F-SHIVA-001.png",
@@ -140,6 +154,7 @@
             },
             {
               "name": "Shree Rama Mantra",
+            "song_id": "F-SHREERAM-001",
             "mantra_file": "F-SHREERAM-001.mp3",
             "store_product_id_android": "song_f_shreeram_001",
               "icon": "F-SHREERAM-001.png",
@@ -150,6 +165,7 @@
             },
             {
               "name": "Surya Deva Mantra",
+            "song_id": "F-SURYA-001",
             "mantra_file": "F-SURYA-001.mp3",
             "store_product_id_android": "song_f_surya_001",
               "icon": "F-SURYA-001.png",
@@ -160,6 +176,7 @@
             },
             {
               "name": "Shri Vishnu Mantra",
+            "song_id": "F-VISHNU-001",
             "mantra_file": "F-VISHNU-001.mp3",
             "store_product_id_android": "song_f_vishnu_001",
               "icon": "F-VISHNU-001.png",
@@ -170,6 +187,7 @@
             },
             {
               "name": "Hanuman Mantra",
+            "song_id": "M-HANUMAN-001",
             "mantra_file": "M-HANUMAN-001.mp3",
             "store_product_id_android": "song_m_hanuman_001",
               "icon": "M-HANUMAN-001.png",
@@ -180,6 +198,7 @@
             },
             {
               "name": "Hare Krishna Mantra",
+            "song_id": "M-HAREKRISHNA-001",
             "mantra_file": "M-HAREKRISHNA-001.mp3",
             "store_product_id_android": "song_m_harekrishna_001",
               "icon": "M-HAREKRISHNA-001.png",
@@ -190,6 +209,7 @@
             },
             {
               "name": "Maa Jagatdhatri Mantra",
+            "song_id": "M-JAGADHATRI-001",
             "mantra_file": "M-JAGADHATRI-001.mp3",
             "store_product_id_android": "song_m_jagadhatri_001",
               "icon": "M-JAGADHATRI-001.png",
@@ -200,6 +220,7 @@
             },
             {
               "name": "Maa Mahakali Mantra",
+            "song_id": "M-MAHAKALI-001",
             "mantra_file": "M-MAHAKALI-001.mp3",
             "store_product_id_android": "song_m_mahakali_001",
               "icon": "M-MAHAKALI-001.png",

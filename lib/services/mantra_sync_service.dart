@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,12 @@ import 'authenticated_http.dart';
 import 'location_pricing_service.dart';
 
 class MantraSyncService {
+  static List<DynamicAssetDownload> _pendingDownloads = const [];
+  static Future<void> _metadataUpdate = Future<void>.value();
+  static Set<String>? _bundledSongKeys;
+  static List<DynamicAssetDownload> get pendingDownloads =>
+      List.unmodifiable(_pendingDownloads);
+
   /// Unwrap metadata where `mantras` is nested like `[ [ {...}, {...} ] ]`.
   static List<Map<String, dynamic>> flattenMantrasToMaps(dynamic raw) {
     final result = <Map<String, dynamic>>[];
@@ -250,7 +257,144 @@ class MantraSyncService {
     }
   }
 
-  // Sync mantras from API with local metadata
+  /// Reconciles the backend-authoritative catalogue without performing network
+  /// asset downloads. `song_id` is primary; the filename fallback migrates old
+  /// installed metadata that predates the stable ID field.
+  static CatalogReconciliation reconcileCatalog({
+    required List<dynamic> apiSongs,
+    required List<dynamic> localMantras,
+    required List<dynamic> bundledMantras,
+    required PricingRegion pricingRegion,
+    DateTime? globalLastUpdated,
+  }) {
+    String stableId(Map<String, dynamic> row) {
+      final explicit = (row['song_id'] ?? row['id'])?.toString().trim() ?? '';
+      if (explicit.isNotEmpty) return explicit.toLowerCase();
+      return _catalogueFileKey(
+        row['mantra_file'] ?? row['file_name'],
+      ).replaceFirst(RegExp(r'\.mp3$'), '');
+    }
+
+    Map<String, Map<String, dynamic>> index(List<dynamic> rows) {
+      final result = <String, Map<String, dynamic>>{};
+      for (final raw in flattenMantrasToMaps(rows)) {
+        final id = stableId(raw);
+        if (id.isNotEmpty) result[id] = raw;
+      }
+      return result;
+    }
+
+    final localById = index(localMantras);
+    final bundledById = index(bundledMantras);
+    final visible = <Map<String, dynamic>>[];
+    final downloads = <DynamicAssetDownload>[];
+
+    for (final raw in flattenMantrasToMaps(apiSongs)) {
+      final id = stableId(raw);
+      if (id.isEmpty) continue;
+      final bundled = bundledById[id];
+      final persisted = localById[id];
+      final existing = persisted ?? bundled;
+      final serverDate =
+          parseDate(
+            raw['last_updated']?.toString() ?? raw['created_at']?.toString(),
+          ) ??
+          globalLastUpdated;
+      final localDate = parseDate(existing?['last_modified']?.toString());
+      final isNew = existing == null;
+      final isUpdated =
+          !isNew &&
+          serverDate != null &&
+          (localDate == null ||
+              serverDate.toUtc().isAfter(
+                localDate.toUtc().add(const Duration(seconds: 1)),
+              ));
+      final wasPending = existing?['dynamic_assets_pending'] == true;
+
+      final row = Map<String, dynamic>.from(existing ?? const {});
+      row['song_id'] = raw['id']?.toString().trim().isNotEmpty == true
+          ? raw['id'].toString().trim()
+          : raw['song_id'].toString().trim();
+      row['mantra_file'] = row['mantra_file'] ?? raw['file_name'] ?? '';
+      row['name'] = (bundled?['name']?.toString().trim().isNotEmpty ?? false)
+          ? bundled!['name']
+          : (raw['name'] ?? row['name'] ?? _generateNameFromId(row['song_id']));
+      final storeId = raw['store_product_id_android']?.toString().trim();
+      if (storeId != null && storeId.isNotEmpty) {
+        row['store_product_id_android'] = storeId;
+      }
+      LocationPricingService.applyApiPricingToMetadata(row, raw, pricingRegion);
+
+      final iconUrl = _firstHttpUrl(raw, const [
+        'icon',
+        'icon_url',
+        'image_url',
+      ]);
+      final audioUrl = _firstHttpUrl(raw, const [
+        'audio_url',
+        'mp3_url',
+        'file_url',
+        'download_url',
+        'url',
+        'file_name',
+      ]);
+      final needsAssets = isNew || isUpdated || wasPending;
+      if (needsAssets) {
+        final safeStem = _safeFileStem(row['song_id'].toString());
+        final iconExtension = iconUrl == null
+            ? '.png'
+            : (path.extension(Uri.parse(iconUrl).path).isEmpty
+                  ? '.png'
+                  : path.extension(Uri.parse(iconUrl).path));
+        row['icon'] = row['icon'] ?? '$safeStem$iconExtension';
+        row['mantra_file'] =
+            row['mantra_file']?.toString().trim().isNotEmpty == true
+            ? path.basename(row['mantra_file'].toString())
+            : '$safeStem.mp3';
+        row['dynamic_assets_pending'] = audioUrl != null || iconUrl != null;
+        downloads.add(
+          DynamicAssetDownload(
+            songId: row['song_id'].toString(),
+            audioRequired: isNew,
+            audioUrl: audioUrl,
+            iconUrl: iconUrl,
+            audioFileName: path.basename(row['mantra_file'].toString()),
+            iconFileName: path.basename(row['icon'].toString()),
+          ),
+        );
+      }
+      if (serverDate != null) {
+        row['last_modified'] = serverDate.toUtc().toIso8601String();
+      }
+      visible.add(row);
+    }
+    return CatalogReconciliation(
+      metadata: {'mantras': visible},
+      downloads: downloads,
+    );
+  }
+
+  static String? _firstHttpUrl(Map<String, dynamic> row, List<String> fields) {
+    for (final field in fields) {
+      final value = row[field]?.toString().trim() ?? '';
+      if (value.startsWith('https://') || value.startsWith('http://')) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  static String _safeFileStem(String value) =>
+      value
+          .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+          .replaceAll(RegExp(r'^\.+'), '')
+          .isEmpty
+      ? 'song'
+      : value
+            .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+            .replaceAll(RegExp(r'^\.+'), '');
+
+  // Sync catalogue identity/metadata only. Asset downloads are deliberately queued.
   static Future<bool> syncMantras() async {
     try {
       // 1. Fetch songs from API
@@ -263,10 +407,9 @@ class MantraSyncService {
       if (apiSongs.isEmpty) {
         return false;
       }
-      final String? globalLastUpdated = apiResponse['last_updated'];
-      final DateTime? globalLastUpdatedDate = parseDate(globalLastUpdated);
-      final DateTime defaultLastUpdated =
-          parseDate('2025-01-01T07:42:24.648Z') ?? DateTime(2025, 1, 1);
+      final DateTime? globalLastUpdatedDate = parseDate(
+        apiResponse['last_updated']?.toString(),
+      );
 
       // 2. Load local metadata
       final Map<String, dynamic> localMetadata = await loadLocalMetadata();
@@ -278,186 +421,146 @@ class MantraSyncService {
         bundledMetadata['mantras'] ?? [],
       );
 
-      // 3. Create a map of local mantras by mantra_file for quick lookup
-      final Map<String, Map<String, dynamic>> localMantrasMap = {};
-      for (var mantra in localMantras) {
-        final fileKey = _catalogueFileKey(mantra['mantra_file']);
-        if (fileKey.isNotEmpty) {
-          localMantrasMap[fileKey] = Map<String, dynamic>.from(mantra);
-        }
-      }
-      final Map<String, Map<String, dynamic>> bundledMantrasMap = {};
-      for (var mantra in bundledMantras) {
-        final fileKey = _catalogueFileKey(mantra['mantra_file']);
-        if (fileKey.isNotEmpty) {
-          bundledMantrasMap[fileKey] = Map<String, dynamic>.from(mantra);
-        }
-      }
-
-      final pricingRegion = await LocationPricingService.getPricingRegion();
-      final currencyCode = LocationPricingService.currencyCodeForRegion(
-        pricingRegion,
+      final pricingRegion = defaultTargetPlatform == TargetPlatform.android
+          ? (LocationPricingService.cachedRegion ?? PricingRegion.other)
+          : await LocationPricingService.getPricingRegion();
+      final reconciliation = reconcileCatalog(
+        apiSongs: apiSongs,
+        localMantras: localMantras,
+        bundledMantras: bundledMantras,
+        pricingRegion: pricingRegion,
+        globalLastUpdated: globalLastUpdatedDate,
       );
-
-      // 4. Process each API song
-      final List<Map<String, dynamic>> updatedMantras = [];
-      final Set<String> apiFileNames = {};
-
-      for (var apiSong in apiSongs) {
-        final Map<String, dynamic> apiMap = Map<String, dynamic>.from(
-          apiSong as Map,
-        );
-        final String fileName = apiMap['file_name'] ?? '';
-        final String id = apiMap['id'] ?? '';
-        final resolved = LocationPricingService.resolveSongPricing(
-          apiMap,
-          pricingRegion,
-        );
-        final double selectedPrice = resolved.price;
-        final String iconUrl = apiMap['icon'] ?? '';
-        final String? songLastUpdated =
-            apiMap['last_updated'] ?? apiMap['created_at'];
-
-        apiFileNames.add(fileName);
-
-        // Get last_updated for this song (use song's last_updated or global or default)
-        DateTime songLastUpdatedDate =
-            parseDate(songLastUpdated) ??
-            globalLastUpdatedDate ??
-            defaultLastUpdated;
-
-        // Check if file exists in local list
-        final fileKey = _catalogueFileKey(fileName);
-        final bundledMantra = bundledMantrasMap[fileKey];
-        final localMantra = localMantrasMap[fileKey] ?? bundledMantra;
-        if (localMantra != null) {
-          // Case A: File exists - check if needs update
-          final String? localLastModified = localMantra['last_modified'];
-          final DateTime? localLastModifiedDate = parseDate(localLastModified);
-
-          if (localLastModifiedDate != null) {}
-
-          bool needsUpdate = false;
-          if (localLastModifiedDate == null) {
-            needsUpdate = true;
-          } else {
-            // Normalize both dates to UTC for accurate comparison
-            final apiDateUtc = songLastUpdatedDate.toUtc();
-            final localDateUtc = localLastModifiedDate.toUtc();
-
-            // Only update if API date is significantly newer (more than 1 second difference)
-            // This handles timezone and precision issues
-            if (apiDateUtc.isAfter(
-              localDateUtc.add(const Duration(seconds: 1)),
-            )) {
-              needsUpdate = true;
-            } else {}
-          }
-
-          if (needsUpdate) {
-            // Update the record
-            final updatedMantra = Map<String, dynamic>.from(localMantra);
-            if (bundledMantra?['name'] is String &&
-                (bundledMantra!['name'] as String).trim().isNotEmpty) {
-              updatedMantra['name'] = bundledMantra['name'];
-            }
-            LocationPricingService.applyApiPricingToMetadata(
-              updatedMantra,
-              apiMap,
-              pricingRegion,
-            );
-            // Save in ISO 8601 format (UTC) for accurate comparison
-            updatedMantra['last_modified'] = songLastUpdatedDate
-                .toUtc()
-                .toIso8601String();
-
-            // Extract icon name from URL or use existing
-            String iconName = updatedMantra['icon'] as String? ?? '$id.jpg';
-            if (iconUrl.isNotEmpty) {
-              // Extract extension from URL or use .jpg
-              final uri = Uri.parse(iconUrl);
-              final urlPath = uri.path;
-              final extension = path.extension(urlPath).isNotEmpty
-                  ? path.extension(urlPath)
-                  : '.jpg';
-              iconName = '$id$extension';
-              updatedMantra['icon'] = iconName;
-            }
-
-            updatedMantras.add(updatedMantra);
-
-            // Download icon
-            if (iconUrl.isNotEmpty) {
-              await downloadIcon(iconUrl, iconName);
-            }
-          } else {
-            // Keep existing record but always refresh price/currency fields.
-            final updatedMantra = Map<String, dynamic>.from(localMantra);
-            if (bundledMantra?['name'] is String &&
-                (bundledMantra!['name'] as String).trim().isNotEmpty) {
-              updatedMantra['name'] = bundledMantra['name'];
-            }
-            LocationPricingService.applyApiPricingToMetadata(
-              updatedMantra,
-              apiMap,
-              pricingRegion,
-            );
-            updatedMantras.add(updatedMantra);
-          }
-        } else {
-          // Case B: File not found - add new entry
-
-          // Extract icon name from URL
-          String iconName = '$id.jpg';
-          if (iconUrl.isNotEmpty) {
-            final uri = Uri.parse(iconUrl);
-            final urlPath = uri.path;
-            final extension = path.extension(urlPath).isNotEmpty
-                ? path.extension(urlPath)
-                : '.jpg';
-            iconName = '$id$extension';
-          }
-
-          // Create new mantra entry
-          final newMantra = <String, dynamic>{
-            'name': _generateNameFromId(id),
-            'mantra_file': fileName,
-            'icon': iconName,
-            'last_modified': songLastUpdatedDate.toUtc().toIso8601String(),
-          };
-          LocationPricingService.applyApiPricingToMetadata(
-            newMantra,
-            apiMap,
-            pricingRegion,
-          );
-
-          updatedMantras.add(newMantra);
-
-          // Download icon
-          if (iconUrl.isNotEmpty) {
-            await downloadIcon(iconUrl, iconName);
-          }
-        }
-      }
-
-      // Case C: Remove mantras not in API response
-      final List<String> toRemove = [];
-      for (var localMantra in localMantras) {
-        final fileName = localMantra['mantra_file'] as String?;
-        if (fileName != null && !apiFileNames.contains(fileName)) {
-          toRemove.add(fileName);
-        }
-      }
-
-      // 5. Save updated metadata
-      final updatedMetadata = {'mantras': updatedMantras};
-
-      await saveLocalMetadata(updatedMetadata);
+      _pendingDownloads = reconciliation.downloads;
+      await saveLocalMetadata(reconciliation.metadata);
 
       return true;
     } catch (e, stackTrace) {
       return false;
     }
+  }
+
+  static Future<void> downloadPendingAssets({
+    int concurrency = 3,
+    void Function(DynamicAssetCompletion completion)? onComplete,
+  }) async {
+    final queue = List<DynamicAssetDownload>.from(_pendingDownloads);
+    _pendingDownloads = const [];
+    var next = 0;
+    Future<void> worker() async {
+      while (next < queue.length) {
+        final task = queue[next++];
+        var success = !task.audioRequired || task.audioUrl != null;
+        String? downloadedAudioPath;
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final mediaDir = Directory(path.join(appDir.path, 'Media'));
+          if (!await mediaDir.exists()) await mediaDir.create(recursive: true);
+          if (task.audioUrl != null) {
+            final audioFile = File(
+              path.join(mediaDir.path, task.audioFileName),
+            );
+            final audioSucceeded = await _downloadToFile(
+              task.audioUrl!,
+              audioFile,
+            );
+            success = audioSucceeded && success;
+            if (audioSucceeded &&
+                await audioFile.exists() &&
+                await audioFile.length() > 0) {
+              downloadedAudioPath = audioFile.path;
+            }
+          }
+          if (task.iconUrl != null) {
+            success =
+                await _downloadToFile(
+                  task.iconUrl!,
+                  File(path.join(mediaDir.path, task.iconFileName)),
+                ) &&
+                success;
+          }
+          if (success) {
+            final update = _metadataUpdate.then(
+              (_) => _markAssetsComplete(task, mediaDir.path),
+            );
+            _metadataUpdate = update.catchError((_) {});
+            await update;
+          }
+        } catch (_) {
+          success = false;
+          downloadedAudioPath = null;
+        }
+        onComplete?.call(
+          DynamicAssetCompletion(
+            songId: task.songId,
+            succeeded: success,
+            downloadedAudioPath: downloadedAudioPath,
+          ),
+        );
+      }
+    }
+
+    await Future.wait(List.generate(concurrency.clamp(1, 4), (_) => worker()));
+  }
+
+  static Future<bool> _downloadToFile(String url, File destination) async {
+    if (await destination.exists() && await destination.length() > 0)
+      return true;
+    final response = await http
+        .get(Uri.parse(url))
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200 || response.bodyBytes.isEmpty) return false;
+    await destination.writeAsBytes(response.bodyBytes, flush: true);
+    return true;
+  }
+
+  static Future<void> _markAssetsComplete(
+    DynamicAssetDownload task,
+    String mediaPath,
+  ) async {
+    final metadata = await loadLocalMetadata();
+    final rows = flattenMantrasToMaps(metadata['mantras']);
+    for (final row in rows) {
+      if ((row['song_id']?.toString() ?? '').toLowerCase() ==
+          task.songId.toLowerCase()) {
+        row['dynamic_assets_pending'] = false;
+        if (task.audioUrl != null) {
+          row['local_audio_path'] = path.join(mediaPath, task.audioFileName);
+        }
+      }
+    }
+    await saveLocalMetadata({'mantras': rows});
+  }
+
+  /// Uses the packaged catalogue as the single source of truth for whether a
+  /// preview can fall back to a Flutter asset.
+  static Future<bool> isBundledMantra({
+    required String songId,
+    required String mantraFile,
+  }) async {
+    var keys = _bundledSongKeys;
+    if (keys == null) {
+      final bundled = await _loadBundledMetadata();
+      keys = <String>{};
+      for (final row in flattenMantrasToMaps(bundled['mantras'])) {
+        final bundledId = (row['song_id'] ?? row['id'])?.toString().trim();
+        final bundledFile = row['mantra_file']?.toString().trim();
+        if (bundledId != null && bundledId.isNotEmpty) {
+          keys.add('id:${bundledId.toLowerCase()}');
+        }
+        if (bundledFile != null && bundledFile.isNotEmpty) {
+          keys.add('file:${_catalogueFileKey(bundledFile)}');
+        }
+      }
+      _bundledSongKeys = keys;
+    }
+
+    final normalizedId = songId.trim().toLowerCase();
+    if (normalizedId.isNotEmpty && keys.contains('id:$normalizedId')) {
+      return true;
+    }
+    final normalizedFile = _catalogueFileKey(mantraFile);
+    return normalizedFile.isNotEmpty && keys.contains('file:$normalizedFile');
   }
 
   // Generate name from ID (e.g., M-RAM-001 -> Shri Rama Mantra)
@@ -475,4 +578,44 @@ class MantraSyncService {
 
     return nameMap[id] ?? id.replaceAll('M-', '').replaceAll('-001', ' Mantra');
   }
+}
+
+class CatalogReconciliation {
+  const CatalogReconciliation({
+    required this.metadata,
+    required this.downloads,
+  });
+
+  final Map<String, dynamic> metadata;
+  final List<DynamicAssetDownload> downloads;
+}
+
+class DynamicAssetDownload {
+  const DynamicAssetDownload({
+    required this.songId,
+    required this.audioRequired,
+    required this.audioUrl,
+    required this.iconUrl,
+    required this.audioFileName,
+    required this.iconFileName,
+  });
+
+  final String songId;
+  final bool audioRequired;
+  final String? audioUrl;
+  final String? iconUrl;
+  final String audioFileName;
+  final String iconFileName;
+}
+
+class DynamicAssetCompletion {
+  const DynamicAssetCompletion({
+    required this.songId,
+    required this.succeeded,
+    this.downloadedAudioPath,
+  });
+
+  final String songId;
+  final bool succeeded;
+  final String? downloadedAudioPath;
 }

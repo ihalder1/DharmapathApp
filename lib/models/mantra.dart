@@ -1,10 +1,13 @@
 import '../services/location_pricing_service.dart';
 
 class Mantra {
+  final String songId;
   final String name;
   final String mantraFile;
   final String icon;
   final String? storeProductIdAndroid;
+  final String? localAudioPath;
+  final bool dynamicAssetsPending;
   // final int playtime; // in seconds - COMMENTED OUT
   final double price;
   final String currencyCode;
@@ -17,10 +20,13 @@ class Mantra {
   final int cartQuantity;
 
   Mantra({
+    this.songId = '',
     required this.name,
     required this.mantraFile,
     required this.icon,
     this.storeProductIdAndroid,
+    this.localAudioPath,
+    this.dynamicAssetsPending = false,
     // required this.playtime, // COMMENTED OUT
     required this.price,
     this.currencyCode = 'INR',
@@ -56,10 +62,15 @@ class Mantra {
       currencyCode = (json['currency_code'] ?? 'INR').toString();
     }
     return Mantra(
+      songId:
+          _optionalString(json['song_id']) ??
+          _songIdFromFile(json['mantra_file']?.toString() ?? ''),
       name: json['name'] ?? '',
       mantraFile: json['mantra_file'] ?? '',
       icon: json['icon'] ?? '',
       storeProductIdAndroid: _optionalString(json['store_product_id_android']),
+      localAudioPath: _optionalString(json['local_audio_path']),
+      dynamicAssetsPending: json['dynamic_assets_pending'] == true,
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
       price: price,
       currencyCode: currencyCode,
@@ -93,6 +104,7 @@ class Mantra {
       currencyCode = (json['currency_code'] ?? 'INR').toString();
     }
     return Mantra(
+      songId: _optionalString(json['id'] ?? json['song_id']) ?? '',
       name: json['name'] ?? '',
       mantraFile:
           json['song_id'] ??
@@ -100,6 +112,8 @@ class Mantra {
           '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
       storeProductIdAndroid: _optionalString(json['store_product_id_android']),
+      localAudioPath: _optionalString(json['local_audio_path']),
+      dynamicAssetsPending: json['dynamic_assets_pending'] == true,
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
       price: price,
       currencyCode: currencyCode,
@@ -114,10 +128,13 @@ class Mantra {
   Map<String, dynamic> toJson() {
     return {
       'name': name,
+      'song_id': songId,
       'mantra_file': mantraFile,
       'icon': icon,
       if (storeProductIdAndroid != null)
         'store_product_id_android': storeProductIdAndroid,
+      if (localAudioPath != null) 'local_audio_path': localAudioPath,
+      'dynamic_assets_pending': dynamicAssetsPending,
       // 'playtime': playtime, // COMMENTED OUT
       'price': price,
       'currency_code': currencyCode,
@@ -126,10 +143,14 @@ class Mantra {
   }
 
   Mantra copyWith({
+    String? songId,
     String? name,
     String? mantraFile,
     String? icon,
     String? storeProductIdAndroid,
+    String? localAudioPath,
+    bool clearLocalAudioPath = false,
+    bool? dynamicAssetsPending,
     // int? playtime, // COMMENTED OUT
     double? price,
     String? currencyCode,
@@ -139,11 +160,16 @@ class Mantra {
     int? cartQuantity,
   }) {
     return Mantra(
+      songId: songId ?? this.songId,
       name: name ?? this.name,
       mantraFile: mantraFile ?? this.mantraFile,
       icon: icon ?? this.icon,
       storeProductIdAndroid:
           storeProductIdAndroid ?? this.storeProductIdAndroid,
+      localAudioPath: clearLocalAudioPath
+          ? null
+          : (localAudioPath ?? this.localAudioPath),
+      dynamicAssetsPending: dynamicAssetsPending ?? this.dynamicAssetsPending,
       // playtime: playtime ?? this.playtime, // COMMENTED OUT
       price: price ?? this.price,
       currencyCode: currencyCode ?? this.currencyCode,
@@ -163,6 +189,7 @@ class Mantra {
 
   /// Backend song/product ID (for example `F-AARATI-001`).
   String get internalProductId {
+    if (songId.trim().isNotEmpty) return songId.trim();
     final value = mantraFile.trim();
     final slash = value.lastIndexOf(RegExp(r'[/\\]'));
     final fileName = slash >= 0 ? value.substring(slash + 1) : value;
@@ -195,5 +222,13 @@ class Mantra {
   static String? _optionalString(dynamic value) {
     final text = value?.toString().trim();
     return text == null || text.isEmpty ? null : text;
+  }
+
+  static String _songIdFromFile(String value) {
+    final slash = value.lastIndexOf(RegExp(r'[/\\]'));
+    final fileName = slash >= 0 ? value.substring(slash + 1) : value;
+    return fileName.toLowerCase().endsWith('.mp3')
+        ? fileName.substring(0, fileName.length - 4)
+        : fileName;
   }
 }

@@ -16,6 +16,8 @@ import '../services/account_service.dart';
 import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import '../services/mantra_service.dart';
+import '../services/mantra_sync_service.dart';
+import '../services/preview_audio_source.dart';
 import '../services/voice_recording_service.dart';
 import '../services/notification_service.dart';
 import '../services/inferred_mantras_service.dart';
@@ -86,6 +88,18 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Mantra> _filteredMantras = [];
   bool _isLoadingMantras = false;
   Map<String, PlayProductPrice> _playProductPrices = {};
+  final Stopwatch _catalogPerfStopwatch = Stopwatch();
+  int _catalogLoadGeneration = 0;
+
+  void _catalogPerf(String event) {
+    assert(() {
+      debugPrint(
+        '[CATALOG_PERF] ${event.padRight(38)} '
+        '+${_catalogPerfStopwatch.elapsedMilliseconds}ms',
+      );
+      return true;
+    }());
+  }
 
   final InferredMantrasService _inferredMantrasService =
       InferredMantrasService();
@@ -341,6 +355,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Load mantras from JSON metadata (full: parallel catalog sync + purchased counts).
   Future<void> _loadMantras({bool syncCatalog = true}) async {
+    if (!syncCatalog) {
+      try {
+        final mantras = await MantraService.refreshPurchasedCountsOnly();
+        if (!mounted) return;
+        setState(() => _applyMantraList(mantras));
+        unawaited(_loadGooglePlayPrices(mantras));
+      } catch (_) {
+        _catalogPerf('purchased counts fail');
+      }
+      return;
+    }
+
+    final generation = ++_catalogLoadGeneration;
+    _catalogPerfStopwatch
+      ..reset()
+      ..start();
+    _catalogPerf('loadMantras start');
     if (syncCatalog) {
       setState(() {
         _isLoadingMantras = true;
@@ -348,19 +379,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
+      _catalogPerf('catalogue API/reconcile start');
       final mantras = await MantraService.loadMantras(syncCatalog: syncCatalog);
+      _catalogPerf('catalogue API/reconcile complete');
       if (syncCatalog) {
         // Allow icons written during sync to be resolved on disk (avoid stale memoized misses).
         _mantraLocalIconPathFutures.clear();
       }
 
-      if (!mounted) return;
+      if (!mounted || generation != _catalogLoadGeneration) return;
       setState(() {
         _applyMantraList(mantras);
+        _isLoadingMantras = false;
       });
-      await _loadGooglePlayPrices(mantras);
+      _catalogPerf('catalogue state applied');
+      _catalogPerf('catalogue loading flag cleared');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && generation == _catalogLoadGeneration) {
+          _catalogPerf('UI catalogue rendered');
+        }
+      });
+      unawaited(_runCatalogueEnrichment(mantras, generation));
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _catalogLoadGeneration) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to load mantras: $e'),
@@ -369,7 +410,10 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } finally {
-      if (mounted && syncCatalog) {
+      if (mounted &&
+          syncCatalog &&
+          generation == _catalogLoadGeneration &&
+          _isLoadingMantras) {
         setState(() {
           _isLoadingMantras = false;
         });
@@ -377,7 +421,102 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadGooglePlayPrices(List<Mantra> mantras) async {
+  Future<void> _runCatalogueEnrichment(
+    List<Mantra> mantras,
+    int generation,
+  ) async {
+    unawaited(_loadGooglePlayPrices(mantras, generation: generation));
+    unawaited(_loadDynamicAssets(generation));
+
+    if (!_usesGooglePlayBilling) {
+      try {
+        _catalogPerf('location pricing start');
+        final priced = await MantraService.refreshRegionalPricing();
+        _catalogPerf('location pricing complete');
+        if (mounted && generation == _catalogLoadGeneration) {
+          setState(() => _applyMantraList(priced));
+        }
+      } catch (_) {
+        _catalogPerf('location pricing fail');
+      }
+    }
+
+    try {
+      _catalogPerf('cart restoration start');
+      final restored = await MantraService.restoreCartForCurrentCatalogue();
+      _catalogPerf('cart restoration complete');
+      if (mounted && generation == _catalogLoadGeneration) {
+        setState(() => _applyMantraList(restored));
+      }
+    } catch (_) {
+      _catalogPerf('cart restoration fail');
+    }
+
+    try {
+      _catalogPerf('purchased counts start');
+      final counted = await MantraService.refreshPurchasedCountsOnly();
+      _catalogPerf('purchased counts complete');
+      if (mounted && generation == _catalogLoadGeneration) {
+        setState(() => _applyMantraList(counted));
+      }
+    } catch (_) {
+      _catalogPerf('purchased counts fail');
+    }
+  }
+
+  Future<void> _loadDynamicAssets(int generation) async {
+    final pending = MantraSyncService.pendingDownloads;
+    if (pending.isEmpty) return;
+    _catalogPerf('dynamic asset queue start');
+    await MantraSyncService.downloadPendingAssets(
+      concurrency: 3,
+      onComplete: (completion) {
+        _catalogPerf(
+          'dynamic asset ${completion.succeeded ? 'complete' : 'fail'} '
+          '${completion.songId}',
+        );
+        if (!mounted || generation != _catalogLoadGeneration) return;
+        _mantraLocalIconPathFutures.clear();
+        unawaited(_applyDynamicAssetCompletion(completion));
+      },
+    );
+    _catalogPerf('dynamic asset queue complete');
+  }
+
+  Future<void> _applyDynamicAssetCompletion(
+    DynamicAssetCompletion completion,
+  ) async {
+    if (!completion.succeeded) return;
+    final completedPaths = <String, String?>{};
+    for (final mantra in _mantras.where(
+      (item) => item.songId.toLowerCase() == completion.songId.toLowerCase(),
+    )) {
+      completedPaths[mantra.songId] = await resolveCompletedLocalAudioPath(
+        currentPath: mantra.localAudioPath,
+        downloadedPath: completion.downloadedAudioPath,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _mantras = _mantras.map((mantra) {
+        if (mantra.songId.toLowerCase() != completion.songId.toLowerCase()) {
+          return mantra;
+        }
+        final completedPath = completedPaths[mantra.songId];
+        return mantra.copyWith(
+          localAudioPath: completedPath,
+          clearLocalAudioPath: completedPath == null,
+          dynamicAssetsPending: false,
+        );
+      }).toList();
+      _applyMantraList(_mantras);
+    });
+  }
+
+  Future<void> _loadGooglePlayPrices(
+    List<Mantra> mantras, {
+    int? generation,
+  }) async {
     if (!_usesGooglePlayBilling) return;
 
     final productIds = mantras
@@ -396,14 +535,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
+      _catalogPerf('Billing connect start');
       await PlayBillingService.initialize();
+      _catalogPerf('Billing connect complete');
+      _catalogPerf('ProductDetails start');
       final prices = await PlayBillingService.queryProducts(productIds);
-      if (!mounted) return;
+      _catalogPerf('ProductDetails complete');
+      if (!mounted ||
+          (generation != null && generation != _catalogLoadGeneration))
+        return;
       setState(() {
         _playProductPrices = prices;
       });
-    } on PlatformException {
-      if (!mounted) return;
+    } catch (_) {
+      _catalogPerf('Billing/ProductDetails fail');
+      if (!mounted ||
+          (generation != null && generation != _catalogLoadGeneration))
+        return;
       setState(() {
         _playProductPrices = {};
       });
@@ -2253,11 +2401,21 @@ class _HomeScreenState extends State<HomeScreen> {
           _currentInferredPlaying = null;
         });
 
-        // Play new mantra
-        String assetPath = 'Media/${mantra.mantraFile}';
-
         try {
-          await _audioPlayer.play(AssetSource(assetPath));
+          final isBundled = await MantraSyncService.isBundledMantra(
+            songId: mantra.songId,
+            mantraFile: mantra.mantraFile,
+          );
+          final source = await resolvePreviewAudioSource(
+            mantra: mantra,
+            isBundled: isBundled,
+          );
+          switch (source.type) {
+            case PreviewAudioSourceType.deviceFile:
+              await _audioPlayer.play(DeviceFileSource(source.path));
+            case PreviewAudioSourceType.flutterAsset:
+              await _audioPlayer.play(AssetSource(source.path));
+          }
           setState(() {
             _currentlyPlaying = mantra;
             _isPlaying = true;
@@ -4736,13 +4894,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           await context
                               .read<AuthService>()
                               .clearLocalSessionAfterAccountDeletion();
-                          if (!mounted) return;
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
-                            ),
-                            (route) => false,
-                          );
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
                         },
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
                   child: isSubmitting
@@ -4777,23 +4931,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             TextButton(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
                 await context.read<AuthService>().logout();
-                if (mounted) {
-                  // Navigate to login screen after logout
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(
-                      builder: (context) => const LoginScreen(),
-                    ),
-                    (route) => false,
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Successfully logged out'),
-                      backgroundColor: AppColors.successGreen,
-                    ),
-                  );
-                }
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Successfully logged out'),
+                    backgroundColor: AppColors.successGreen,
+                  ),
+                );
               },
               child: const Text('Logout'),
             ),
