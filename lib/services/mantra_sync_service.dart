@@ -323,6 +323,18 @@ class MantraSyncService {
       if (storeId != null && storeId.isNotEmpty) {
         row['store_product_id_android'] = storeId;
       }
+      final iosStoreId = raw['store_product_id_ios']?.toString().trim();
+      if (iosStoreId != null && iosStoreId.isNotEmpty) {
+        row['store_product_id_ios'] = iosStoreId;
+      } else if ((row['store_product_id_ios']?.toString().trim() ?? '')
+          .isEmpty) {
+        final bundledIosStoreId = bundled?['store_product_id_ios']
+            ?.toString()
+            .trim();
+        if (bundledIosStoreId != null && bundledIosStoreId.isNotEmpty) {
+          row['store_product_id_ios'] = bundledIosStoreId;
+        }
+      }
       LocationPricingService.applyApiPricingToMetadata(row, raw, pricingRegion);
 
       final iconUrl = _firstHttpUrl(raw, const [

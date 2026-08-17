@@ -49,6 +49,12 @@ class MantraService {
     return List<Mantra>.from(_mantras);
   }
 
+  static Future<List<Mantra>> refreshPurchasedCountsOnlyStrict() async {
+    final purchasedCounts = await SongService.getPurchasedSongCountsStrict();
+    _mantras = applyPurchasedCounts(_mantras, purchasedCounts);
+    return List<Mantra>.from(_mantras);
+  }
+
   /// Load catalog from local metadata, optionally syncing with API first.
   ///
   /// A full load performs only backend-authoritative catalogue reconciliation.
@@ -277,6 +283,68 @@ class MantraService {
       }
     }
     await _saveCart();
+  }
+
+  /// Removes only iOS cart rows accepted by backend StoreKit verification.
+  static Future<void> removeIosCartProductsByStoreIds(
+    Iterable<String> storeProductIds,
+  ) async {
+    final ids = storeProductIds.map((id) => id.trim()).toSet();
+    if (ids.isEmpty) return;
+    _cart.removeWhere((item) => ids.contains(item.storeProductIdIos?.trim()));
+    for (var index = 0; index < _mantras.length; index++) {
+      final storeId = _mantras[index].storeProductIdIos?.trim();
+      if (storeId != null && ids.contains(storeId)) {
+        _mantras[index] = _mantras[index].copyWith(isInCart: false);
+      }
+    }
+    await _saveCart();
+  }
+
+  /// Removes only backend-verified iOS consumable units, retaining the rest
+  /// of a partially completed quantity in the cart.
+  static Future<void> consumeIosCartProductUnits(
+    String storeProductId,
+    int quantity,
+  ) async {
+    final id = storeProductId.trim();
+    if (id.isEmpty || quantity < 1) return;
+    for (var index = 0; index < _cart.length; index++) {
+      final item = _cart[index];
+      if (item.storeProductIdIos?.trim() != id) continue;
+      final remaining = item.cartQuantity - quantity;
+      if (remaining > 0) {
+        _cart[index] = item.copyWith(cartQuantity: remaining);
+        for (
+          var mantraIndex = 0;
+          mantraIndex < _mantras.length;
+          mantraIndex++
+        ) {
+          if (_mantras[mantraIndex].storeProductIdIos?.trim() == id) {
+            _mantras[mantraIndex] = _mantras[mantraIndex].copyWith(
+              isInCart: true,
+              cartQuantity: remaining,
+            );
+          }
+        }
+      } else {
+        _cart.removeAt(index);
+        for (
+          var mantraIndex = 0;
+          mantraIndex < _mantras.length;
+          mantraIndex++
+        ) {
+          if (_mantras[mantraIndex].storeProductIdIos?.trim() == id) {
+            _mantras[mantraIndex] = _mantras[mantraIndex].copyWith(
+              isInCart: false,
+              cartQuantity: 1,
+            );
+          }
+        }
+      }
+      await _saveCart();
+      return;
+    }
   }
 
   // Save cart to SharedPreferences

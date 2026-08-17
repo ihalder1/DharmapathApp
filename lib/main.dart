@@ -58,9 +58,10 @@ Future<void> main() {
       DeviceOrientation.portraitDown,
     ]);
 
-    // Android mantra checkout uses Google Play Billing. Keep the existing
-    // Stripe setup unchanged for the other platforms (including iOS).
-    if (defaultTargetPlatform != TargetPlatform.android) {
+    // Android uses Google Play and iOS uses StoreKit. Other supported
+    // platforms keep the legacy Stripe path during this migration phase.
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
       const stripeUrlScheme = 'mantrasutra';
       try {
         Stripe.publishableKey = ApiConfig.stripePublishableKey;

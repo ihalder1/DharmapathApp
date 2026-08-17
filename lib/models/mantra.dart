@@ -6,6 +6,7 @@ class Mantra {
   final String mantraFile;
   final String icon;
   final String? storeProductIdAndroid;
+  final String? storeProductIdIos;
   final String? localAudioPath;
   final bool dynamicAssetsPending;
   // final int playtime; // in seconds - COMMENTED OUT
@@ -25,6 +26,7 @@ class Mantra {
     required this.mantraFile,
     required this.icon,
     this.storeProductIdAndroid,
+    this.storeProductIdIos,
     this.localAudioPath,
     this.dynamicAssetsPending = false,
     // required this.playtime, // COMMENTED OUT
@@ -69,6 +71,7 @@ class Mantra {
       mantraFile: json['mantra_file'] ?? '',
       icon: json['icon'] ?? '',
       storeProductIdAndroid: _optionalString(json['store_product_id_android']),
+      storeProductIdIos: _optionalString(json['store_product_id_ios']),
       localAudioPath: _optionalString(json['local_audio_path']),
       dynamicAssetsPending: json['dynamic_assets_pending'] == true,
       // playtime: json['playtime'] ?? 0, // COMMENTED OUT
@@ -112,6 +115,7 @@ class Mantra {
           '', // Support both API and JSON formats
       icon: json['icon'] ?? '',
       storeProductIdAndroid: _optionalString(json['store_product_id_android']),
+      storeProductIdIos: _optionalString(json['store_product_id_ios']),
       localAudioPath: _optionalString(json['local_audio_path']),
       dynamicAssetsPending: json['dynamic_assets_pending'] == true,
       // playtime: json['runtime'] ?? json['playtime'] ?? 0, // Support both API and JSON formats - COMMENTED OUT
@@ -133,6 +137,7 @@ class Mantra {
       'icon': icon,
       if (storeProductIdAndroid != null)
         'store_product_id_android': storeProductIdAndroid,
+      if (storeProductIdIos != null) 'store_product_id_ios': storeProductIdIos,
       if (localAudioPath != null) 'local_audio_path': localAudioPath,
       'dynamic_assets_pending': dynamicAssetsPending,
       // 'playtime': playtime, // COMMENTED OUT
@@ -148,6 +153,7 @@ class Mantra {
     String? mantraFile,
     String? icon,
     String? storeProductIdAndroid,
+    String? storeProductIdIos,
     String? localAudioPath,
     bool clearLocalAudioPath = false,
     bool? dynamicAssetsPending,
@@ -166,6 +172,7 @@ class Mantra {
       icon: icon ?? this.icon,
       storeProductIdAndroid:
           storeProductIdAndroid ?? this.storeProductIdAndroid,
+      storeProductIdIos: storeProductIdIos ?? this.storeProductIdIos,
       localAudioPath: clearLocalAudioPath
           ? null
           : (localAudioPath ?? this.localAudioPath),

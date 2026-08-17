@@ -5,6 +5,11 @@ bool isAndroidPlayBillingPlatform({TargetPlatform? platform, bool? isWeb}) {
       (platform ?? defaultTargetPlatform) == TargetPlatform.android;
 }
 
+bool isIosStoreKitPlatform({TargetPlatform? platform, bool? isWeb}) {
+  return !(isWeb ?? kIsWeb) &&
+      (platform ?? defaultTargetPlatform) == TargetPlatform.iOS;
+}
+
 bool supportsMultipleCartQuantity({TargetPlatform? platform, bool? isWeb}) =>
     !isAndroidPlayBillingPlatform(platform: platform, isWeb: isWeb);
 

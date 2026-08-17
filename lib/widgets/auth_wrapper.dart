@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
 import 'voice_consent_gate.dart';
+import '../services/ios_purchase_reconciler.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -29,9 +31,17 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed && _isInitialized && mounted) {
-      context.read<AuthService>().ensureValidAccessToken();
+      await context.read<AuthService>().ensureValidAccessToken();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        try {
+          await IosPurchaseReconciler().reconcile();
+        } catch (_) {
+          // A transient payment/backend failure keeps the durable context for
+          // the next resume and must not disrupt application lifecycle work.
+        }
+      }
     }
   }
 

@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
 import '../models/android_purchase.dart';
+import '../models/ios_purchase.dart';
 import '../security/payment_identifiers.dart';
 import 'auth_service.dart';
 import 'authenticated_http.dart';
 import 'payment_http_log.dart';
 import 'play_billing_diagnostics.dart';
+import 'storekit_diagnostics.dart';
 
 class PaymentService {
   static const String _createIntentInstructions =
@@ -822,6 +824,143 @@ class PaymentService {
     return PurchaseVerification.fromJson(
       Map<String, dynamic>.from(jsonDecode(response.body) as Map),
     );
+  }
+
+  static Future<IosPreparedPurchase> prepareIosPurchase({
+    required String currency,
+    required List<IosCartProduct> products,
+    StoreKitDiagnostics? diagnostics,
+  }) async {
+    diagnostics?.logPrepareRequest(currency: currency, products: products);
+    final response = await AuthenticatedHttp.paymentPost(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.prepareAndroidPurchaseEndpoint}',
+      ),
+      body: jsonEncode(
+        buildIosPreparePayload(currency: currency, products: products),
+      ),
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      diagnostics?.logPrepareResponse(
+        httpStatus: response.statusCode,
+        orderIdPresent: false,
+        linkTokenPresent: false,
+      );
+      diagnostics?.logError(
+        stage: 'prepare_http',
+        error: StateError('Prepare Purchase HTTP failure'),
+        httpStatus: response.statusCode,
+      );
+      throw StateError('ios_prepare_purchase_failed_${response.statusCode}');
+    }
+    final body = Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    final nested = body['data'];
+    final data = nested is Map ? Map<String, dynamic>.from(nested) : body;
+    final rawOrderId = (data['orderId'] ?? data['order_id'])?.toString();
+    final rawLinkToken = (data['linkToken'] ?? data['link_token'])?.toString();
+    diagnostics?.logPrepareResponse(
+      httpStatus: response.statusCode,
+      orderIdPresent: rawOrderId?.trim().isNotEmpty == true,
+      orderId: rawOrderId,
+      linkTokenPresent: rawLinkToken?.trim().isNotEmpty == true,
+      linkTokenValid: rawLinkToken == null
+          ? false
+          : isCanonicalUuid(rawLinkToken),
+      storeProducts: data['storeProducts'],
+    );
+    return IosPreparedPurchase.fromJson(body);
+  }
+
+  static Future<IosPurchaseVerification> verifyIosPurchase({
+    required String orderId,
+    required String transactionId,
+    required String storeProductId,
+    StoreKitDiagnostics? diagnostics,
+  }) async {
+    diagnostics?.logVerify(
+      event: 'BACKEND_VERIFY_STARTED',
+      orderId: orderId,
+      storeProductId: storeProductId,
+      transactionId: transactionId,
+    );
+    final response = await AuthenticatedHttp.paymentPost(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.verifyAndroidPurchaseEndpoint}',
+      ),
+      body: jsonEncode(
+        buildIosVerifyPayload(
+          orderId: orderId,
+          transactionId: transactionId,
+          storeProductId: storeProductId,
+        ),
+      ),
+    );
+    diagnostics?.logVerifyHttpResponse(
+      httpStatus: response.statusCode,
+      responseBody: response.body,
+    );
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      diagnostics?.logVerify(
+        event: 'BACKEND_VERIFY_FAILED',
+        orderId: orderId,
+        storeProductId: storeProductId,
+        transactionId: transactionId,
+        httpStatus: response.statusCode,
+        backendStatus: 'error',
+      );
+      diagnostics?.logError(
+        stage: 'verify_http',
+        error: StateError('Verify Purchase HTTP failure'),
+        httpStatus: response.statusCode,
+      );
+      throw StateError('ios_verify_purchase_failed_${response.statusCode}');
+    }
+    final verification = IosPurchaseVerification.fromJson(
+      Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+    );
+    diagnostics?.logVerify(
+      event: verification.status == 'partially_paid'
+          ? 'BACKEND_ACCEPTED_PARTIAL'
+          : verification.status == 'paid'
+          ? 'BACKEND_ACCEPTED_PAID'
+          : 'BACKEND_VERIFY_RESULT',
+      orderId: orderId,
+      storeProductId: storeProductId,
+      transactionId: transactionId,
+      httpStatus: response.statusCode,
+      backendStatus: verification.status.isEmpty
+          ? 'other'
+          : verification.status,
+    );
+    return verification;
+  }
+
+  static Future<IosPurchaseVerification> getIosPurchaseOrder(
+    String orderId, {
+    StoreKitDiagnostics? diagnostics,
+  }) async {
+    final response = await AuthenticatedHttp.paymentGet(
+      Uri.parse(
+        '${ApiConfig.paymentBaseUrl}${ApiConfig.androidPurchaseOrderEndpoint(orderId)}',
+      ),
+    );
+    if (response.statusCode != 200) {
+      diagnostics?.logError(
+        stage: 'order_status_http',
+        error: StateError('Order status HTTP failure'),
+        httpStatus: response.statusCode,
+      );
+      throw StateError('ios_purchase_order_failed_${response.statusCode}');
+    }
+    final verification = IosPurchaseVerification.fromJson(
+      Map<String, dynamic>.from(jsonDecode(response.body) as Map),
+    );
+    diagnostics?.log('RECONCILIATION_ORDER_STATUS', {
+      'orderId': StoreKitDiagnostics.redactIdentifier(orderId),
+      'httpStatus': response.statusCode,
+      'backendStatus': verification.status,
+    });
+    return verification;
   }
 }
 

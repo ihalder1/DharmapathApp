@@ -24,6 +24,8 @@ import '../services/inferred_mantras_service.dart';
 import '../services/play_billing_service.dart';
 import '../services/cart_quantity_policy.dart';
 import '../services/location_pricing_service.dart';
+import '../services/storekit_purchase_service.dart';
+import '../services/ios_purchase_reconciler.dart';
 import '../models/mantra.dart';
 import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
@@ -31,12 +33,14 @@ import 'notification_screen.dart';
 import 'login_screen.dart';
 import 'payment_screen.dart';
 import 'google_play_checkout_screen.dart';
+import 'storekit_checkout_screen.dart';
 import 'contact_us_screen.dart';
 
 /// Synced mantra icons are stored under Documents/Media; resolve once per filename.
 final Map<String, Future<String?>> _mantraLocalIconPathFutures = {};
 
 bool get _usesGooglePlayBilling => isAndroidPlayBillingPlatform();
+bool get _usesStoreKit => isIosStoreKitPlatform();
 
 Future<String?> _mantraLocalIconPathIfExists(String iconName) {
   if (kIsWeb) return Future<String?>.value(null);
@@ -88,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Mantra> _filteredMantras = [];
   bool _isLoadingMantras = false;
   Map<String, PlayProductPrice> _playProductPrices = {};
+  Map<String, StoreKitProductPrice> _storeKitProductPrices = {};
   final Stopwatch _catalogPerfStopwatch = Stopwatch();
   int _catalogLoadGeneration = 0;
 
@@ -190,6 +195,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadRecordings();
     _loadRecordingAndSongTotals();
     _loadUnreadNotificationCount();
+    if (_usesStoreKit) {
+      unawaited(
+        IosPurchaseReconciler().reconcile().catchError(
+          (_) => const IosReconciliationResult(),
+        ),
+      );
+    }
     // Don't request permission on startup - request when user actually tries to record
   }
 
@@ -426,6 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
     int generation,
   ) async {
     unawaited(_loadGooglePlayPrices(mantras, generation: generation));
+    unawaited(_loadStoreKitPrices(mantras, generation: generation));
     unawaited(_loadDynamicAssets(generation));
 
     if (!_usesGooglePlayBilling) {
@@ -558,7 +571,42 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadStoreKitPrices(
+    List<Mantra> mantras, {
+    int? generation,
+  }) async {
+    if (!_usesStoreKit) return;
+    final productIds = mantras
+        .map((mantra) => mantra.storeProductIdIos)
+        .whereType<String>()
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    try {
+      final prices = await StoreKitPurchaseService.instance.queryProducts(
+        productIds,
+      );
+      if (!mounted ||
+          (generation != null && generation != _catalogLoadGeneration)) {
+        return;
+      }
+      setState(() => _storeKitProductPrices = prices);
+    } catch (_) {
+      if (!mounted ||
+          (generation != null && generation != _catalogLoadGeneration)) {
+        return;
+      }
+      setState(() => _storeKitProductPrices = {});
+    }
+  }
+
   String _catalogPrice(Mantra mantra) {
+    if (_usesStoreKit) {
+      return iosCataloguePrice(
+        storeProductId: mantra.storeProductIdIos,
+        prices: _storeKitProductPrices,
+      );
+    }
     if (!_usesGooglePlayBilling) return mantra.formattedPrice;
 
     final productId = mantra.storeProductIdAndroid?.trim();
@@ -620,6 +668,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (currencyCode == null) return 'Price unavailable';
     return _formatGooglePlayMicros(totalMicros, currencyCode);
+  }
+
+  String _storeKitCartLineTotal(Mantra mantra, int quantity) {
+    final id = mantra.storeProductIdIos?.trim() ?? '';
+    final product = _storeKitProductPrices[id];
+    if (product == null) return 'Price unavailable';
+    return NumberFormat.currency(
+      name: product.currencyCode,
+    ).format(product.rawPrice * quantity);
+  }
+
+  String _storeKitCartTotal(List<Mantra> cartItems) {
+    String? currency;
+    var total = 0.0;
+    for (final mantra in cartItems) {
+      final id = mantra.storeProductIdIos?.trim() ?? '';
+      final product = _storeKitProductPrices[id];
+      if (product == null ||
+          (currency != null && currency != product.currencyCode)) {
+        return 'Price unavailable';
+      }
+      currency = product.currencyCode;
+      total += product.rawPrice * mantra.cartQuantity;
+    }
+    if (currency == null) return 'Price unavailable';
+    return NumberFormat.currency(name: currency).format(total);
   }
 
   // Filter mantras based on search query
@@ -4432,6 +4506,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final cartCurrencyCode = MantraService.getCartCurrencyCode();
     final totalDisplay = _usesGooglePlayBilling
         ? _googlePlayCartTotal(cartItems)
+        : _usesStoreKit
+        ? _storeKitCartTotal(cartItems)
         : Mantra.formatMoney(total, cartCurrencyCode);
 
     return Container(
@@ -4602,6 +4678,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                           mantra,
                                           quantity,
                                         )
+                                      : _usesStoreKit
+                                      ? _storeKitCartLineTotal(mantra, quantity)
                                       : mantra.formattedLineTotal(),
                                   style: const TextStyle(
                                     fontSize: 13,
@@ -4674,6 +4752,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: ElevatedButton(
                         onPressed: () async {
                           // Navigate to payment screen
+                          final usesStoreKitCheckout =
+                              !kIsWeb &&
+                              defaultTargetPlatform == TargetPlatform.iOS;
                           final paymentSuccess = await Navigator.push<bool>(
                             context,
                             MaterialPageRoute(
@@ -4684,6 +4765,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                     defaultTargetPlatform ==
                                         TargetPlatform.android) {
                                   return GooglePlayCheckoutScreen(
+                                    cartItems: checkoutItems,
+                                  );
+                                }
+                                if (!kIsWeb &&
+                                    defaultTargetPlatform ==
+                                        TargetPlatform.iOS) {
+                                  return StoreKitCheckoutScreen(
                                     cartItems: checkoutItems,
                                   );
                                 }
@@ -4703,6 +4791,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             });
                             await _loadMantras(syncCatalog: false);
                             await _loadUnreadNotificationCount();
+                          } else if (usesStoreKitCheckout && mounted) {
+                            setState(() {
+                              _applyMantraList(MantraService.getMantras());
+                            });
                           }
                         },
                         style: ElevatedButton.styleFrom(

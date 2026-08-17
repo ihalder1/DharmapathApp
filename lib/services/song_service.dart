@@ -7,6 +7,7 @@ import 'payment_http_log.dart';
 import 'location_pricing_service.dart';
 
 class SongService {
+  static bool _lastPurchaseCountFetchSucceeded = false;
   // Fetch songs from API
   static Future<List<Mantra>> getSongs() async {
     try {
@@ -79,6 +80,7 @@ class SongService {
 
   /// Per-song owned license count from GET purchase/songs (`available_count`, etc.).
   static Future<Map<String, int>> getPurchasedSongCounts() async {
+    _lastPurchaseCountFetchSucceeded = false;
     try {
       final authService = AuthService();
       final token = authService.accessToken;
@@ -174,9 +176,11 @@ class SongService {
           }
         }
 
+        _lastPurchaseCountFetchSucceeded = true;
         return counts;
       } else if (response.statusCode == 404) {
         // 404 means no songs have been purchased yet - this is a normal case, not an error
+        _lastPurchaseCountFetchSucceeded = true;
         return {};
       } else {
         return {};
@@ -184,6 +188,14 @@ class SongService {
     } catch (e, stackTrace) {
       return {};
     }
+  }
+
+  static Future<Map<String, int>> getPurchasedSongCountsStrict() async {
+    final result = await getPurchasedSongCounts();
+    if (!_lastPurchaseCountFetchSucceeded) {
+      throw StateError('purchase_credit_refresh_failed');
+    }
+    return result;
   }
 
   /// Resolves [Mantra.mantraFile] / name to an entry in [counts] (normalized keys).

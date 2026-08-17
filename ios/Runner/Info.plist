@@ -29,7 +29,7 @@
 			<string>REVERSED_CLIENT_ID</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf</string>
+				<string>com.googleusercontent.apps.305683539721-q4ce0156s4b8auihmtt6c13cfp6jl69k</string>
 			</array>
 		</dict>
 		<dict>
@@ -58,7 +58,7 @@
 	<key>FacebookDisplayName</key>
 	<string>Colab App UI</string>
 	<key>GIDClientID</key>
-	<string>333289829093-q07opjkfgsjpkdukdvthcos49uqeajrf.apps.googleusercontent.com</string>
+	<string>305683539721-q4ce0156s4b8auihmtt6c13cfp6jl69k.apps.googleusercontent.com</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>

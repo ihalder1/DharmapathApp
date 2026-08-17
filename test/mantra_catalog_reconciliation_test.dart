@@ -14,6 +14,7 @@ void main() {
     'icon': '$id.png',
     'last_modified': modified,
     'store_product_id_android': 'store_${id.toLowerCase()}',
+    'store_product_id_ios': 'store_${id.toLowerCase()}_ios',
     'price': 1,
   };
 
@@ -103,5 +104,15 @@ void main() {
       bundledRows: [local('UNCHANGED-001'), local('UPDATED-001')],
     );
     expect(result.downloads.map((item) => item.songId), ['UPDATED-001']);
+  });
+
+  test('iOS and Android product IDs survive catalogue reconciliation', () {
+    final result = reconcile(
+      apiRows: [api('F-AARATI-001')],
+      bundledRows: [local('F-AARATI-001')],
+    );
+    final row = (result.metadata['mantras'] as List).single as Map;
+    expect(row['store_product_id_android'], 'store_f-aarati-001');
+    expect(row['store_product_id_ios'], 'store_f-aarati-001_ios');
   });
 }
