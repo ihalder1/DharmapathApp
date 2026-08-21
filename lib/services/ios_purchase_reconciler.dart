@@ -7,6 +7,23 @@ import 'payment_service.dart';
 import 'storekit_purchase_service.dart';
 import 'storekit_diagnostics.dart';
 
+typedef IosOrderLookup =
+    Future<IosPurchaseVerification> Function(
+      String orderId,
+      StoreKitDiagnostics? diagnostics,
+    );
+typedef IosPurchaseVerificationOperation =
+    Future<IosPurchaseVerification> Function(
+      String orderId,
+      String transactionId,
+      String storeProductId,
+      StoreKitDiagnostics? diagnostics,
+    );
+typedef IosUnfinishedTransactions =
+    Future<List<StoreKitTransaction>> Function();
+typedef IosCompleteTransaction =
+    Future<void> Function(StoreKitTransaction transaction);
+
 final class IosReconciliationResult {
   const IosReconciliationResult({
     this.context,
@@ -26,21 +43,74 @@ final class IosPurchaseReconciler {
     IosPurchaseContextStorage? contextStore,
     StoreKitPurchaseService? storeKit,
     StoreKitDiagnostics? diagnostics,
+    IosOrderLookup? orderLookup,
+    IosPurchaseVerificationOperation? verifyPurchase,
+    IosUnfinishedTransactions? unfinishedTransactions,
+    IosCompleteTransaction? completeTransaction,
   }) : _contextStore = contextStore ?? IosPurchaseContextStore(),
-       _storeKit = storeKit ?? StoreKitPurchaseService.instance,
-       _diagnostics = diagnostics;
+       _diagnostics = diagnostics,
+       _orderLookup =
+           orderLookup ??
+           ((orderId, diagnostics) => PaymentService.getIosPurchaseOrder(
+             orderId,
+             diagnostics: diagnostics,
+           )),
+       _verifyPurchase =
+           verifyPurchase ??
+           ((orderId, transactionId, storeProductId, diagnostics) =>
+               PaymentService.verifyIosPurchase(
+                 orderId: orderId,
+                 transactionId: transactionId,
+                 storeProductId: storeProductId,
+                 diagnostics: diagnostics,
+               )),
+       _unfinishedTransactions =
+           unfinishedTransactions ??
+           (storeKit ?? StoreKitPurchaseService.instance)
+               .unfinishedTransactions,
+       _completeTransaction =
+           completeTransaction ??
+           (storeKit ?? StoreKitPurchaseService.instance).complete;
 
   final IosPurchaseContextStorage _contextStore;
-  final StoreKitPurchaseService _storeKit;
   final StoreKitDiagnostics? _diagnostics;
+  final IosOrderLookup _orderLookup;
+  final IosPurchaseVerificationOperation _verifyPurchase;
+  final IosUnfinishedTransactions _unfinishedTransactions;
+  final IosCompleteTransaction _completeTransaction;
   static Future<IosReconciliationResult>? _active;
 
   Future<IosReconciliationResult> reconcile() {
     final running = _active;
     if (running != null) return running;
-    final future = _reconcile();
+    final future = _reconcileSafely();
     _active = future;
     return future.whenComplete(() => _active = null);
+  }
+
+  Future<IosReconciliationResult> _reconcileSafely() async {
+    try {
+      return await _reconcile();
+    } catch (error, stackTrace) {
+      _diagnostics?.log('STOREKIT_RECONCILIATION_ERROR', {
+        'errorType': error.runtimeType.toString(),
+        'message': StoreKitDiagnostics.safeErrorMessage(error),
+      });
+      if (!kReleaseMode) {
+        debugPrint(
+          'STOREKIT_TRACE STOREKIT_RECONCILIATION_ERROR '
+          'errorType=${error.runtimeType}\n$stackTrace',
+        );
+      }
+      IosPurchaseContext? retained;
+      try {
+        retained = await _contextStore.load();
+      } catch (_) {
+        // The original error is already recorded. A storage failure remains
+        // unresolved and must not be treated as a successful reconciliation.
+      }
+      return IosReconciliationResult(context: retained);
+    }
   }
 
   Future<IosReconciliationResult> _reconcile() async {
@@ -55,131 +125,141 @@ final class IosPurchaseReconciler {
       'reconcile_start order=${_short(context.orderId)} state=${context.state}',
     );
 
-    final backendOrder = await PaymentService.getIosPurchaseOrder(
-      context.orderId,
-      diagnostics: _diagnostics,
+    final backendOrder = await _orderLookup(context.orderId, _diagnostics);
+    final unfinished = await _unfinishedTransactions();
+    final hasPersistedTransaction = context.units.any(
+      (unit) => unit.transactionId?.trim().isNotEmpty == true,
     );
-    final unfinished = await _storeKit.unfinishedTransactions();
-    final unfinishedById = {
-      for (final item in unfinished)
-        if (item.transactionId != null) item.transactionId!: item,
-    };
+    final hasBackendAcceptedUnit = context.units.any(
+      (unit) => unit.backendAccepted,
+    );
+    final hasMatchingUnfinishedTransaction = context.units.any(
+      (unit) => unfinished.any(
+        (transaction) =>
+            transaction.productId == unit.storeProductId &&
+            transaction.transactionId?.trim().isNotEmpty == true &&
+            appAccountTokensMatch(
+              context.linkToken,
+              transaction.appAccountToken,
+            ),
+      ),
+    );
+    if (backendOrder.status == 'expired' &&
+        !hasPersistedTransaction &&
+        !hasBackendAcceptedUnit &&
+        !hasMatchingUnfinishedTransaction) {
+      await _contextStore.clear();
+      _diagnostics?.log('RECONCILIATION_EXPIRED_CONTEXT_CLEARED', {
+        'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+        'reason': 'no_transaction_evidence',
+      });
+      _diagnostics?.log('RECONCILIATION_FINISHED', {
+        'result': 'expired_without_transaction',
+      });
+      return const IosReconciliationResult(resolved: true);
+    }
 
-    if (!backendOrder.paid) {
-      final claimedTransactionIds = context.units
-          .map((item) => item.transactionId)
-          .whereType<String>()
-          .toSet();
-      for (var index = 0; index < context.units.length; index++) {
-        var unit = context.units[index];
-        var transactionId = unit.transactionId;
-        if (transactionId == null || transactionId.isEmpty) {
-          final matches =
-              unfinished
-                  .where(
-                    (item) =>
-                        item.productId == unit.storeProductId &&
-                        appAccountTokensMatch(
-                          context.linkToken,
-                          item.appAccountToken,
-                        ) &&
-                        item.transactionId != null &&
-                        !claimedTransactionIds.contains(item.transactionId),
-                  )
-                  .toList()
-                ..sort(
-                  (left, right) => (left.transactionId ?? '').compareTo(
-                    right.transactionId ?? '',
-                  ),
-                );
-          for (final item in unfinished.where(
-            (item) => item.productId == unit.storeProductId,
-          )) {
-            _diagnostics?.logAppAccountTokenCorrelation(
-              event: 'RECONCILIATION_TOKEN_CORRELATION',
-              persistedToken: context.linkToken,
-              returnedToken: item.appAccountToken,
-            );
-          }
-          if (matches.isNotEmpty) {
-            transactionId = matches.first.transactionId;
-            if (transactionId != null && transactionId.isNotEmpty) {
-              claimedTransactionIds.add(transactionId);
-              context = context.recordTransaction(
-                index: index,
-                transactionId: transactionId,
-              );
-              await _contextStore.save(context);
-              unit = context.units[index];
-            }
-          }
-        }
-        if (transactionId == null ||
-            transactionId.isEmpty ||
-            unit.backendAccepted) {
-          continue;
-        }
-        final verification = await PaymentService.verifyIosPurchase(
-          orderId: context.orderId,
-          transactionId: transactionId,
-          storeProductId: unit.storeProductId,
-          diagnostics: _diagnostics,
-        );
-        if (!verification.accepted) continue;
-        context = context.acceptTransaction(
-          index: index,
-          backendStatus: verification.status,
-        );
-        await _contextStore.save(context);
-        _diagnostics?.log('CONTEXT_PERSISTED', {'state': context.state});
-        await _refreshCredits();
-        await MantraService.consumeIosCartProductUnits(unit.storeProductId, 1);
-        if (verification.paid) break;
+    // Phase-1 contexts may contain multiple per-song units. They are readable,
+    // but are never reinterpreted as one aggregate transaction.
+    if (!context.isAggregate) {
+      _diagnostics?.log('RECONCILIATION_LEGACY_CONTEXT_RETAINED', {
+        'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+        'hasTransactionEvidence': hasPersistedTransaction,
+      });
+      return IosReconciliationResult(context: context);
+    }
+
+    var unit = context.aggregateUnit;
+    StoreKitTransaction? transaction;
+    for (final candidate in unfinished.where(
+      (item) => item.productId == unit.storeProductId,
+    )) {
+      _diagnostics?.logAppAccountTokenCorrelation(
+        event: 'RECONCILIATION_TOKEN_CORRELATION',
+        persistedToken: context.linkToken,
+        returnedToken: candidate.appAccountToken,
+      );
+      final candidateId = candidate.transactionId?.trim();
+      if (candidateId == null || candidateId.isEmpty) continue;
+      if (!appAccountTokensMatch(
+        context.linkToken,
+        candidate.appAccountToken,
+      )) {
+        continue;
+      }
+      if (unit.transactionId == null || unit.transactionId == candidateId) {
+        transaction = candidate;
+        break;
       }
     }
 
-    final refreshedOrder = backendOrder.paid
-        ? backendOrder
-        : await PaymentService.getIosPurchaseOrder(
-            context.orderId,
-            diagnostics: _diagnostics,
-          );
-    if (refreshedOrder.paid) {
-      context = context.acceptPaidOrder();
+    if ((unit.transactionId == null || unit.transactionId!.isEmpty) &&
+        transaction != null) {
+      context = context.recordTransaction(
+        index: 0,
+        transactionId: transaction.transactionId!,
+      );
       await _contextStore.save(context);
-      _diagnostics?.log('CONTEXT_PERSISTED', {'state': context.state});
+      unit = context.aggregateUnit;
     }
 
-    for (var index = 0; index < context.units.length; index++) {
-      final unit = context.units[index];
-      if (!unit.backendAccepted || unit.storeKitCompleted) continue;
-      final transaction = unfinishedById[unit.transactionId];
-      if (transaction != null) await _storeKit.complete(transaction);
-      context = context.completeTransaction(index);
-      await _contextStore.save(context);
-      _diagnostics?.log('STOREKIT_COMPLETED', {
+    if (!backendOrder.paid &&
+        !unit.backendAccepted &&
+        unit.transactionId?.isNotEmpty == true) {
+      _diagnostics?.log('IOS_AGGREGATE_VERIFY_START', {
+        'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
         'storeProductId': unit.storeProductId,
-        'transactionId': StoreKitDiagnostics.redactIdentifier(
-          unit.transactionId,
-        ),
       });
+      final verification = await _verifyPurchase(
+        context.orderId,
+        unit.transactionId!,
+        unit.storeProductId,
+        _diagnostics,
+      );
+      if (verification.status == 'partially_paid') {
+        context = context.copyWith(state: 'unexpected_partially_paid');
+        await _contextStore.save(context);
+        _diagnostics?.log('IOS_AGGREGATE_UNEXPECTED_PARTIALLY_PAID');
+        return IosReconciliationResult(context: context);
+      }
+      if (verification.paid) {
+        context = context.acceptTransaction(index: 0, backendStatus: 'paid');
+        await _contextStore.save(context);
+        _diagnostics?.log('IOS_AGGREGATE_VERIFY_PAID');
+      }
+    } else if (backendOrder.paid && !unit.backendAccepted) {
+      context = context.acceptPaidOrder();
+      await _contextStore.save(context);
     }
 
     if (context.paid) {
       await _refreshCredits();
-      await MantraService.removeIosCartProductsByStoreIds(
-        context.acceptedStoreProductIds,
-      );
-      final allAcceptedCompleted = context.units
-          .where((item) => item.backendAccepted)
-          .every((item) => item.storeKitCompleted);
-      if (allAcceptedCompleted) {
-        await _contextStore.clear();
-        _diagnostics?.log('CONTEXT_CLEARED');
-        _diagnostics?.log('RECONCILIATION_FINISHED', {'result': 'paid'});
-        _log('reconcile_paid order=${_short(context.orderId)}');
-        return const IosReconciliationResult(resolved: true, paid: true);
+      _diagnostics?.log('IOS_AGGREGATE_CREDIT_REFRESH_SUCCEEDED', {
+        'distinctSongs': context.cartProducts.length,
+        'units': context.cartProducts.fold<int>(
+          0,
+          (sum, item) => sum + item.quantity,
+        ),
+      });
+      if (!context.cartFinalized) {
+        await MantraService.consumeIosCartProducts(context.cartProducts);
+        context = context.copyWith(cartFinalized: true);
+        await _contextStore.save(context);
       }
+      unit = context.aggregateUnit;
+      if (!unit.storeKitCompleted) {
+        if (transaction == null) {
+          return IosReconciliationResult(context: context);
+        }
+        await _completeTransaction(transaction);
+        context = context.completeTransaction(0);
+        await _contextStore.save(context);
+        _diagnostics?.log('IOS_AGGREGATE_STOREKIT_COMPLETED');
+      }
+      await _contextStore.clear();
+      _diagnostics?.log('CONTEXT_CLEARED');
+      _diagnostics?.log('RECONCILIATION_FINISHED', {'result': 'paid'});
+      return const IosReconciliationResult(resolved: true, paid: true);
     }
     _diagnostics?.log('RECONCILIATION_FINISHED', {
       'result': 'pending',

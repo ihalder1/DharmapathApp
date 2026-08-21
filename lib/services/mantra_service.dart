@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mantra.dart';
+import '../models/ios_purchase.dart';
 import '../constants/api_config.dart';
 import 'auth_service.dart';
 import 'mantra_sync_service.dart';
@@ -22,10 +23,18 @@ class MantraService {
   static bool get supportsMultipleCartQuantity => cart_quantity_policy
       .supportsMultipleCartQuantity(platform: debugTargetPlatformOverride);
 
+  /// Platform-aware cart ceiling. Android retains its existing 30-item
+  /// behavior; only iOS is constrained by the available aggregate SKUs.
+  static int get effectiveMaxCartTotalQuantity =>
+      cart_quantity_policy.maxCartTotalQuantity(
+        existingDefault: maxCartTotalQuantity,
+        platform: debugTargetPlatformOverride,
+      );
+
   /// Whether [additional] more unit(s) can be added without exceeding [maxCartTotalQuantity].
   static bool canAddCartUnits([int additional = 1]) {
     if (additional < 1) return false;
-    return getCartTotalQuantity() + additional <= maxCartTotalQuantity;
+    return getCartTotalQuantity() + additional <= effectiveMaxCartTotalQuantity;
   }
 
   /// Merges GET purchase/songs counts into [source] (does not mutate input list).
@@ -137,6 +146,11 @@ class MantraService {
   static List<Mantra> getCart() {
     return _cart;
   }
+
+  /// Frozen row-based input for aggregate iOS checkout. Quantities live on
+  /// each distinct row and must never pass through [expandCartForCheckout].
+  static List<Mantra> iosAggregateCartSnapshot() =>
+      List<Mantra>.from(_cart, growable: false);
 
   // Add mantra to cart (quantity 1). Returns false if cart is at [maxCartTotalQuantity].
   static Future<bool> addToCart(Mantra mantra) async {
@@ -347,6 +361,47 @@ class MantraService {
     }
   }
 
+  /// Removes/decrements the exact internal song quantities represented by a
+  /// backend-paid aggregate iOS order. Aggregate StoreKit IDs never enter the
+  /// catalogue or cart matching path.
+  static Future<void> consumeIosCartProducts(
+    Iterable<IosCartProduct> purchased,
+  ) async {
+    final quantities = <String, int>{};
+    for (final item in purchased) {
+      final id = item.internalProductId.trim();
+      if (id.isEmpty || item.quantity < 1) continue;
+      quantities.update(
+        id,
+        (value) => value + item.quantity,
+        ifAbsent: () => item.quantity,
+      );
+    }
+    if (quantities.isEmpty) return;
+    for (var index = _cart.length - 1; index >= 0; index--) {
+      final item = _cart[index];
+      final purchasedQuantity = quantities[item.internalProductId.trim()];
+      if (purchasedQuantity == null) continue;
+      final remaining = item.cartQuantity - purchasedQuantity;
+      if (remaining > 0) {
+        _cart[index] = item.copyWith(cartQuantity: remaining);
+      } else {
+        _cart.removeAt(index);
+      }
+    }
+    for (var index = 0; index < _mantras.length; index++) {
+      final cartIndex = _cart.indexWhere(
+        (item) => item.internalProductId == _mantras[index].internalProductId,
+      );
+      if (!quantities.containsKey(_mantras[index].internalProductId)) continue;
+      _mantras[index] = _mantras[index].copyWith(
+        isInCart: cartIndex >= 0,
+        cartQuantity: cartIndex >= 0 ? _cart[cartIndex].cartQuantity : 1,
+      );
+    }
+    await _saveCart();
+  }
+
   // Save cart to SharedPreferences
   static Future<void> _saveCart() async {
     try {
@@ -369,7 +424,8 @@ class MantraService {
 
   /// Drops units from the end of the cart until total ≤ [maxCartTotalQuantity].
   static void _trimCartToMaxLimit() {
-    while (getCartTotalQuantity() > maxCartTotalQuantity && _cart.isNotEmpty) {
+    while (getCartTotalQuantity() > effectiveMaxCartTotalQuantity &&
+        _cart.isNotEmpty) {
       final last = _cart.length - 1;
       final qty = _cart[last].cartQuantity;
       if (qty <= 1) {

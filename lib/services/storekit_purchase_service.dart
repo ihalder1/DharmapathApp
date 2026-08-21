@@ -117,7 +117,6 @@ final class StoreKitPurchaseService {
       productDetails: product,
       applicationUserName: appAccountToken,
     ),
-    autoConsume: false,
   );
 
   Future<void> complete(StoreKitTransaction transaction) async {

@@ -31,14 +31,16 @@ List<IosCartProduct> buildIosCartProducts(Iterable<Mantra> items) {
       throw const FormatException('An iOS store product mapping is missing');
     }
     final quantity = mantra.cartQuantity < 1 ? 1 : mantra.cartQuantity;
-    final existing = products[storeId];
+    // Prepare has one row per distinct backend song ID. The individual Apple
+    // mapping remains metadata only; it must not determine aggregation.
+    final existing = products[internalId];
     if (existing != null) {
       if (existing.internalProductId != internalId) {
         throw const FormatException(
           'An iOS store product maps to multiple internal products',
         );
       }
-      products[storeId] = IosCartProduct(
+      products[internalId] = IosCartProduct(
         internalProductId: internalId,
         productName: existing.productName,
         storeProductId: storeId,
@@ -46,7 +48,7 @@ List<IosCartProduct> buildIosCartProducts(Iterable<Mantra> items) {
       );
       continue;
     }
-    products[storeId] = IosCartProduct(
+    products[internalId] = IosCartProduct(
       internalProductId: internalId,
       productName: mantra.name.trim().isEmpty ? internalId : mantra.name,
       storeProductId: storeId,
@@ -65,6 +67,14 @@ Map<String, dynamic> buildIosPreparePayload({
   'currency': currency.trim().toLowerCase(),
   'products': products.map((item) => item.toPrepareJson()).toList(),
 };
+
+int iosCartTotalUnits(Iterable<IosCartProduct> products) =>
+    products.fold<int>(0, (sum, item) => sum + item.quantity);
+
+List<String> iosCartQuantityDiagnostics(Iterable<IosCartProduct> products) =>
+    products
+        .map((item) => '${item.internalProductId}×${item.quantity}')
+        .toList(growable: false);
 
 Map<String, dynamic> buildIosVerifyPayload({
   required String orderId,
@@ -167,66 +177,39 @@ final class IosPreparedPurchase {
                 .toList(growable: false)
           : const [],
     );
-    if (result.orderId.isEmpty ||
-        result.linkToken.isEmpty ||
-        result.storeProducts.isEmpty ||
-        result.storeProducts.any(
-          (item) => item.storeProductId.isEmpty || item.quantity < 1,
-        )) {
+    if (result.orderId.isEmpty || result.linkToken.isEmpty) {
       throw const FormatException('Invalid iOS prepare-purchase response');
+    }
+    if (result.storeProducts.isEmpty) {
+      throw const FormatException('ios_aggregate_store_product_missing');
+    }
+    if (result.storeProducts.length != 1) {
+      throw const FormatException(
+        'ios_expected_single_aggregate_store_product',
+      );
+    }
+    if (result.storeProducts.single.storeProductId.isEmpty ||
+        result.storeProducts.single.quantity < 1) {
+      throw const FormatException('ios_aggregate_store_product_missing');
     }
     return result;
   }
 }
 
-void validateIosPreparedProducts({
-  required Iterable<IosCartProduct> cart,
-  required Iterable<IosPreparedStoreProduct> prepared,
-}) {
-  final cartList = cart.toList(growable: false);
-  final preparedList = prepared.toList(growable: false);
-  final expected = {
-    for (final item in cartList) item.storeProductId: item.quantity,
-  };
-  final actual = <String, int>{};
-  for (final item in preparedList) {
-    if (actual.containsKey(item.storeProductId)) {
-      throw const FormatException(
-        'Backend returned duplicate iOS store product rows',
-      );
-    }
-    actual[item.storeProductId] = item.quantity;
+IosPreparedStoreProduct requireIosAggregateStoreProduct(
+  Iterable<IosPreparedStoreProduct> prepared,
+) {
+  final products = prepared.toList(growable: false);
+  if (products.isEmpty) {
+    throw const FormatException('ios_aggregate_store_product_missing');
   }
-  if (expected.length != cartList.length ||
-      actual.length != preparedList.length ||
-      expected.length != actual.length ||
-      expected.entries.any((item) => actual[item.key] != item.value)) {
-    throw const FormatException(
-      'Backend iOS store products do not match the requested cart',
-    );
+  if (products.length != 1) {
+    throw const FormatException('ios_expected_single_aggregate_store_product');
   }
-}
-
-List<IosPurchaseUnit> expandIosPreparedUnits({
-  required Iterable<IosPreparedStoreProduct> prepared,
-  required Iterable<IosCartProduct> cart,
-}) {
-  final internalIds = {
-    for (final item in cart) item.storeProductId: item.internalProductId,
-  };
-  return prepared
-      .expand(
-        (item) => List.generate(
-          item.quantity,
-          (_) => IosPurchaseUnit(
-            storeProductId: item.storeProductId,
-            internalProductId:
-                item.internalProductId ?? internalIds[item.storeProductId],
-          ),
-          growable: false,
-        ),
-      )
-      .toList(growable: false);
+  if (products.single.storeProductId.trim().isEmpty) {
+    throw const FormatException('ios_aggregate_store_product_missing');
+  }
+  return products.single;
 }
 
 final class IosPurchaseUnit {
@@ -283,6 +266,9 @@ final class IosPurchaseContext {
     required this.state,
     required this.createdAt,
     required this.updatedAt,
+    this.cartProducts = const [],
+    this.architecture = 'aggregate_v2',
+    this.cartFinalized = false,
   });
 
   final String orderId;
@@ -292,6 +278,14 @@ final class IosPurchaseContext {
   final String state;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final List<IosCartProduct> cartProducts;
+  final String architecture;
+  final bool cartFinalized;
+
+  bool get isAggregate => architecture == 'aggregate_v2' && units.length == 1;
+  bool get isLegacySequential => !isAggregate;
+  IosPurchaseUnit get aggregateUnit => units.single;
+  String get aggregateStoreProductId => aggregateUnit.storeProductId;
 
   bool get paid => state == 'paid';
   bool get hasUnfinishedWork =>
@@ -321,6 +315,7 @@ final class IosPurchaseContext {
     int? currentIndex,
     String? state,
     DateTime? updatedAt,
+    bool? cartFinalized,
   }) => IosPurchaseContext(
     orderId: orderId,
     linkToken: linkToken,
@@ -329,6 +324,9 @@ final class IosPurchaseContext {
     state: state ?? this.state,
     createdAt: createdAt,
     updatedAt: updatedAt ?? DateTime.now().toUtc(),
+    cartProducts: cartProducts,
+    architecture: architecture,
+    cartFinalized: cartFinalized ?? this.cartFinalized,
   );
 
   IosPurchaseContext recordTransaction({
@@ -375,6 +373,18 @@ final class IosPurchaseContext {
     'state': state,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'updatedAt': updatedAt.toUtc().toIso8601String(),
+    'architecture': architecture,
+    'cartProducts': cartProducts
+        .map(
+          (item) => {
+            'internalProductId': item.internalProductId,
+            'productName': item.productName,
+            'storeProductId': item.storeProductId,
+            'quantity': item.quantity,
+          },
+        )
+        .toList(),
+    'cartFinalized': cartFinalized,
   };
 
   String encodeWithoutToken() => jsonEncode(toJson(includeLinkToken: false));
@@ -382,30 +392,48 @@ final class IosPurchaseContext {
   factory IosPurchaseContext.fromJson(
     Map<String, dynamic> json, {
     required String linkToken,
-  }) => IosPurchaseContext(
-    orderId: json['orderId']?.toString() ?? '',
-    linkToken: linkToken,
-    units: (json['units'] as List? ?? const [])
+  }) {
+    final rawUnits = (json['units'] as List? ?? const [])
         .whereType<Map>()
         .map(
           (item) => IosPurchaseUnit.fromJson(Map<String, dynamic>.from(item)),
         )
-        .toList(growable: false),
-    currentIndex: int.tryParse(json['currentIndex']?.toString() ?? '') ?? 0,
-    state: json['state']?.toString() ?? 'prepared',
-    createdAt:
-        DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-        DateTime.now().toUtc(),
-    updatedAt:
-        DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
-        DateTime.now().toUtc(),
-  );
+        .toList(growable: false);
+    final rawCart = (json['cartProducts'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) {
+          final data = Map<String, dynamic>.from(item);
+          return IosCartProduct(
+            internalProductId: data['internalProductId']?.toString() ?? '',
+            productName: data['productName']?.toString() ?? '',
+            storeProductId: data['storeProductId']?.toString() ?? '',
+            quantity: int.tryParse(data['quantity']?.toString() ?? '') ?? 1,
+          );
+        })
+        .toList(growable: false);
+    return IosPurchaseContext(
+      orderId: json['orderId']?.toString() ?? '',
+      linkToken: linkToken,
+      units: rawUnits,
+      currentIndex: int.tryParse(json['currentIndex']?.toString() ?? '') ?? 0,
+      state: json['state']?.toString() ?? 'prepared',
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now().toUtc(),
+      updatedAt:
+          DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
+          DateTime.now().toUtc(),
+      cartProducts: rawCart,
+      architecture: json['architecture']?.toString() ?? 'legacy_sequential_v1',
+      cartFinalized: json['cartFinalized'] == true,
+    );
+  }
 }
 
 final class IosPurchaseVerification {
   const IosPurchaseVerification({required this.status});
   final String status;
-  bool get accepted => status == 'partially_paid' || status == 'paid';
+  bool get accepted => status == 'paid';
   bool get paid => status == 'paid';
 
   factory IosPurchaseVerification.fromJson(Map<String, dynamic> body) {

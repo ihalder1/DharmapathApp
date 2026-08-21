@@ -6,6 +6,7 @@ import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
 import 'voice_consent_gate.dart';
 import '../services/ios_purchase_reconciler.dart';
+import '../services/ios_storekit_purchase_coordinator.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -32,11 +33,15 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      IosStoreKitPurchaseCoordinator.instance.logGlobalLifecycle(state);
+    }
     if (state == AppLifecycleState.resumed && _isInitialized && mounted) {
       await context.read<AuthService>().ensureValidAccessToken();
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
         try {
-          await IosPurchaseReconciler().reconcile();
+          await IosStoreKitPurchaseCoordinator.instance
+              .runOrDeferReconciliation(IosPurchaseReconciler().reconcile);
         } catch (_) {
           // A transient payment/backend failure keeps the durable context for
           // the next resume and must not disrupt application lifecycle work.

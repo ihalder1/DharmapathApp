@@ -2,6 +2,7 @@ import 'package:colab_app_ui/models/ios_purchase.dart';
 import 'package:colab_app_ui/models/mantra.dart';
 import 'package:colab_app_ui/services/storekit_purchase_service.dart';
 import 'package:colab_app_ui/services/storekit_diagnostics.dart';
+import 'package:colab_app_ui/services/cart_quantity_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -94,6 +95,84 @@ void main() {
         },
       ],
     });
+  });
+
+  test('iOS aggregate limit is based on total units and allows 21', () {
+    expect(iosMaxAggregateCartUnits, 21);
+    final products = buildIosCartProducts([
+      mantra('F-AARATI-001', 'ios_a', quantity: 10),
+      mantra('F-BRAHMA-001', 'ios_b', quantity: 6),
+      mantra('F-SHIVA-001', 'ios_c', quantity: 5),
+    ]);
+    expect(products.fold<int>(0, (sum, item) => sum + item.quantity), 21);
+    expect(products, hasLength(3));
+  });
+
+  test('Prepare aggregates by distinct internal song ID', () {
+    final products = buildIosCartProducts([
+      mantra('F-AARATI-001', 'ios_a', quantity: 2),
+      mantra('F-AARATI-001', 'ios_a', quantity: 2),
+      mantra('F-BRAHMA-001', 'ios_b'),
+    ]);
+    expect(products, hasLength(2));
+    expect(products[0].quantity, 4);
+    expect(products[1].quantity, 1);
+  });
+
+  test('quantity 4 stays 4 through display, Prepare, and context recovery', () {
+    final products = buildIosCartProducts([
+      mantra('F-AARATI-001', 'ios_a', quantity: 4),
+    ]);
+    expect(products, hasLength(1));
+    expect(products.single.quantity, 4);
+    expect(iosCartTotalUnits(products), 4);
+    expect(iosCartQuantityDiagnostics(products), ['F-AARATI-001×4']);
+    expect(products.single.quantity, isNot(16));
+
+    final now = DateTime.utc(2026);
+    final context = IosPurchaseContext(
+      orderId: 'ORDER-4',
+      linkToken: '123e4567-e89b-12d3-a456-426614174000',
+      units: const [IosPurchaseUnit(storeProductId: 'backend-sku')],
+      currentIndex: 0,
+      state: 'prepared',
+      createdAt: now,
+      updatedAt: now,
+      cartProducts: products,
+    );
+    final recovered = IosPurchaseContext.fromJson(
+      context.toJson(),
+      linkToken: context.linkToken,
+    );
+    expect(recovered.cartProducts, hasLength(1));
+    expect(recovered.cartProducts.single.quantity, 4);
+    expect(
+      buildIosPreparePayload(currency: 'INR', products: products)['products'],
+      [
+        {
+          'productId': 'F-AARATI-001',
+          'productName': 'F-AARATI-001 Mantra',
+          'quantity': 4,
+        },
+      ],
+    );
+  });
+
+  test('mixed iOS quantities are summed once without duplicate rows', () {
+    final fourUnits = buildIosCartProducts([
+      mantra('F-AARATI-001', 'ios_a', quantity: 2),
+      mantra('F-BRAHMA-001', 'ios_b', quantity: 2),
+    ]);
+    expect(fourUnits.map((item) => item.quantity), [2, 2]);
+    expect(iosCartTotalUnits(fourUnits), 4);
+
+    final fiveUnits = buildIosCartProducts([
+      mantra('F-AARATI-001', 'ios_a', quantity: 2),
+      mantra('F-BRAHMA-001', 'ios_b', quantity: 2),
+      mantra('F-SHIVA-001', 'ios_c'),
+    ]);
+    expect(fiveUnits, hasLength(3));
+    expect(iosCartTotalUnits(fiveUnits), 5);
   });
 
   test('Verify Purchase iOS payload contains real transaction fields', () {
@@ -234,26 +313,59 @@ void main() {
     });
   });
 
-  test('backend quantity expands into distinct persisted StoreKit units', () {
+  test('backend aggregate product produces exactly one persisted unit', () {
     final cart = buildIosCartProducts([
       mantra('F-KRISHNA-001', 'ios_krishna', quantity: 2),
     ]);
-    final units = expandIosPreparedUnits(
-      prepared: const [
-        IosPreparedStoreProduct(
-          storeProductId: 'ios_krishna',
-          internalProductId: 'F-KRISHNA-001',
-          quantity: 2,
-        ),
-      ],
-      cart: cart,
+    const aggregate = IosPreparedStoreProduct(
+      storeProductId: 'backend-chosen-sku',
+      quantity: 1,
     );
-    expect(units, hasLength(2));
-    expect(units.map((item) => item.storeProductId), [
-      'ios_krishna',
-      'ios_krishna',
+    final now = DateTime.utc(2026);
+    final saved = IosPurchaseContext(
+      orderId: 'ORDER-1',
+      linkToken: '123e4567-e89b-12d3-a456-426614174000',
+      units: [IosPurchaseUnit(storeProductId: aggregate.storeProductId)],
+      currentIndex: 0,
+      state: 'prepared',
+      createdAt: now,
+      updatedAt: now,
+      cartProducts: cart,
+    );
+    expect(saved.units, hasLength(1));
+    expect(saved.aggregateStoreProductId, 'backend-chosen-sku');
+    expect(saved.cartProducts.single.quantity, 2);
+  });
+
+  test('prepare requires exactly one backend aggregate product', () {
+    expect(
+      () => requireIosAggregateStoreProduct(const []),
+      throwsA(
+        predicate(
+          (e) => e.toString().contains('ios_aggregate_store_product_missing'),
+        ),
+      ),
+    );
+    expect(
+      () => requireIosAggregateStoreProduct(const [
+        IosPreparedStoreProduct(storeProductId: 'one'),
+        IosPreparedStoreProduct(storeProductId: 'two'),
+      ]),
+      throwsA(
+        predicate(
+          (e) => e.toString().contains(
+            'ios_expected_single_aggregate_store_product',
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('backend aggregate ID is authoritative and never locally derived', () {
+    final product = requireIosAggregateStoreProduct(const [
+      IosPreparedStoreProduct(storeProductId: 'future_backend_name'),
     ]);
-    expect(units.every((item) => item.transactionId == null), isTrue);
+    expect(product.storeProductId, 'future_backend_name');
   });
 
   test('cart conflict comparison retains repeated-unit counts', () {

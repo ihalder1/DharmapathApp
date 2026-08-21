@@ -4,14 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:intl/intl.dart';
 
 import '../models/ios_purchase.dart';
 import '../models/mantra.dart';
 import '../services/ios_purchase_context_store.dart';
 import '../services/ios_fail_closed_recovery.dart';
 import '../services/ios_purchase_reconciler.dart';
+import '../services/ios_storekit_purchase_coordinator.dart';
 import '../services/mantra_service.dart';
+import '../services/cart_quantity_policy.dart';
 import '../services/payment_service.dart';
 import '../services/storekit_purchase_service.dart';
 import '../services/storekit_read_only_snapshot.dart';
@@ -26,6 +27,46 @@ class StoreKitCheckoutScreen extends StatefulWidget {
   State<StoreKitCheckoutScreen> createState() => _StoreKitCheckoutScreenState();
 }
 
+String iosAggregateCheckoutTotal(StoreKitProductPrice? aggregateProduct) =>
+    aggregateProduct?.formattedPrice ?? 'Price unavailable';
+
+List<IosCartProduct> buildIosRecoveryDisplayProducts({
+  required List<IosCartProduct> cartProducts,
+  required IosPurchaseContext? purchaseContext,
+}) {
+  if (purchaseContext == null) return cartProducts;
+  if (purchaseContext.isAggregate && purchaseContext.cartProducts.isNotEmpty) {
+    return purchaseContext.cartProducts;
+  }
+  final remaining = <String, int>{};
+  for (final unit in purchaseContext.units.where(
+    (item) => !item.backendAccepted,
+  )) {
+    remaining.update(
+      unit.storeProductId,
+      (value) => value + 1,
+      ifAbsent: () => 1,
+    );
+  }
+  return remaining.entries
+      .map((entry) {
+        IosCartProduct? cartItem;
+        for (final candidate in cartProducts) {
+          if (candidate.storeProductId == entry.key) {
+            cartItem = candidate;
+            break;
+          }
+        }
+        return IosCartProduct(
+          internalProductId: cartItem?.internalProductId ?? entry.key,
+          productName: cartItem?.productName ?? entry.key,
+          storeProductId: entry.key,
+          quantity: entry.value,
+        );
+      })
+      .toList(growable: false);
+}
+
 class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     with WidgetsBindingObserver {
   final _storeKit = StoreKitPurchaseService.instance;
@@ -37,6 +78,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   StreamSubscription<List<StoreKitTransaction>>? _purchaseSubscription;
   late final List<IosCartProduct> _cartProducts;
   Map<String, StoreKitProductPrice> _prices = const {};
+  StoreKitProductPrice? _aggregatePrice;
   IosPurchaseContext? _purchaseContext;
   Completer<StoreKitTransaction>? _purchaseCompleter;
   String? _waitingForProductId;
@@ -45,6 +87,8 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   bool _processing = false;
   bool _recovering = false;
   bool _blockedByPriorOrder = false;
+  final _lifetime = IosStoreKitCheckoutLifetime();
+  String? _activeAttemptId;
   String _status = '';
   String? _error;
 
@@ -69,13 +113,28 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     );
     try {
       _cartProducts = buildIosCartProducts(widget.cartItems);
+      final totalUnits = iosCartTotalUnits(_cartProducts);
+      if (totalUnits > iosMaxAggregateCartUnits) {
+        throw const FormatException('ios_aggregate_cart_unit_limit_exceeded');
+      }
       _diagnostics.log('CHECKOUT_SESSION_STARTED', {
         'platform': 'ios',
-        'cartUnits': widget.cartItems.length,
+        'cartUnits': totalUnits,
       });
-    } on FormatException {
+      _diagnostics.log('IOS_CART_SNAPSHOT', {
+        'distinctSongs': _cartProducts.length,
+        'quantities': iosCartQuantityDiagnostics(_cartProducts),
+        'totalUnits': totalUnits,
+      });
+      _diagnostics.log('IOS_CHECKOUT_DISPLAY', {
+        'products': iosCartQuantityDiagnostics(_cartProducts),
+        'totalUnits': totalUnits,
+      });
+    } on FormatException catch (error) {
       _cartProducts = const [];
-      _error = 'One or more mantras are not configured for Apple purchases.';
+      _error = error.message == 'ios_aggregate_cart_unit_limit_exceeded'
+          ? 'You can purchase up to 21 mantra credits in one Apple checkout.'
+          : 'One or more mantras are not configured for Apple purchases.';
       _diagnostics.log('ERROR', {
         'stage': 'cart_validation',
         'type': 'FormatException',
@@ -91,13 +150,29 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
 
   @override
   void dispose() {
+    _diagnostics.log('IOS_CHECKOUT_ROUTE_DISPOSE', {
+      'attemptId': _activeAttemptId,
+      'processing': _processing,
+      'waitingForPurchase': _purchaseCompleter?.isCompleted == false,
+    });
     WidgetsBinding.instance.removeObserver(this);
-    _purchaseSubscription?.cancel();
+    // Keep the listener alive while StoreKit owns native UI so the detached
+    // checkout can finish transaction processing without an orphaned waiter.
+    if (_lifetime.detach(purchaseProcessing: _processing)) {
+      unawaited(_purchaseSubscription?.cancel());
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _diagnostics.log('STOREKIT_CHECKOUT_LIFECYCLE', {
+      'attemptId': _activeAttemptId,
+      'state': state.name,
+      'processing': _processing,
+      'recovering': _recovering,
+      'mounted': mounted,
+    });
     if (state == AppLifecycleState.resumed && !_processing && !_recovering) {
       unawaited(_recover());
     }
@@ -202,47 +277,15 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       _cartProducts.every((item) => _prices.containsKey(item.storeProductId));
 
   List<IosCartProduct> get _displayCartProducts {
-    final purchaseContext = _purchaseContext;
-    if (purchaseContext == null) return _cartProducts;
-    final remaining = <String, int>{};
-    for (final unit in purchaseContext.units.where(
-      (item) => !item.backendAccepted,
-    )) {
-      remaining.update(
-        unit.storeProductId,
-        (value) => value + 1,
-        ifAbsent: () => 1,
-      );
-    }
-    return remaining.entries
-        .map((entry) {
-          final cartItem = _cartProducts.firstWhere(
-            (item) => item.storeProductId == entry.key,
-          );
-          return IosCartProduct(
-            internalProductId: cartItem.internalProductId,
-            productName: cartItem.productName,
-            storeProductId: cartItem.storeProductId,
-            quantity: entry.value,
-          );
-        })
-        .toList(growable: false);
+    return buildIosRecoveryDisplayProducts(
+      cartProducts: _cartProducts,
+      purchaseContext: _purchaseContext,
+    );
   }
 
   String get _total {
-    String? currency;
-    var amount = 0.0;
-    for (final item in _displayCartProducts) {
-      final price = _prices[item.storeProductId];
-      if (price == null ||
-          (currency != null && currency != price.currencyCode)) {
-        return 'Price unavailable';
-      }
-      currency = price.currencyCode;
-      amount += price.rawPrice * item.quantity;
-    }
-    if (currency == null) return 'Price unavailable';
-    return NumberFormat.currency(name: currency).format(amount);
+    final aggregatePrice = _aggregatePrice;
+    return iosAggregateCheckoutTotal(aggregatePrice);
   }
 
   String? get _currency {
@@ -269,6 +312,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       var active = _purchaseContext;
       if (active == null) {
         _setStatus('Preparing Apple purchase...');
+        _diagnostics.log('IOS_CART_PREPARE', {
+          'distinctSongs': _cartProducts.length,
+          'totalUnits': iosCartTotalUnits(_cartProducts),
+          'products': iosCartQuantityDiagnostics(_cartProducts),
+        });
+        _diagnostics.log('IOS_PREPARE_QUANTITIES', {
+          'products': iosCartQuantityDiagnostics(_cartProducts),
+        });
         final prepared = await _failClosedRecovery.runPrepareIfNoPending(
           () => PaymentService.prepareIosPurchase(
             currency: _currency!,
@@ -282,48 +333,37 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           );
           throw const _InvalidAppAccountToken();
         }
-        for (var cartIndex = 0; cartIndex < _cartProducts.length; cartIndex++) {
-          final cartItem = _cartProducts[cartIndex];
-          final backendMatches = prepared.storeProducts.where(
-            (backend) =>
-                backend.internalProductId == cartItem.internalProductId ||
-                backend.storeProductId == cartItem.storeProductId,
-          );
-          _diagnostics.logMapping(
-            internalProductId: cartItem.internalProductId,
-            metadataStoreProductId: cartItem.storeProductId,
-            backendStoreProductId: backendMatches.isNotEmpty
-                ? backendMatches.first.storeProductId
-                : cartIndex < prepared.storeProducts.length
-                ? prepared.storeProducts[cartIndex].storeProductId
-                : null,
-          );
-        }
-        validateIosPreparedProducts(
-          cart: _cartProducts,
-          prepared: prepared.storeProducts,
+        final aggregate = requireIosAggregateStoreProduct(
+          prepared.storeProducts,
         );
-        final resolved = await _storeKit.queryProducts(
-          prepared.storeProducts.map((item) => item.storeProductId),
-          diagnostics: _diagnostics,
-        );
-        if (resolved.length != prepared.storeProducts.length) {
-          throw const FormatException(
-            'A prepared Apple product is unavailable',
-          );
+        _diagnostics.log('IOS_AGGREGATE_PRODUCT_RECEIVED', {
+          'storeProductId': aggregate.storeProductId,
+          'backendQuantity': aggregate.quantity,
+        });
+        final resolved = await _storeKit.queryProducts([
+          aggregate.storeProductId,
+        ], diagnostics: _diagnostics);
+        final aggregatePrice = resolved[aggregate.storeProductId];
+        _diagnostics.log('IOS_AGGREGATE_PRODUCT_LOOKUP', {
+          'storeProductId': aggregate.storeProductId,
+          'found': aggregatePrice != null,
+          'price': aggregatePrice?.formattedPrice,
+          'currencyCode': aggregatePrice?.currencyCode,
+        });
+        if (aggregatePrice == null) {
+          throw const FormatException('ios_aggregate_product_not_found');
         }
+        if (mounted) setState(() => _aggregatePrice = aggregatePrice);
         final now = DateTime.now().toUtc();
         active = IosPurchaseContext(
           orderId: prepared.orderId,
           linkToken: prepared.linkToken,
-          units: expandIosPreparedUnits(
-            prepared: prepared.storeProducts,
-            cart: _cartProducts,
-          ),
+          units: [IosPurchaseUnit(storeProductId: aggregate.storeProductId)],
           currentIndex: 0,
           state: 'prepared',
           createdAt: now,
           updatedAt: now,
+          cartProducts: _cartProducts,
         );
         await _contextStore.save(active);
         _diagnostics.log('CONTEXT_PERSISTED', {
@@ -335,11 +375,23 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       }
 
       var checkout = active;
-      for (var index = 0; index < checkout.units.length; index++) {
-        if (checkout.units[index].backendAccepted) continue;
-        final unit = checkout.units[index];
-        final price = _prices[unit.storeProductId];
-        if (price == null) throw StateError('storekit_product_unavailable');
+      if (!checkout.isAggregate) {
+        throw StateError('ios_legacy_context_requires_manual_recovery');
+      }
+      const index = 0;
+      final unit = checkout.aggregateUnit;
+      var price = _aggregatePrice;
+      if (price == null) {
+        final resolved = await _storeKit.queryProducts([
+          unit.storeProductId,
+        ], diagnostics: _diagnostics);
+        price = resolved[unit.storeProductId];
+        if (price == null) {
+          throw StateError('ios_aggregate_product_not_found');
+        }
+        if (mounted) setState(() => _aggregatePrice = price);
+      }
+      if (!unit.backendAccepted) {
         checkout = checkout.copyWith(
           currentIndex: index,
           state: 'opening_storekit',
@@ -350,75 +402,120 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           persistedToken: checkout.linkToken,
           suppliedToken: checkout.linkToken,
         );
-        final transaction = await _launchAndWait(
-          product: price.details,
-          appAccountToken: checkout.linkToken,
-        );
-        final transactionId = transaction.transactionId?.trim() ?? '';
-        if (transactionId.isEmpty) {
-          throw StateError('storekit_transaction_id_missing');
-        }
-        _diagnostics.logAppAccountTokenCorrelation(
-          event: 'APP_ACCOUNT_TOKEN_RETURNED',
-          persistedToken: checkout.linkToken,
-          returnedToken: transaction.appAccountToken,
-        );
-        if (!appAccountTokensMatch(
-          checkout.linkToken,
-          transaction.appAccountToken,
-        )) {
-          throw StateError('storekit_app_account_token_mismatch');
-        }
-        checkout = checkout.recordTransaction(
-          index: index,
-          transactionId: transactionId,
-        );
-        await _save(checkout);
-        _diagnostics.logPurchase(
-          event: 'APPLE_PURCHASE_RECEIVED',
-          storeProductId: unit.storeProductId,
-          status: transaction.status.name,
-          transactionId: transactionId,
-        );
+        final coordinator = IosStoreKitPurchaseCoordinator.instance;
+        final attemptId = coordinator.createAttemptId();
+        _diagnostics.log('STOREKIT_ATTEMPT_CREATED', {
+          'attemptId': attemptId,
+          'storeProductId': unit.storeProductId,
+        });
+        coordinator.acquire(attemptId: attemptId, diagnostics: _diagnostics);
+        _activeAttemptId = attemptId;
+        StoreKitTransaction transaction;
+        try {
+          _diagnostics.log('IOS_AGGREGATE_PURCHASE_START', {
+            'attemptId': attemptId,
+            'storeProductId': unit.storeProductId,
+            'cartUnits': checkout.cartProducts.fold<int>(
+              0,
+              (sum, item) => sum + item.quantity,
+            ),
+          });
+          transaction = await _launchAndWait(
+            product: price.details,
+            appAccountToken: checkout.linkToken,
+            attemptId: attemptId,
+          );
+          coordinator.markResultProcessing(attemptId);
+          final transactionId = transaction.transactionId?.trim() ?? '';
+          if (transactionId.isEmpty) {
+            throw StateError('storekit_transaction_id_missing');
+          }
+          _diagnostics.logAppAccountTokenCorrelation(
+            event: 'APP_ACCOUNT_TOKEN_RETURNED',
+            persistedToken: checkout.linkToken,
+            returnedToken: transaction.appAccountToken,
+          );
+          if (!appAccountTokensMatch(
+            checkout.linkToken,
+            transaction.appAccountToken,
+          )) {
+            throw StateError('storekit_app_account_token_mismatch');
+          }
+          checkout = checkout.recordTransaction(
+            index: index,
+            transactionId: transactionId,
+          );
+          await _save(checkout);
+          _diagnostics.log('IOS_AGGREGATE_TRANSACTION_RECEIVED', {
+            'transactionId': StoreKitDiagnostics.redactIdentifier(
+              transactionId,
+            ),
+          });
+          _diagnostics.logPurchase(
+            event: 'APPLE_PURCHASE_RECEIVED',
+            storeProductId: unit.storeProductId,
+            status: transaction.status.name,
+            transactionId: transactionId,
+          );
 
-        final verification = await PaymentService.verifyIosPurchase(
-          orderId: checkout.orderId,
-          transactionId: transactionId,
-          storeProductId: unit.storeProductId,
-          diagnostics: _diagnostics,
-        );
-        if (!verification.accepted) {
-          throw StateError('backend_did_not_accept_storekit_transaction');
-        }
-        checkout = checkout.acceptTransaction(
-          index: index,
-          backendStatus: verification.status,
-        );
-        await _save(checkout);
-        await _refreshCredits();
-        await MantraService.consumeIosCartProductUnits(unit.storeProductId, 1);
-        await _storeKit.complete(transaction);
-        _diagnostics.logPurchase(
-          event: 'STOREKIT_COMPLETED',
-          storeProductId: unit.storeProductId,
-          status: transaction.status.name,
-          transactionId: transactionId,
-        );
-        checkout = checkout.completeTransaction(index);
-        await _save(checkout);
-        _handledTransactionIds.add(transactionId);
+          _diagnostics.log('IOS_AGGREGATE_VERIFY_START', {
+            'orderId': StoreKitDiagnostics.redactIdentifier(checkout.orderId),
+            'storeProductId': unit.storeProductId,
+          });
+          final verification = await PaymentService.verifyIosPurchase(
+            orderId: checkout.orderId,
+            transactionId: transactionId,
+            storeProductId: unit.storeProductId,
+            diagnostics: _diagnostics,
+          );
+          if (verification.status == 'partially_paid') {
+            await _save(checkout.copyWith(state: 'unexpected_partially_paid'));
+            _diagnostics.log('IOS_AGGREGATE_UNEXPECTED_PARTIALLY_PAID', {
+              'orderId': StoreKitDiagnostics.redactIdentifier(checkout.orderId),
+            });
+            throw StateError('ios_aggregate_unexpected_partially_paid');
+          }
+          if (!verification.paid) {
+            throw StateError('backend_did_not_accept_storekit_transaction');
+          }
+          checkout = checkout.acceptTransaction(
+            index: index,
+            backendStatus: verification.status,
+          );
+          await _save(checkout);
+          await _refreshCredits();
+          _diagnostics.log('IOS_AGGREGATE_CREDIT_REFRESH_SUCCEEDED', {
+            'distinctSongs': checkout.cartProducts.length,
+            'units': checkout.cartProducts.fold<int>(
+              0,
+              (sum, item) => sum + item.quantity,
+            ),
+          });
+          _diagnostics.log('IOS_AGGREGATE_VERIFY_PAID');
+          await MantraService.consumeIosCartProducts(checkout.cartProducts);
+          checkout = checkout.copyWith(cartFinalized: true);
+          await _save(checkout);
+          await _storeKit.complete(transaction);
+          _diagnostics.log('IOS_AGGREGATE_STOREKIT_COMPLETED');
+          _diagnostics.logPurchase(
+            event: 'STOREKIT_COMPLETED',
+            storeProductId: unit.storeProductId,
+            status: transaction.status.name,
+            transactionId: transactionId,
+          );
+          checkout = checkout.completeTransaction(index);
+          await _save(checkout);
+          _handledTransactionIds.add(transactionId);
 
-        if (verification.paid) {
           checkout = checkout.copyWith(state: 'paid');
           await _save(checkout);
           await _finishPaid(checkout);
           return;
+        } finally {
+          await coordinator.release(attemptId);
+          _activeAttemptId = null;
         }
-        _setStatus('Purchase accepted. Continuing with the next mantra...');
       }
-      _setStatus(
-        'Apple purchases are complete; waiting for the order to be paid.',
-      );
     } on IosUnresolvedOrderConflict catch (conflict) {
       _purchaseContext = conflict.context;
       _blockedByPriorOrder = true;
@@ -434,19 +531,9 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     } on _StoreKitCancelled {
       final saved = _purchaseContext;
       if (saved != null) {
-        await _save(
-          saved.copyWith(
-            state: saved.acceptedStoreProductIds.isEmpty
-                ? 'cancelled'
-                : 'partially_paid',
-          ),
-        );
+        await _save(saved.copyWith(state: 'cancelled'));
       }
-      _setStatus(
-        _purchaseContext?.acceptedStoreProductIds.isNotEmpty == true
-            ? 'Part of your order was purchased. The remaining mantra stays in your cart.'
-            : 'Apple purchase was cancelled. You can try again when ready.',
-      );
+      _setStatus('Apple purchase was cancelled. You can try again when ready.');
     } on _StoreKitPending {
       final saved = _purchaseContext;
       if (saved != null) await _save(saved.copyWith(state: 'pending'));
@@ -478,12 +565,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       _purchaseCompleter = null;
       _waitingForProductId = null;
       if (mounted) setState(() => _processing = false);
+      if (_lifetime.disposed) unawaited(_purchaseSubscription?.cancel());
     }
   }
 
   Future<StoreKitTransaction> _launchAndWait({
     required ProductDetails product,
     required String appAccountToken,
+    required String attemptId,
   }) async {
     final completer = Completer<StoreKitTransaction>();
     _purchaseCompleter = completer;
@@ -494,10 +583,25 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       storeProductId: product.id,
       status: 'started',
     );
-    final launched = await _storeKit.buyConsumable(
-      product: product,
-      appAccountToken: appAccountToken,
-    );
+    final stopwatch = Stopwatch()..start();
+    _diagnostics.log('STOREKIT_PURCHASE_CALL_START', {
+      'attemptId': attemptId,
+      'productId': product.id,
+    });
+    IosStoreKitPurchaseCoordinator.instance.markStoreKitActive(attemptId);
+    bool launched;
+    try {
+      launched = await _storeKit.buyConsumable(
+        product: product,
+        appAccountToken: appAccountToken,
+      );
+    } finally {
+      _diagnostics.log('STOREKIT_PURCHASE_CALL_RETURN', {
+        'attemptId': attemptId,
+        'productId': product.id,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+      });
+    }
     if (!launched && !completer.isCompleted) {
       throw StateError('storekit_purchase_not_launched');
     }
@@ -513,6 +617,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         status: transaction.status.name,
         transactionId: transaction.transactionId,
       );
+      _diagnostics.log('STOREKIT_PURCHASE_STREAM_EVENT', {
+        'attemptId': _activeAttemptId,
+        'status': transaction.status.name,
+        'productId': transaction.productId,
+        'transactionId': StoreKitDiagnostics.redactIdentifier(
+          transaction.transactionId,
+        ),
+      });
       if (context != null) {
         _diagnostics.logAppAccountTokenCorrelation(
           event: 'PURCHASE_STREAM_TOKEN_CORRELATION',
@@ -531,6 +643,11 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         .toSet();
     final matching = updates.where((item) {
       final id = item.transactionId?.trim();
+      final terminalWithoutTransaction =
+          item.status == PurchaseStatus.pending ||
+          item.status == PurchaseStatus.canceled ||
+          item.status == PurchaseStatus.error;
+      if (terminalWithoutTransaction) return item.productId == expected;
       return id != null &&
           id.isNotEmpty &&
           item.productId == expected &&
@@ -576,10 +693,6 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   }
 
   Future<void> _finishPaid(IosPurchaseContext context) async {
-    await _refreshCredits();
-    await MantraService.removeIosCartProductsByStoreIds(
-      context.acceptedStoreProductIds,
-    );
     if (context.units.any(
       (item) => item.backendAccepted && !item.storeKitCompleted,
     )) {
@@ -595,6 +708,10 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     ScaffoldMessenger.of(
       this.context,
     ).showSnackBar(const SnackBar(content: Text('Purchase successful.')));
+    _diagnostics.log('IOS_CHECKOUT_ROUTE_POP', {
+      'attemptId': _activeAttemptId,
+      'reason': 'paid',
+    });
     Navigator.of(this.context).pop(true);
   }
 
@@ -735,7 +852,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
                                   : null,
                               trailing: Text(
                                 _prices[item.storeProductId]?.formattedPrice ??
-                                    'Price unavailable',
+                                    '',
                               ),
                             ),
                           const Divider(),
@@ -783,11 +900,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : Text(
-                              _purchaseContext?.state == 'partially_paid'
-                                  ? 'Continue Remaining Purchase'
-                                  : 'Purchase with Apple',
-                            ),
+                          : Text('Purchase with Apple'),
                     ),
                   ],
                 ),

@@ -215,6 +215,8 @@ final class StoreKitDiagnostics {
     'httpStatus': httpStatus,
   });
 
+  static String safeErrorMessage(Object error) => _sanitizeError(error);
+
   static String redactIdentifier(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return '<absent>';

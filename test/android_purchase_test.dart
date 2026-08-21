@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:colab_app_ui/models/android_purchase.dart';
+import 'package:colab_app_ui/models/ios_purchase.dart';
 import 'package:colab_app_ui/models/mantra.dart';
 import 'package:colab_app_ui/services/cart_quantity_policy.dart';
 import 'package:colab_app_ui/services/location_pricing_service.dart';
@@ -128,6 +129,73 @@ void main() {
       MantraService.expandCartForCheckout(),
     );
     expect(products.single.toPrepareJson()['quantity'], 1);
+  });
+
+  test('iOS limit does not change the existing Android cart ceiling', () {
+    expect(
+      maxCartTotalQuantity(
+        existingDefault: MantraService.maxCartTotalQuantity,
+        platform: TargetPlatform.android,
+        isWeb: false,
+      ),
+      30,
+    );
+    expect(
+      maxCartTotalQuantity(
+        existingDefault: MantraService.maxCartTotalQuantity,
+        platform: TargetPlatform.iOS,
+        isWeb: false,
+      ),
+      21,
+    );
+  });
+
+  test('iOS accepts unit 21 and rejects unit 22 before checkout', () async {
+    MantraService.debugTargetPlatformOverride = TargetPlatform.iOS;
+    final aarati = mantra('F-AARATI-001', 'song_f_aarati_001', 'Aarati');
+
+    for (var unit = 1; unit <= 21; unit++) {
+      expect(await MantraService.addToCart(aarati), isTrue);
+    }
+    expect(MantraService.getCartTotalQuantity(), 21);
+    expect(await MantraService.addToCart(aarati), isFalse);
+    expect(MantraService.getCartTotalQuantity(), 21);
+  });
+
+  test('iOS aggregate snapshot keeps quantity 4 as one row, not 16', () async {
+    MantraService.debugTargetPlatformOverride = TargetPlatform.iOS;
+    final aarati = mantra('F-AARATI-001', 'song_f_aarati_001', 'Aarati');
+    for (var unit = 0; unit < 4; unit++) {
+      expect(await MantraService.addToCart(aarati), isTrue);
+    }
+
+    final snapshot = MantraService.iosAggregateCartSnapshot();
+    expect(snapshot, hasLength(1));
+    expect(snapshot.single.cartQuantity, 4);
+    expect(MantraService.getCartTotalQuantity(), 4);
+
+    // This is deliberately *not* the iOS input: it demonstrates the old
+    // double-expansion shape that produced four rows each carrying quantity 4.
+    final legacyExpanded = MantraService.expandCartForCheckout();
+    expect(legacyExpanded, hasLength(4));
+    expect(legacyExpanded.every((item) => item.cartQuantity == 4), isTrue);
+  });
+
+  test('paid iOS quantity 4 finalizes exactly four cart units', () async {
+    MantraService.debugTargetPlatformOverride = TargetPlatform.iOS;
+    final aarati = mantra('F-AARATI-001', 'song_f_aarati_001', 'Aarati');
+    for (var unit = 0; unit < 6; unit++) {
+      expect(await MantraService.addToCart(aarati), isTrue);
+    }
+    await MantraService.consumeIosCartProducts(const [
+      IosCartProduct(
+        internalProductId: 'F-AARATI-001',
+        productName: 'Aarati',
+        storeProductId: 'ios_metadata_only',
+        quantity: 4,
+      ),
+    ]);
+    expect(MantraService.getCart().single.cartQuantity, 2);
   });
 
   test(

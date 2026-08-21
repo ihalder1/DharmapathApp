@@ -115,4 +115,21 @@ void main() {
     expect(row['store_product_id_android'], 'store_f-aarati-001');
     expect(row['store_product_id_ios'], 'store_f-aarati-001_ios');
   });
+
+  test(
+    'checkout-only aggregate product is never synthesized into catalogue',
+    () {
+      final result = reconcile(
+        apiRows: [api('F-AARATI-001')],
+        bundledRows: [local('F-AARATI-001')],
+      );
+      final rows = result.metadata['mantras'] as List;
+      expect(rows, hasLength(1));
+      expect(
+        rows.where((row) => row['store_product_id_ios'] == 'multi_02'),
+        isEmpty,
+      );
+      expect(rows.where((row) => row['song_id'] == 'multi_02'), isEmpty);
+    },
+  );
 }

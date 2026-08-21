@@ -26,6 +26,7 @@ import '../services/cart_quantity_policy.dart';
 import '../services/location_pricing_service.dart';
 import '../services/storekit_purchase_service.dart';
 import '../services/ios_purchase_reconciler.dart';
+import '../services/ios_storekit_purchase_coordinator.dart';
 import '../models/mantra.dart';
 import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
@@ -2543,7 +2544,9 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'You can add up to ${MantraService.maxCartTotalQuantity} mantras to your cart.',
+          _usesStoreKit
+              ? 'You can purchase up to 21 mantra credits in one Apple checkout.'
+              : 'You can add up to ${MantraService.effectiveMaxCartTotalQuantity} mantras to your cart.',
         ),
         backgroundColor: Colors.orange,
       ),
@@ -2619,7 +2622,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Text(
-        'Note: You can add up to ${MantraService.maxCartTotalQuantity} items to your cart.',
+        'Note: You can add up to ${MantraService.effectiveMaxCartTotalQuantity} items to your cart.',
         textAlign: TextAlign.center,
         style: TextStyle(
           fontSize: 10,
@@ -2633,7 +2636,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCartQuantityStepper(Mantra mantra, int quantity) {
     final atCartLimit =
         MantraService.getCartTotalQuantity() >=
-        MantraService.maxCartTotalQuantity;
+        MantraService.effectiveMaxCartTotalQuantity;
 
     return Container(
       decoration: BoxDecoration(
@@ -2734,11 +2737,15 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     if (hitLimit) {
+      if (_usesStoreKit) {
+        _showCartLimitSnackBar();
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             '$addedCount mantra(s) added. Cart limit is '
-            '${MantraService.maxCartTotalQuantity} items.',
+            '${MantraService.effectiveMaxCartTotalQuantity} items.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -4534,7 +4541,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               cartUnitCount == 0
                   ? 'No mantras selected'
-                  : '$cartUnitCount / ${MantraService.maxCartTotalQuantity} '
+                  : '$cartUnitCount / ${MantraService.effectiveMaxCartTotalQuantity} '
                         'mantra${cartUnitCount != 1 ? 's' : ''} selected',
               style: TextStyle(
                 fontSize: 12,
@@ -4755,34 +4762,57 @@ class _HomeScreenState extends State<HomeScreen> {
                           final usesStoreKitCheckout =
                               !kIsWeb &&
                               defaultTargetPlatform == TargetPlatform.iOS;
-                          final paymentSuccess = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) {
-                                final checkoutItems =
-                                    MantraService.expandCartForCheckout();
-                                if (!kIsWeb &&
-                                    defaultTargetPlatform ==
-                                        TargetPlatform.android) {
-                                  return GooglePlayCheckoutScreen(
+                          final storeKitCoordinator =
+                              IosStoreKitPurchaseCoordinator.instance;
+                          if (usesStoreKitCheckout &&
+                              !storeKitCoordinator.tryAcquireCheckoutRoute()) {
+                            debugPrint(
+                              'STOREKIT_DEBUG IOS_CHECKOUT_ROUTE_PUSH_BLOCKED',
+                            );
+                            return;
+                          }
+                          if (usesStoreKitCheckout) {
+                            debugPrint(
+                              'STOREKIT_DEBUG IOS_CHECKOUT_ROUTE_PUSH',
+                            );
+                          }
+                          bool? paymentSuccess;
+                          try {
+                            paymentSuccess = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) {
+                                  if (!kIsWeb &&
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android) {
+                                    return GooglePlayCheckoutScreen(
+                                      cartItems:
+                                          MantraService.expandCartForCheckout(),
+                                    );
+                                  }
+                                  if (!kIsWeb &&
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.iOS) {
+                                    return StoreKitCheckoutScreen(
+                                      cartItems:
+                                          MantraService.iosAggregateCartSnapshot(),
+                                    );
+                                  }
+                                  final checkoutItems =
+                                      MantraService.expandCartForCheckout();
+                                  return PaymentScreen(
+                                    totalAmount: total,
+                                    currencyCode: cartCurrencyCode,
                                     cartItems: checkoutItems,
                                   );
-                                }
-                                if (!kIsWeb &&
-                                    defaultTargetPlatform ==
-                                        TargetPlatform.iOS) {
-                                  return StoreKitCheckoutScreen(
-                                    cartItems: checkoutItems,
-                                  );
-                                }
-                                return PaymentScreen(
-                                  totalAmount: total,
-                                  currencyCode: cartCurrencyCode,
-                                  cartItems: checkoutItems,
-                                );
-                              },
-                            ),
-                          );
+                                },
+                              ),
+                            );
+                          } finally {
+                            if (usesStoreKitCheckout) {
+                              storeKitCoordinator.releaseCheckoutRoute();
+                            }
+                          }
 
                           // If payment was successful, update mantras and go to Select Mantra screen
                           if (paymentSuccess == true && mounted) {
