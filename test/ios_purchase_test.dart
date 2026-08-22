@@ -1,7 +1,6 @@
 import 'package:colab_app_ui/models/ios_purchase.dart';
 import 'package:colab_app_ui/models/mantra.dart';
 import 'package:colab_app_ui/services/storekit_purchase_service.dart';
-import 'package:colab_app_ui/services/storekit_diagnostics.dart';
 import 'package:colab_app_ui/services/cart_quantity_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -157,6 +156,41 @@ void main() {
       ],
     );
   });
+
+  test(
+    'prepared no-transaction context is reusable only for the same cart',
+    () {
+      final products = buildIosCartProducts([
+        mantra('F-AARATI-001', 'ios_a', quantity: 4),
+      ]);
+      final now = DateTime.utc(2026);
+      final prepared = IosPurchaseContext(
+        orderId: 'ORDER-4',
+        linkToken: '123e4567-e89b-12d3-a456-426614174000',
+        units: const [IosPurchaseUnit(storeProductId: 'backend-multi-four')],
+        currentIndex: 0,
+        state: 'prepared',
+        createdAt: now,
+        updatedAt: now,
+        cartProducts: products,
+      );
+      expect(isReusableIosPreparedContext(prepared, products), isTrue);
+      expect(
+        isReusableIosPreparedContext(
+          prepared,
+          buildIosCartProducts([mantra('F-AARATI-001', 'ios_a', quantity: 3)]),
+        ),
+        isFalse,
+      );
+      expect(
+        isReusableIosPreparedContext(
+          prepared.copyWith(state: 'opening_storekit'),
+          products,
+        ),
+        isFalse,
+      );
+    },
+  );
 
   test('mixed iOS quantities are summed once without duplicate rows', () {
     final fourUnits = buildIosCartProducts([
@@ -389,75 +423,5 @@ void main() {
       ),
       isFalse,
     );
-  });
-
-  test('StoreKit diagnostics redact sensitive identifiers and values', () {
-    final diagnostics = StoreKitDiagnostics();
-    diagnostics.logPrepareResponse(
-      httpStatus: 201,
-      orderIdPresent: true,
-      orderId: 'ORDER-12345678',
-      linkTokenPresent: true,
-      linkTokenValid: true,
-      storeProducts: [
-        {
-          'storeProductId': 'ios_a',
-          'quantity': 1,
-          'internalProductId': 'F-AARATI-001',
-          'unexpectedToken': 'must-not-appear',
-        },
-      ],
-    );
-    diagnostics.logVerify(
-      event: 'BACKEND_VERIFY_STARTED',
-      orderId: 'ORDER-12345678',
-      storeProductId: 'ios_a',
-      transactionId: '2000000123456789',
-    );
-    diagnostics.logAppAccountTokenCorrelation(
-      event: 'APP_ACCOUNT_TOKEN_RETURNED',
-      persistedToken: '123e4567-e89b-12d3-a456-426614174000',
-      returnedToken: '123E4567-E89B-12D3-A456-426614174000',
-    );
-
-    expect(diagnostics.text, contains('storeProductId: ios_a'));
-    expect(diagnostics.text, contains('internalProductId: F-AARATI-001'));
-    expect(diagnostics.text, contains('****5678'));
-    expect(diagnostics.text, contains('****6789'));
-    expect(diagnostics.text, isNot(contains('ORDER-12345678')));
-    expect(diagnostics.text, isNot(contains('2000000123456789')));
-    expect(diagnostics.text, isNot(contains('must-not-appear')));
-    expect(diagnostics.text, contains('expectedTokenSuffix=4000'));
-    expect(diagnostics.text, contains('returnedTokenSuffix=4000'));
-    expect(diagnostics.text, contains('match=YES'));
-    expect(diagnostics.text, isNot(contains('123e4567-e89b')));
-  });
-
-  test('Verify HTTP diagnostics retain safe backend error fields', () {
-    final diagnostics = StoreKitDiagnostics();
-    diagnostics.logVerifyHttpResponse(
-      httpStatus: 500,
-      responseBody: '''
-        {
-          "error": {
-            "code": "APPLE_VERIFY_FAILED",
-            "message": "Transaction 2000000123456789 failed for 123e4567-e89b-12d3-a456-426614174000"
-          },
-          "receipt": "secret-jws",
-          "orderId": "ORDER-12345678",
-          "status": "error"
-        }
-      ''',
-    );
-
-    expect(diagnostics.text, contains('httpStatus=500'));
-    expect(diagnostics.text, contains('APPLE_VERIFY_FAILED'));
-    expect(diagnostics.text, contains('status: error'));
-    expect(diagnostics.text, contains('[REDACTED_LONG_ID]'));
-    expect(diagnostics.text, contains('[REDACTED_UUID]'));
-    expect(diagnostics.text, isNot(contains('2000000123456789')));
-    expect(diagnostics.text, isNot(contains('123e4567-e89b')));
-    expect(diagnostics.text, isNot(contains('secret-jws')));
-    expect(diagnostics.text, isNot(contains('ORDER-12345678')));
   });
 }

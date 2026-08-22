@@ -32,7 +32,6 @@ import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
 import 'login_screen.dart';
-import 'payment_screen.dart';
 import 'google_play_checkout_screen.dart';
 import 'storekit_checkout_screen.dart';
 import 'contact_us_screen.dart';
@@ -4762,19 +4761,27 @@ class _HomeScreenState extends State<HomeScreen> {
                           final usesStoreKitCheckout =
                               !kIsWeb &&
                               defaultTargetPlatform == TargetPlatform.iOS;
+                          final usesGooglePlayCheckout =
+                              !kIsWeb &&
+                              defaultTargetPlatform == TargetPlatform.android;
+                          if (!usesGooglePlayCheckout &&
+                              !usesStoreKitCheckout) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Purchases are not supported on this platform.',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
                           final storeKitCoordinator =
                               IosStoreKitPurchaseCoordinator.instance;
                           if (usesStoreKitCheckout &&
                               !storeKitCoordinator.tryAcquireCheckoutRoute()) {
-                            debugPrint(
-                              'STOREKIT_DEBUG IOS_CHECKOUT_ROUTE_PUSH_BLOCKED',
-                            );
                             return;
-                          }
-                          if (usesStoreKitCheckout) {
-                            debugPrint(
-                              'STOREKIT_DEBUG IOS_CHECKOUT_ROUTE_PUSH',
-                            );
                           }
                           bool? paymentSuccess;
                           try {
@@ -4798,12 +4805,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                           MantraService.iosAggregateCartSnapshot(),
                                     );
                                   }
-                                  final checkoutItems =
-                                      MantraService.expandCartForCheckout();
-                                  return PaymentScreen(
-                                    totalAmount: total,
-                                    currencyCode: cartCurrencyCode,
-                                    cartItems: checkoutItems,
+                                  throw UnsupportedError(
+                                    'Purchases are not supported on this platform.',
                                   );
                                 },
                               ),

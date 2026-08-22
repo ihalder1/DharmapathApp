@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:in_app_purchase_storekit/store_kit_2_wrappers.dart';
@@ -158,14 +157,6 @@ final class StoreKitPurchaseService {
           ),
         )
         .toList(growable: false);
-    if (kDebugMode) {
-      for (final item in normalized) {
-        debugPrint(
-          'STOREKIT_DEBUG update product=${item.productId} '
-          'status=${item.status.name} hasTransaction=${item.transactionId?.isNotEmpty == true}',
-        );
-      }
-    }
     _updates.add(normalized);
   }
 }

@@ -1,42 +1,12 @@
-import 'dart:convert';
-
-import 'package:flutter/foundation.dart';
-
 import '../models/ios_purchase.dart';
 
-typedef StoreKitDiagnosticsListener = void Function();
-
-/// In-memory, iOS-only diagnostic journal. It intentionally accepts structured
-/// non-sensitive fields instead of arbitrary request/response bodies.
+/// Compatibility boundary for StoreKit call sites. Production diagnostics
+/// are intentionally disabled; sanitization helpers remain for safe errors.
 final class StoreKitDiagnostics {
-  StoreKitDiagnostics({this.onChanged});
-
-  final StoreKitDiagnosticsListener? onChanged;
-  final List<String> _entries = [];
-
-  List<String> get entries => List.unmodifiable(_entries);
-  String get text => _entries.join('\n');
-
-  void clear() {
-    _entries.clear();
-    onChanged?.call();
-  }
+  StoreKitDiagnostics();
 
   void log(String event, [Map<String, Object?> fields = const {}]) {
-    final safeFields = fields.entries
-        .where((entry) => entry.value != null)
-        .map((entry) => '${entry.key}=${_sanitize(entry.value)}')
-        .join(' ');
-    final timestamp = DateTime.now().toIso8601String();
-    _entries.add(
-      '$timestamp $event${safeFields.isEmpty ? '' : ' $safeFields'}',
-    );
-    if (kDebugMode) {
-      debugPrint(
-        'STOREKIT_DEBUG $event${safeFields.isEmpty ? '' : ' $safeFields'}',
-      );
-    }
-    onChanged?.call();
+    // Intentionally disabled for production security builds.
   }
 
   void logProductLookup({
@@ -180,29 +150,7 @@ final class StoreKitDiagnostics {
   void logVerifyHttpResponse({
     required int httpStatus,
     required String responseBody,
-  }) {
-    final decoded = _decodeBackendBody(responseBody);
-    log('BACKEND_VERIFY_HTTP_RESPONSE', {
-      'httpStatus': httpStatus,
-      'responseBodyPresent': responseBody.trim().isNotEmpty,
-      'responseBodyJson': decoded != null,
-      'backendErrorCode': _firstBackendValue(decoded, const [
-        'code',
-        'errorCode',
-        'error_code',
-      ]),
-      'backendMessage': _firstBackendValue(decoded, const [
-        'message',
-        'errorMessage',
-        'error_message',
-      ]),
-      'responseFields': decoded == null
-          ? responseBody.trim().isEmpty
-                ? const <String, Object?>{}
-                : {'text': responseBody}
-          : _allowlistedBackendFields(decoded),
-    });
-  }
+  }) {}
 
   void logError({
     required String stage,
@@ -250,82 +198,5 @@ final class StoreKitDiagnostics {
       '[REDACTED_JWT]',
     );
     return value.length <= 240 ? value : '${value.substring(0, 240)}…';
-  }
-
-  static Map<String, dynamic>? _decodeBackendBody(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Object? _firstBackendValue(
-    Map<String, dynamic>? body,
-    Iterable<String> keys,
-  ) {
-    if (body == null) return null;
-    for (final key in keys) {
-      if (body[key] != null) return body[key];
-    }
-    for (final container in const ['data', 'error']) {
-      final value = body[container];
-      if (value is! Map) continue;
-      final nested = Map<String, dynamic>.from(value);
-      for (final key in keys) {
-        if (nested[key] != null) return nested[key];
-      }
-    }
-    return null;
-  }
-
-  static Map<String, Object?> _allowlistedBackendFields(
-    Map<String, dynamic> body,
-  ) {
-    const allowed = {
-      'code',
-      'errorCode',
-      'error_code',
-      'message',
-      'errorMessage',
-      'error_message',
-      'status',
-      'paymentStatus',
-      'payment_status',
-      'reason',
-      'type',
-      'platform',
-      'storeProductId',
-      'store_product_id',
-      'productId',
-      'product_id',
-    };
-    final result = <String, Object?>{};
-    for (final entry in body.entries) {
-      if (allowed.contains(entry.key)) {
-        result[entry.key] = entry.value;
-      } else if ((entry.key == 'data' || entry.key == 'error') &&
-          entry.value is Map) {
-        final nested = _allowlistedBackendFields(
-          Map<String, dynamic>.from(entry.value as Map),
-        );
-        if (nested.isNotEmpty) result[entry.key] = nested;
-      }
-    }
-    return result;
-  }
-
-  static String _sanitize(Object? value) {
-    if (value == null) return 'null';
-    if (value is Iterable) return '[${value.map(_sanitize).join(', ')}]';
-    if (value is Map) {
-      return '{${value.entries.map((entry) {
-        final key = entry.key.toString();
-        final sensitive = RegExp(r'(token|authorization|receipt|jws|secret)', caseSensitive: false).hasMatch(key);
-        return '$key: ${sensitive ? '[REDACTED]' : _sanitize(entry.value)}';
-      }).join(', ')}}';
-    }
-    return _sanitizeError(value);
   }
 }

@@ -46,15 +46,6 @@ class ApiConfig {
   static const String purchasedSongsEndpoint = '/auth/profile/purchase/songs';
 
   // Payment endpoints
-  static const String createPaymentIntentEndpoint = '/payments/create-intent';
-  static const String confirmPaymentEndpoint = '/payments/confirm';
-  static const String getPaymentStatusEndpoint = '/payments/status';
-
-  /// Stripe Checkout Session (UPI / hosted checkout) — opened in WebView, not PaymentSheet.
-  static const String createCheckoutSessionEndpoint =
-      '/payments/create-checkout-session';
-  static const String verifyCheckoutSessionEndpoint =
-      '/payments/verify-session';
   static const String prepareAndroidPurchaseEndpoint =
       '/payments/prepare-purchase';
   static const String verifyAndroidPurchaseEndpoint =
@@ -69,10 +60,6 @@ class ApiConfig {
 
   // Facebook App Configuration (for native SDK)
   static const String facebookAppId = '1682167649562322';
-
-  // Stripe Configuration
-  static const String stripePublishableKey =
-      'pk_live_51Th7j07TBSV3YzcAwVE7AkIr1XrhgR4bxPEhTkHq7w1dIwXaR274C9fsbztvEoLkuNkCiiZazRtEDa91shaWT2ZC007ORUXb6s';
 
   // Headers
   static Map<String, String> getHeaders({String? accessToken}) {

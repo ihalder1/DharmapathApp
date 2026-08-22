@@ -1,7 +1,6 @@
-import 'package:flutter/foundation.dart';
-
 import '../models/ios_purchase.dart';
 import 'ios_purchase_context_store.dart';
+import 'ios_purchase_abandonment.dart';
 import 'mantra_service.dart';
 import 'payment_service.dart';
 import 'storekit_purchase_service.dart';
@@ -91,17 +90,11 @@ final class IosPurchaseReconciler {
   Future<IosReconciliationResult> _reconcileSafely() async {
     try {
       return await _reconcile();
-    } catch (error, stackTrace) {
+    } catch (error) {
       _diagnostics?.log('STOREKIT_RECONCILIATION_ERROR', {
         'errorType': error.runtimeType.toString(),
         'message': StoreKitDiagnostics.safeErrorMessage(error),
       });
-      if (!kReleaseMode) {
-        debugPrint(
-          'STOREKIT_TRACE STOREKIT_RECONCILIATION_ERROR '
-          'errorType=${error.runtimeType}\n$stackTrace',
-        );
-      }
       IosPurchaseContext? retained;
       try {
         retained = await _contextStore.load();
@@ -121,12 +114,25 @@ final class IosPurchaseReconciler {
       'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
       'state': context.state,
     });
-    _log(
-      'reconcile_start order=${_short(context.orderId)} state=${context.state}',
-    );
 
-    final backendOrder = await _orderLookup(context.orderId, _diagnostics);
     final unfinished = await _unfinishedTransactions();
+    final backendOrder = await _orderLookup(context.orderId, _diagnostics);
+    final abandonment = IosPurchaseAbandonment(
+      contextStore: _contextStore,
+      unfinishedTransactions: _unfinishedTransactions,
+      diagnostics: _diagnostics,
+    );
+    if (!backendOrder.paid &&
+        await abandonment.abandonIfSafeWithSnapshot(
+          context,
+          unfinished: unfinished,
+          reason: 'startup_stale_prepare',
+        )) {
+      _diagnostics?.log('RECONCILIATION_FINISHED', {
+        'result': 'abandoned_without_transaction',
+      });
+      return const IosReconciliationResult(resolved: true);
+    }
     final hasPersistedTransaction = context.units.any(
       (unit) => unit.transactionId?.trim().isNotEmpty == true,
     );
@@ -280,11 +286,4 @@ final class IosPurchaseReconciler {
       rethrow;
     }
   }
-
-  void _log(String value) {
-    if (kDebugMode) debugPrint('STOREKIT_DEBUG $value');
-  }
-
-  String _short(String value) =>
-      value.length <= 8 ? value : value.substring(0, 8);
 }

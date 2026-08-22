@@ -4,31 +4,6 @@ import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
-  private func logStoreKitLifecycle(_ event: String) {
-    let timestamp = ISO8601DateFormatter().string(from: Date())
-    NSLog("STOREKIT_NATIVE_LIFECYCLE event=%@ timestamp=%@", event, timestamp)
-  }
-
-  override func applicationDidBecomeActive(_ application: UIApplication) {
-    logStoreKitLifecycle("applicationDidBecomeActive")
-    super.applicationDidBecomeActive(application)
-  }
-
-  override func applicationWillResignActive(_ application: UIApplication) {
-    logStoreKitLifecycle("applicationWillResignActive")
-    super.applicationWillResignActive(application)
-  }
-
-  override func applicationDidEnterBackground(_ application: UIApplication) {
-    logStoreKitLifecycle("applicationDidEnterBackground")
-    super.applicationDidEnterBackground(application)
-  }
-
-  override func applicationWillEnterForeground(_ application: UIApplication) {
-    logStoreKitLifecycle("applicationWillEnterForeground")
-    super.applicationWillEnterForeground(application)
-  }
-
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?

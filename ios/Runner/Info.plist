@@ -40,14 +40,6 @@
 				<string>fb25154563447566829</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>Stripe payments</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>mantrasutra</string>
-			</array>
-		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>

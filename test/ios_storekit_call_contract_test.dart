@@ -69,6 +69,33 @@ void main() {
   );
 
   test(
+    'aggregate price is prepared during initialization and reused on tap',
+    () {
+      final source = File(
+        'lib/screens/storekit_checkout_screen.dart',
+      ).readAsStringSync();
+      final initializeStart = source.indexOf('Future<void> _initialize()');
+      final prepareCall = source.indexOf(
+        'await _ensureAggregatePricePrepared();',
+      );
+      final purchaseStart = source.indexOf(
+        'Future<void> _startOrContinueCheckout()',
+      );
+      final purchaseBody = source.substring(purchaseStart);
+
+      expect(prepareCall, greaterThan(initializeStart));
+      expect(prepareCall, lessThan(purchaseStart));
+      expect(
+        RegExp(r'PaymentService\.prepareIosPurchase\(').allMatches(source),
+        hasLength(1),
+      );
+      expect(purchaseBody, isNot(contains('prepareIosPurchase(')));
+      expect(source, contains("Text('Loading Apple price...')"));
+      expect(source, contains('_readyForPurchase && !_processing'));
+    },
+  );
+
+  test(
     'Android billing implementation is not routed through StoreKit service',
     () {
       final home = File('lib/screens/home_screen.dart').readAsStringSync();

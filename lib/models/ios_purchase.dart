@@ -76,6 +76,28 @@ List<String> iosCartQuantityDiagnostics(Iterable<IosCartProduct> products) =>
         .map((item) => '${item.internalProductId}×${item.quantity}')
         .toList(growable: false);
 
+bool isReusableIosPreparedContext(
+  IosPurchaseContext context,
+  Iterable<IosCartProduct> cartProducts,
+) {
+  if (!context.isAggregate || context.state != 'prepared') return false;
+  final unit = context.aggregateUnit;
+  if (unit.transactionId?.trim().isNotEmpty == true ||
+      unit.backendAccepted ||
+      unit.storeKitCompleted) {
+    return false;
+  }
+  final expected = <String, int>{
+    for (final item in cartProducts) item.internalProductId: item.quantity,
+  };
+  final persisted = <String, int>{
+    for (final item in context.cartProducts)
+      item.internalProductId: item.quantity,
+  };
+  return expected.length == persisted.length &&
+      expected.entries.every((item) => persisted[item.key] == item.value);
+}
+
 Map<String, dynamic> buildIosVerifyPayload({
   required String orderId,
   required String transactionId,

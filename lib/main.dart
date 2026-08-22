@@ -1,14 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
 import 'widgets/auth_wrapper.dart';
 import 'constants/app_theme.dart';
-import 'constants/api_config.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'services/profile_service.dart';
@@ -57,27 +54,6 @@ Future<void> main() {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-
-    // Android uses Google Play and iOS uses StoreKit. Other supported
-    // platforms keep the legacy Stripe path during this migration phase.
-    if (defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS) {
-      const stripeUrlScheme = 'mantrasutra';
-      try {
-        Stripe.publishableKey = ApiConfig.stripePublishableKey;
-        Stripe.merchantIdentifier = 'merchant.com.example.colab_app_ui';
-        Stripe.urlScheme = stripeUrlScheme;
-        Stripe.setReturnUrlSchemeOnAndroid = true;
-        await Stripe.instance.applySettings();
-      } catch (error, stackTrace) {
-        SafeLog.error(
-          'stripe_initialization_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        rethrow;
-      }
-    }
 
     // Request microphone permission at startup
     await Permission.microphone.request();

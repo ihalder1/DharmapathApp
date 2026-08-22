@@ -33,9 +33,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
-      IosStoreKitPurchaseCoordinator.instance.logGlobalLifecycle(state);
-    }
     if (state == AppLifecycleState.resumed && _isInitialized && mounted) {
       await context.read<AuthService>().ensureValidAccessToken();
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
