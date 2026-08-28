@@ -109,18 +109,13 @@ final class PlayBillingService {
       .asBroadcastStream();
 
   static Future<void> initialize() async {
-    _debug('billing client connecting');
-    await _methods.invokeMethod<bool>('initialize', {
-      'diagnosticsEnabled': playBillingDiagnostics,
-    });
-    _debug('billing connection ready');
+    await _methods.invokeMethod<bool>('initialize');
   }
 
   static Future<Map<String, PlayProductPrice>> queryProducts(
     Iterable<String> productIds,
   ) async {
     final ids = productIds.toSet().toList(growable: false);
-    _debug('querying ${ids.length} product IDs');
     final raw =
         await _methods.invokeListMethod<Object?>(
           'queryProducts',
@@ -140,11 +135,6 @@ final class PlayBillingService {
       final product = PlayProductPrice.fromMap(map);
       products[product.productId] = product;
     }
-    _debug(
-      products.isEmpty
-          ? 'product details not configured yet'
-          : 'product details returned: ${products.length}',
-    );
     return products;
   }
 
@@ -159,7 +149,6 @@ final class PlayBillingService {
     if (ids.toSet().length != ids.length) {
       throw ArgumentError.value(ids, 'productIds', 'must be unique');
     }
-    _debug('MULTI_LAUNCH_REQUEST products=$ids');
     final response = await _methods.invokeMapMethod<Object?, Object?>(
       'launchMultiProductPurchase',
       <String, Object?>{
@@ -184,8 +173,6 @@ final class PlayBillingService {
     String purchaseToken, {
     String? storeProductId,
   }) async {
-    final product = storeProductId ?? 'unknown';
-    _debug('consume invoke product=$product');
     try {
       final response = await _methods.invokeMapMethod<Object?, Object?>(
         'consumePurchase',
@@ -197,20 +184,11 @@ final class PlayBillingService {
             ? null
             : sanitizePlayBillingDiagnostic(response?['debugMessage']),
       );
-      _debug(
-        'consume result product=$product responseCode=${result.responseCode} '
-        'completed=${result.completed} alreadyConsumed=${result.alreadyConsumed}',
-      );
       return result;
-    } on PlatformException catch (error) {
-      _debug('consume exception product=$product code=${error.code}');
+    } on PlatformException {
       rethrow;
     }
   }
 
-  static void _debug(String message) {
-    playBillingLog(message);
-  }
-
-  static void debug(String message) => _debug(message);
+  static void debug(String message) {}
 }

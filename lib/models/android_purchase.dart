@@ -311,6 +311,64 @@ bool purchaseProductsMatch(
       _sameStringSet(context.storeProductIds, actual);
 }
 
+enum AndroidRecoveryAction {
+  abandonUnownedPreparedOrder,
+  reconcilePendingPurchase,
+  reconcilePurchasedPurchase,
+  retainOutstandingPurchase,
+  retainVerifiedContext,
+}
+
+final class AndroidRecoveryDecision {
+  const AndroidRecoveryDecision({required this.action, this.matchingPurchase});
+
+  final AndroidRecoveryAction action;
+  final PlayPurchase? matchingPurchase;
+
+  bool get shouldAbandon =>
+      action == AndroidRecoveryAction.abandonUnownedPreparedOrder;
+}
+
+AndroidRecoveryDecision decideAndroidRecovery({
+  required AndroidPurchaseContext context,
+  required Iterable<PlayPurchase> outstandingPurchases,
+}) {
+  final matching = outstandingPurchases.where(
+    (purchase) =>
+        purchaseProductsMatch(context, purchase) &&
+        (purchase.obfuscatedAccountId == null ||
+            purchase.obfuscatedAccountId == context.linkToken),
+  );
+  if (matching.isNotEmpty) {
+    final purchase = matching.first;
+    if (purchase.isPending && purchase.purchaseToken.isNotEmpty) {
+      return AndroidRecoveryDecision(
+        action: AndroidRecoveryAction.reconcilePendingPurchase,
+        matchingPurchase: purchase,
+      );
+    }
+    if (purchase.isPurchased && purchase.purchaseToken.isNotEmpty) {
+      return AndroidRecoveryDecision(
+        action: AndroidRecoveryAction.reconcilePurchasedPurchase,
+        matchingPurchase: purchase,
+      );
+    }
+    return AndroidRecoveryDecision(
+      action: AndroidRecoveryAction.retainOutstandingPurchase,
+      matchingPurchase: purchase,
+    );
+  }
+  if (context.state == 'verified_pending_consumption' ||
+      context.verifiedStoreProductIds.isNotEmpty) {
+    return const AndroidRecoveryDecision(
+      action: AndroidRecoveryAction.retainVerifiedContext,
+    );
+  }
+  return const AndroidRecoveryDecision(
+    action: AndroidRecoveryAction.abandonUnownedPreparedOrder,
+  );
+}
+
 bool _sameStringSet(Set<String> left, Set<String> right) =>
     left.length == right.length && left.containsAll(right);
 

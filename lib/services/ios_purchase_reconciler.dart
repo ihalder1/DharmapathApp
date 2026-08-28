@@ -107,8 +107,15 @@ final class IosPurchaseReconciler {
   }
 
   Future<IosReconciliationResult> _reconcile() async {
+    final stopwatch = Stopwatch()..start();
     final loaded = await _contextStore.load();
-    if (loaded == null) return const IosReconciliationResult(resolved: true);
+    if (loaded == null) {
+      _diagnostics?.log('RECONCILIATION_FINISHED', {
+        'result': 'no_context',
+        'durationMs': stopwatch.elapsedMilliseconds,
+      });
+      return const IosReconciliationResult(resolved: true);
+    }
     var context = loaded;
     _diagnostics?.log('RECONCILIATION_STARTED', {
       'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
@@ -116,6 +123,23 @@ final class IosPurchaseReconciler {
     });
 
     final unfinished = await _unfinishedTransactions();
+    _diagnostics?.log('RECONCILIATION_UNFINISHED_TRANSACTIONS', {
+      'count': unfinished.length,
+      'transactions': unfinished
+          .map(
+            (item) => {
+              'productId': item.productId,
+              'status': item.status.name,
+              'transactionId': StoreKitDiagnostics.redactIdentifier(
+                item.transactionId,
+              ),
+              'appAccountTokenSuffix': StoreKitDiagnostics.redactIdentifier(
+                item.appAccountToken,
+              ),
+            },
+          )
+          .toList(),
+    });
     final backendOrder = await _orderLookup(context.orderId, _diagnostics);
     final abandonment = IosPurchaseAbandonment(
       contextStore: _contextStore,
@@ -130,6 +154,7 @@ final class IosPurchaseReconciler {
         )) {
       _diagnostics?.log('RECONCILIATION_FINISHED', {
         'result': 'abandoned_without_transaction',
+        'durationMs': stopwatch.elapsedMilliseconds,
       });
       return const IosReconciliationResult(resolved: true);
     }
@@ -161,6 +186,7 @@ final class IosPurchaseReconciler {
       });
       _diagnostics?.log('RECONCILIATION_FINISHED', {
         'result': 'expired_without_transaction',
+        'durationMs': stopwatch.elapsedMilliseconds,
       });
       return const IosReconciliationResult(resolved: true);
     }
@@ -257,7 +283,21 @@ final class IosPurchaseReconciler {
         if (transaction == null) {
           return IosReconciliationResult(context: context);
         }
+        _diagnostics?.log('RECONCILIATION_COMPLETE_PURCHASE_BEFORE', {
+          'status': transaction.status.name,
+          'productId': transaction.productId,
+          'transactionId': StoreKitDiagnostics.redactIdentifier(
+            transaction.transactionId,
+          ),
+          'pendingCompletePurchase': transaction.pendingCompletePurchase,
+        });
         await _completeTransaction(transaction);
+        _diagnostics?.log('RECONCILIATION_COMPLETE_PURCHASE_AFTER', {
+          'productId': transaction.productId,
+          'transactionId': StoreKitDiagnostics.redactIdentifier(
+            transaction.transactionId,
+          ),
+        });
         context = context.completeTransaction(0);
         await _contextStore.save(context);
         _diagnostics?.log('IOS_AGGREGATE_STOREKIT_COMPLETED');
@@ -270,6 +310,7 @@ final class IosPurchaseReconciler {
     _diagnostics?.log('RECONCILIATION_FINISHED', {
       'result': 'pending',
       'state': context.state,
+      'durationMs': stopwatch.elapsedMilliseconds,
     });
     return IosReconciliationResult(context: context);
   }

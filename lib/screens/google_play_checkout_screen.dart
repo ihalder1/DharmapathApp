@@ -326,6 +326,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       );
       await _runMultiProductPurchase(context);
     } on _CheckoutCancelled {
+      await _releaseCancelledPreparedOrder();
       _setError('Payment was cancelled. You can try again when ready.');
     } on _CheckoutPending {
       _setStatus(
@@ -353,7 +354,7 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
             ? 'Google Play Billing is unavailable right now.'
             : 'Google Play could not complete this payment. Please try again.',
       );
-    } catch (error, stackTrace) {
+    } catch (error) {
       final active = _purchaseContext;
       playBillingLog(
         'checkout exception type=${error.runtimeType} '
@@ -371,12 +372,6 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
         currentIndex: active?.currentIndex,
         error: error,
       );
-      if (playBillingDiagnostics) {
-        debugPrintStack(
-          label: 'PLAY_BILLING_DEBUG checkout stack',
-          stackTrace: stackTrace,
-        );
-      }
       _setError(
         'We could not complete the payment safely. Your order has been saved '
         'and will be checked again.',
@@ -517,6 +512,8 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
     if (completer == null || completer.isCompleted || expected == null) return;
     if (update.userCancelled) {
       completer.completeError(const _CheckoutCancelled());
+      _purchaseCompleter = null;
+      _waitingForProductIds = null;
       return;
     }
     final matching = update.purchases.where(
@@ -731,6 +728,16 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
       var active = stored;
       final purchases = await _queryOutstandingWithDiagnostics();
       _logOutstanding(purchases);
+      final recoveryDecision = decideAndroidRecovery(
+        context: active,
+        outstandingPurchases: purchases,
+      );
+      if (recoveryDecision.shouldAbandon) {
+        await _contextStore.clear();
+        if (matchesCurrentCart) _purchaseContext = null;
+        _blockedByPriorOrder = false;
+        return true;
+      }
       final matches = purchases.where(
         (purchase) =>
             purchaseProductsMatch(active, purchase) &&
@@ -826,6 +833,24 @@ class _GooglePlayCheckoutScreenState extends State<GooglePlayCheckoutScreen>
         _setStatus('Your unfinished order is saved and will be checked again.');
       }
       return false;
+    }
+  }
+
+  Future<void> _releaseCancelledPreparedOrder() async {
+    final active = _purchaseContext;
+    if (active == null) return;
+    try {
+      final purchases = await PlayBillingService.queryOutstandingPurchases();
+      final decision = decideAndroidRecovery(
+        context: active,
+        outstandingPurchases: purchases,
+      );
+      if (!decision.shouldAbandon) return;
+      await _contextStore.clear();
+      _purchaseContext = null;
+      _blockedByPriorOrder = false;
+    } catch (_) {
+      // Keep the context when Play state cannot be checked safely.
     }
   }
 

@@ -1,7 +1,6 @@
 package com.idsai.mantrasutra
 
 import android.app.Activity
-import android.util.Log
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
 import com.android.billingclient.api.BillingFlowParams
@@ -22,7 +21,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
     private var eventSink: EventChannel.EventSink? = null
     private val productDetails = mutableMapOf<String, ProductDetails>()
     private var connecting = false
-    private var diagnosticsEnabled = false
     private val readyCallbacks = mutableListOf<(BillingResult?) -> Unit>()
 
     private val billingClient = BillingClient.newBuilder(activity)
@@ -56,7 +54,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "initialize" -> {
-                diagnosticsEnabled = call.argument<Boolean>("diagnosticsEnabled") ?: false
                 withReady { billingResult ->
                 if (billingResult == null || billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                     result.success(true)
@@ -88,18 +85,30 @@ class GooglePlayBillingBridge(private val activity: Activity) :
         readyCallbacks.add(callback)
         if (connecting) return
         connecting = true
-        billingClient.startConnection(object : BillingClientStateListener {
+        val listener = object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
                 connecting = false
                 val callbacks = readyCallbacks.toList()
                 readyCallbacks.clear()
-                callbacks.forEach { it(result) }
+                callbacks.forEach { callback ->
+                    try {
+                        callback(result)
+                    } catch (_: Throwable) {
+                        // One consumer must not prevent the remaining readiness callbacks.
+                    }
+                }
             }
 
             override fun onBillingServiceDisconnected() {
                 connecting = false
             }
-        })
+        }
+        try {
+            billingClient.startConnection(listener)
+        } catch (error: Throwable) {
+            connecting = false
+            throw error
+        }
     }
 
     private fun queryProducts(ids: List<String>, channelResult: MethodChannel.Result) {
@@ -120,7 +129,8 @@ class GooglePlayBillingBridge(private val activity: Activity) :
             }
             billingClient.queryProductDetailsAsync(
                 QueryProductDetailsParams.newBuilder().setProductList(products).build(),
-            ) { billingResult, details ->
+            ) { billingResult, queryResult ->
+                val details = queryResult.productDetailsList
                 if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
                     channelResult.error("product_query_failed", billingResult.debugMessage, billingResult.responseCode)
                     return@queryProductDetailsAsync
@@ -136,7 +146,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
         obfuscatedAccountId: String,
         channelResult: MethodChannel.Result,
     ) {
-        diagnostic("MULTI_LAUNCH_REQUEST products=$productIds")
         if (productIds.isEmpty() || productIds.any(String::isBlank) || obfuscatedAccountId.isBlank()) {
             channelResult.error("invalid_purchase", "Products and account ID are required.", null)
             return
@@ -151,7 +160,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
                 return@withReady
             }
             val cached = productIds.mapNotNull(productDetails::get)
-            diagnostic("ProductDetails requested=${productIds.size} cached=${cached.size}")
             if (cached.size == productIds.size) {
                 launchLoadedProducts(cached, obfuscatedAccountId, channelResult)
                 return@withReady
@@ -164,7 +172,8 @@ class GooglePlayBillingBridge(private val activity: Activity) :
             }
             billingClient.queryProductDetailsAsync(
                 QueryProductDetailsParams.newBuilder().setProductList(products).build(),
-            ) { billingResult, details ->
+            ) { billingResult, queryResult ->
+                val details = queryResult.productDetailsList
                 details.forEach { productDetails[it.productId] = it }
                 val loadedById = details.associateBy(ProductDetails::getProductId)
                 val loaded = productIds.mapNotNull(loadedById::get)
@@ -172,7 +181,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
                     channelResult.error("product_unavailable", "Google Play product is unavailable.", billingResult.responseCode)
                     return@queryProductDetailsAsync
                 }
-                diagnostic("ProductDetails resolved products=${loaded.map(ProductDetails::getProductId)}")
                 launchLoadedProducts(loaded, obfuscatedAccountId, channelResult)
             }
         }
@@ -195,7 +203,6 @@ class GooglePlayBillingBridge(private val activity: Activity) :
                 .setObfuscatedAccountId(obfuscatedAccountId)
                 .build(),
         )
-        diagnostic("MULTI_LAUNCH_RESPONSE products=${details.map(ProductDetails::getProductId)} responseCode=${billingResult.responseCode}")
         channelResult.success(
             mapOf(
                 "responseCode" to billingResult.responseCode,
@@ -205,28 +212,18 @@ class GooglePlayBillingBridge(private val activity: Activity) :
     }
 
     private fun consumePurchase(token: String, channelResult: MethodChannel.Result) {
-        diagnostic("consume requested")
         if (token.isBlank()) {
-            diagnostic("consume rejected reason=blank_token")
             channelResult.error("invalid_purchase_token", "Purchase token is required.", null)
             return
         }
         withReady { setup ->
             if (setup != null && setup.responseCode != BillingClient.BillingResponseCode.OK) {
-                diagnostic(
-                    "consume setupFailure responseCode=${setup.responseCode} " +
-                        "debugMessage=${sanitizeDiagnosticMessage(setup.debugMessage)}",
-                )
                 channelResult.error("billing_unavailable", setup.debugMessage, setup.responseCode)
                 return@withReady
             }
             billingClient.consumeAsync(
                 ConsumeParams.newBuilder().setPurchaseToken(token).build(),
             ) { billingResult, _ ->
-                diagnostic(
-                    "consume response responseCode=${billingResult.responseCode} " +
-                        "debugMessage=${sanitizeDiagnosticMessage(billingResult.debugMessage)}",
-                )
                 channelResult.success(
                     mapOf(
                         "responseCode" to billingResult.responseCode,
@@ -281,10 +278,4 @@ class GooglePlayBillingBridge(private val activity: Activity) :
             "obfuscatedAccountId" to purchase.accountIdentifiers?.obfuscatedAccountId,
         )
 
-    private fun diagnostic(message: String) {
-        if (diagnosticsEnabled) Log.d("PLAY_BILLING_DEBUG", message)
-    }
-
-    private fun sanitizeDiagnosticMessage(message: String): String =
-        message.replace(Regex("[\\r\\n\\t]+"), " ").take(200)
 }

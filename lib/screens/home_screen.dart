@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:file_selector/file_selector.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
@@ -25,9 +24,12 @@ import '../services/play_billing_service.dart';
 import '../services/cart_quantity_policy.dart';
 import '../services/location_pricing_service.dart';
 import '../services/storekit_purchase_service.dart';
+import '../services/generated_song_export_service.dart';
+import '../services/storekit_diagnostics.dart';
 import '../services/ios_purchase_reconciler.dart';
 import '../services/ios_storekit_purchase_coordinator.dart';
 import '../models/mantra.dart';
+import '../models/ios_purchase.dart';
 import '../models/inferred_song.dart';
 import 'permission_test_screen.dart';
 import 'notification_screen.dart';
@@ -2147,10 +2149,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _inferredSongExportFileName(InferredSong song) {
-    final base = song.songId.trim().isNotEmpty
-        ? song.songId.trim()
-        : song.inferredId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-.]'), '_');
-    return base.toLowerCase().endsWith('.mp3') ? base : '$base.mp3';
+    return generatedSongExportFileName(
+      songId: song.songId,
+      fallbackId: song.inferredId,
+    );
   }
 
   Future<String?> _resolveInferredSongLocalPath(InferredSong song) async {
@@ -2166,19 +2168,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveInferredSongToDevice(InferredSong song, String path) async {
     try {
       final fileName = _inferredSongExportFileName(song);
-      const mp3Type = XTypeGroup(
-        label: 'MP3 audio',
-        extensions: <String>['mp3'],
-        mimeTypes: <String>['audio/mpeg'],
+      final result = await GeneratedSongExportService().export(
+        sourcePath: path,
+        fileName: fileName,
       );
-      final saveLocation = await getSaveLocation(
-        suggestedName: fileName,
-        acceptedTypeGroups: const <XTypeGroup>[mp3Type],
-      );
-      if (saveLocation == null) return;
-
-      final source = XFile(path, mimeType: 'audio/mpeg', name: fileName);
-      await source.saveTo(saveLocation.path);
+      if (result == SongExportStatus.cancelled) return;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2191,11 +2185,17 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: AppColors.successGreen,
         ),
       );
-    } catch (e) {
+    } on SongExportException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Save failed: $e'),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save the mantra.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -4785,6 +4785,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           }
                           bool? paymentSuccess;
                           try {
+                            if (usesStoreKitCheckout) {
+                              StoreKitDiagnostics().log(
+                                'IOS_CHECKOUT_ROUTE_PUSH',
+                                {
+                                  'cart': iosCartQuantityDiagnostics(
+                                    buildIosCartProducts(
+                                      MantraService.iosAggregateCartSnapshot(),
+                                    ),
+                                  ),
+                                },
+                              );
+                            }
                             paymentSuccess = await Navigator.push<bool>(
                               context,
                               MaterialPageRoute(
@@ -4811,6 +4823,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 },
                               ),
                             );
+                            if (usesStoreKitCheckout) {
+                              StoreKitDiagnostics().log(
+                                'IOS_CHECKOUT_ROUTE_RETURNED',
+                                {'paymentSuccess': paymentSuccess},
+                              );
+                            }
                           } finally {
                             if (usesStoreKitCheckout) {
                               storeKitCoordinator.releaseCheckoutRoute();

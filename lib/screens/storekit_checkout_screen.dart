@@ -67,8 +67,9 @@ List<IosCartProduct> buildIosRecoveryDisplayProducts({
 
 class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     with WidgetsBindingObserver {
+  static int _nextDiagnosticInstance = 0;
   final _storeKit = StoreKitPurchaseService.instance;
-  final _contextStore = IosPurchaseContextStore();
+  late final IosPurchaseContextStore _contextStore;
   late final IosPurchaseReconciler _reconciler;
   late final IosFailClosedRecovery _failClosedRecovery;
   late final IosPurchaseAbandonment _abandonment;
@@ -91,12 +92,28 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   String? _activeAttemptId;
   String _status = '';
   String? _error;
+  late final String _checkoutInstanceId;
+  String? _lastBuildDiagnosticSignature;
 
   @override
   void initState() {
     super.initState();
+    _checkoutInstanceId =
+        'CHK-${(++_nextDiagnosticInstance).toString().padLeft(4, '0')}';
     WidgetsBinding.instance.addObserver(this);
-    _diagnostics = StoreKitDiagnostics();
+    _diagnostics = StoreKitDiagnostics(checkoutInstance: _checkoutInstanceId);
+    _contextStore = IosPurchaseContextStore(diagnostics: _diagnostics);
+    _diagnostics.log('NEW_APPLE_CHECKOUT_SESSION', {
+      'separator':
+          '============================================================',
+      'platform': 'ios',
+      'mounted': mounted,
+      'rawCartCount': widget.cartItems.length,
+      'songIds': widget.cartItems.map((item) => item.songId).toList(),
+      'storeProductIds': widget.cartItems
+          .map((item) => item.storeProductIdIos)
+          .toList(),
+    });
     _reconciler = IosPurchaseReconciler(
       contextStore: _contextStore,
       storeKit: _storeKit,
@@ -128,6 +145,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         'products': iosCartQuantityDiagnostics(_cartProducts),
         'totalUnits': totalUnits,
       });
+      _logCheckoutState('INIT_STATE_COMPLETE');
     } on FormatException catch (error) {
       _cartProducts = const [];
       _error = error.message == 'ios_aggregate_cart_unit_limit_exceeded'
@@ -148,6 +166,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
 
   @override
   void dispose() {
+    _logCheckoutState('DISPOSE');
     _diagnostics.log('IOS_CHECKOUT_ROUTE_DISPOSE', {
       'attemptId': _activeAttemptId,
       'processing': _processing,
@@ -159,6 +178,10 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     if (_lifetime.detach(purchaseProcessing: _processing)) {
       unawaited(_purchaseSubscription?.cancel());
     }
+    _diagnostics.log('CHECKOUT_SESSION_END', {
+      'separator':
+          '============================================================',
+    });
     super.dispose();
   }
 
@@ -171,18 +194,25 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       'recovering': _recovering,
       'mounted': mounted,
     });
+    _logCheckoutState('LIFECYCLE_${state.name.toUpperCase()}_BEFORE');
     if (state == AppLifecycleState.resumed && !_processing && !_recovering) {
       final current = _purchaseContext;
       if (current != null &&
           isReusableIosPreparedContext(current, _cartProducts)) {
         _diagnostics.log('IOS_ACTIVE_PREPARED_CONTEXT_RETAINED_ON_RESUME');
+        _logCheckoutState('LIFECYCLE_RESUMED_AFTER_RETAIN');
         return;
       }
-      unawaited(_recover());
+      unawaited(
+        _recover().whenComplete(
+          () => _logCheckoutState('LIFECYCLE_RESUMED_AFTER_RECOVERY'),
+        ),
+      );
     }
   }
 
   Future<void> _initialize() async {
+    _logCheckoutState('PRODUCT_QUERY_INITIALIZE_START');
     try {
       await _recover();
       if (!mounted || _blockedByPriorOrder || _cartProducts.isEmpty) return;
@@ -211,7 +241,12 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         );
       }
       if (!mounted) return;
+      _diagnostics.log('CHECKOUT_PRICES_ASSIGN_BEFORE', {
+        'existingKeys': _prices.keys.toList(),
+        'incomingKeys': prices.keys.toList(),
+      });
       setState(() => _prices = prices);
+      _logCheckoutState('CHECKOUT_PRICES_ASSIGN_AFTER');
       await _ensureAggregatePricePrepared();
     } catch (error) {
       _diagnostics.logError(stage: 'store_initialization', error: error);
@@ -227,11 +262,13 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+      _logCheckoutState('PRODUCT_QUERY_INITIALIZE_END');
     }
   }
 
   Future<void> _recover() async {
     if (_recovering || _processing) return;
+    _logCheckoutState('RECONCILIATION_START');
     _recovering = true;
     if (mounted) setState(() {});
     try {
@@ -284,6 +321,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     } finally {
       _recovering = false;
       if (mounted) setState(() {});
+      _logCheckoutState('RECONCILIATION_END');
     }
   }
 
@@ -334,6 +372,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       throw StateError('ios_cart_currency_unavailable');
     }
     _preparing = true;
+    _logCheckoutState('AGGREGATE_PRICE_PREPARE_START');
     if (mounted) setState(() => _status = 'Loading Apple price...');
     try {
       var active = _purchaseContext;
@@ -394,8 +433,13 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       if (aggregatePrice == null) {
         throw const FormatException('ios_aggregate_product_not_found');
       }
+      _diagnostics.log('AGGREGATE_PRICE_ASSIGN_BEFORE', {
+        'existingProductId': _aggregatePrice?.productId,
+        'incomingProductId': aggregatePrice.productId,
+      });
       _aggregatePrice = aggregatePrice;
       _status = '';
+      _logCheckoutState('AGGREGATE_PRICE_ASSIGN_AFTER');
       _diagnostics.log('IOS_AGGREGATE_PRICE_READY', {
         'storeProductId': storeProductId,
         'formattedPrice': aggregatePrice.formattedPrice,
@@ -405,16 +449,22 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     } finally {
       _preparing = false;
       if (mounted) setState(() {});
+      _logCheckoutState('AGGREGATE_PRICE_PREPARE_END');
     }
   }
 
   Future<void> _startOrContinueCheckout() async {
+    _logCheckoutState('PURCHASE_BUTTON_TAP');
     if (_processing ||
         _recovering ||
         _blockedByPriorOrder ||
         !_readyForPurchase) {
       return;
     }
+    _diagnostics.log('PROCESSING_STATE_CHANGE', {
+      'from': _processing,
+      'to': true,
+    });
     setState(() {
       _processing = true;
       _error = null;
@@ -531,7 +581,21 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           await MantraService.consumeIosCartProducts(checkout.cartProducts);
           checkout = checkout.copyWith(cartFinalized: true);
           await _save(checkout);
+          _diagnostics.log('COMPLETE_PURCHASE_BEFORE', {
+            'status': transaction.status.name,
+            'productId': transaction.productId,
+            'transactionId': StoreKitDiagnostics.redactIdentifier(
+              transaction.transactionId,
+            ),
+            'pendingCompletePurchase': transaction.pendingCompletePurchase,
+          });
           await _storeKit.complete(transaction);
+          _diagnostics.log('COMPLETE_PURCHASE_AFTER', {
+            'productId': transaction.productId,
+            'transactionId': StoreKitDiagnostics.redactIdentifier(
+              transaction.transactionId,
+            ),
+          });
           _diagnostics.log('IOS_AGGREGATE_STOREKIT_COMPLETED');
           _diagnostics.logPurchase(
             event: 'STOREKIT_COMPLETED',
@@ -565,6 +629,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         'Your previous Apple purchase is still being verified. A new purchase cannot be started until it is resolved.',
       );
     } on _StoreKitCancelled catch (cancelled) {
+      _logCheckoutState('CANCEL_BEFORE');
       if (cancelled.transactionId?.trim().isNotEmpty == true) {
         final saved = _purchaseContext;
         if (saved != null) {
@@ -580,6 +645,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         reason: 'apple_cancelled',
         status: 'Apple purchase was cancelled. Loading a fresh Apple price...',
       );
+      _logCheckoutState('CANCEL_AFTER');
     } on _StoreKitPending {
       final saved = _purchaseContext;
       if (saved != null) await _save(saved.copyWith(state: 'pending'));
@@ -601,6 +667,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         'The backend Apple product mapping does not match this cart. No purchase was opened.',
       );
     } catch (error) {
+      _logCheckoutState('ERROR_BEFORE');
       if (error is _StoreKitFailure &&
           error.transactionId?.trim().isNotEmpty == true) {
         final saved = _purchaseContext;
@@ -623,10 +690,12 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           'The purchase could not be completed safely. Your order was saved and will be reconciled.',
         );
       }
+      _logCheckoutState('ERROR_AFTER');
     } finally {
       _purchaseCompleter = null;
       _waitingForProductId = null;
       if (mounted) setState(() => _processing = false);
+      _logCheckoutState('PURCHASE_ATTEMPT_FINALLY');
       if (_lifetime.disposed) unawaited(_purchaseSubscription?.cancel());
     }
   }
@@ -649,9 +718,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     _diagnostics.log('STOREKIT_PURCHASE_CALL_START', {
       'attemptId': attemptId,
       'productId': product.id,
+      'purchaseMethod': 'buyConsumable',
+      'purchaseParamType': 'PurchaseParam',
+      'applicationUsernameSuffix': StoreKitDiagnostics.redactIdentifier(
+        appAccountToken,
+      ),
     });
     IosStoreKitPurchaseCoordinator.instance.markStoreKitActive(attemptId);
-    bool launched;
+    bool? launched;
     try {
       launched = await _storeKit.buyConsumable(
         product: product,
@@ -662,9 +736,10 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         'attemptId': attemptId,
         'productId': product.id,
         'elapsedMs': stopwatch.elapsedMilliseconds,
+        'launched': launched,
       });
     }
-    if (!launched && !completer.isCompleted) {
+    if (launched == false && !completer.isCompleted) {
       throw StateError('storekit_purchase_not_launched');
     }
     return completer.future.timeout(const Duration(minutes: 10));
@@ -686,6 +761,18 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         'transactionId': StoreKitDiagnostics.redactIdentifier(
           transaction.transactionId,
         ),
+        'runtimeType': transaction.runtimeTypeName,
+        'transactionDate': transaction.transactionDate,
+        'pendingCompletePurchase': transaction.pendingCompletePurchase,
+        'verificationSource': transaction.verificationSource,
+        'serverVerificationDataPresent':
+            transaction.serverVerificationDataPresent,
+        'localVerificationDataPresent':
+            transaction.localVerificationDataPresent,
+        'errorPresent': transaction.errorCode != null,
+        'errorCode': transaction.errorCode,
+        'errorMessage': transaction.errorMessage,
+        'errorDetails': transaction.errorDetails,
       });
       if (context != null) {
         _diagnostics.logAppAccountTokenCorrelation(
@@ -719,6 +806,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     });
     if (matching.isEmpty) return;
     final transaction = matching.last;
+    _logCheckoutState('PURCHASE_STREAM_MATCHED_${transaction.status.name}');
     switch (transaction.status) {
       case PurchaseStatus.purchased:
       case PurchaseStatus.restored:
@@ -742,12 +830,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   }
 
   Future<void> _save(IosPurchaseContext context) async {
+    _diagnostics.log('CONTEXT_SAVE_BEFORE', _contextFields(context));
     await _contextStore.save(context);
     _purchaseContext = context;
     _diagnostics.log('CONTEXT_PERSISTED', {
       'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
       'state': context.state,
       'currentIndex': context.currentIndex,
+      ..._contextFields(context),
     });
   }
 
@@ -759,9 +849,11 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     if (saved == null) return true;
     final abandoned = await _abandonment.abandonIfSafe(saved, reason: reason);
     if (!abandoned) return false;
+    _logCheckoutState('ABANDON_RELOAD_BEFORE_CLEAR_LOCAL_STATE');
     _purchaseContext = null;
     _aggregatePrice = null;
     _error = null;
+    _logCheckoutState('ABANDON_RELOAD_AFTER_CLEAR_LOCAL_STATE');
     _setStatus(status);
     try {
       await _ensureAggregatePricePrepared();
@@ -773,6 +865,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   }
 
   Future<void> _handleBack() async {
+    _logCheckoutState('BACK_NAVIGATION_REQUESTED');
     if (_processing) return;
     final preparing = _preparationFuture;
     if (preparing != null) {
@@ -786,7 +879,10 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     if (saved != null) {
       await _abandonment.abandonIfSafe(saved, reason: 'user_back');
     }
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) {
+      _diagnostics.log('IOS_CHECKOUT_ROUTE_POP', {'reason': 'user_back'});
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _finishPaid(IosPurchaseContext context) async {
@@ -834,8 +930,103 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     if (mounted) setState(() => _error = value);
   }
 
+  Map<String, Object?> _contextFields(IosPurchaseContext context) => {
+    'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+    'state': context.state,
+    'productIds': context.units.map((item) => item.storeProductId).toList(),
+    'quantities': context.cartProducts
+        .map((item) => '${item.storeProductId}:${item.quantity}')
+        .toList(),
+    'totalUnits': context.cartProducts.fold<int>(
+      0,
+      (sum, item) => sum + item.quantity,
+    ),
+    'linkTokenSuffix': StoreKitDiagnostics.redactIdentifier(context.linkToken),
+    'transactionIds': context.units
+        .map((item) => StoreKitDiagnostics.redactIdentifier(item.transactionId))
+        .toList(),
+  };
+
+  Map<String, Object?> _checkoutStateFields() {
+    final purchase = _purchaseContext;
+    final missing = purchase?.isAggregate == true
+        ? <String>[
+            if (_aggregatePrice == null) purchase!.aggregateStoreProductId,
+          ]
+        : _cartProducts
+              .map((item) => item.storeProductId)
+              .where((id) => !_prices.containsKey(id))
+              .toList();
+    final buttonEnabled = _readyForPurchase && !_processing;
+    return {
+      'mounted': mounted,
+      'loading': _loading,
+      'preparing': _preparing,
+      'processing': _processing,
+      'purchaseInProgress':
+          _purchaseCompleter != null &&
+          !(_purchaseCompleter?.isCompleted ?? true),
+      'recovering': _recovering,
+      'blockedByPriorOrder': _blockedByPriorOrder,
+      'productDetailsCount': _prices.length,
+      'productDetailsIds': _prices.keys.toList(),
+      'aggregateProductId': _aggregatePrice?.productId,
+      'priceAvailable': _aggregatePrice != null,
+      'missingProductIds': missing,
+      'total': _total,
+      'status': _status,
+      'checkoutError': _error,
+      'pendingContextPresent': purchase != null,
+      'pendingOrderId': StoreKitDiagnostics.redactIdentifier(purchase?.orderId),
+      'pendingProductIds': purchase?.units
+          .map((item) => item.storeProductId)
+          .toList(),
+      'pendingLinkTokenSuffix': StoreKitDiagnostics.redactIdentifier(
+        purchase?.linkToken,
+      ),
+      'waitingForProductId': _waitingForProductId,
+      'purchaseButtonEnabled': buttonEnabled,
+      'purchaseButtonDisabledReasons': <String>[
+        if (_loading) 'loading',
+        if (_preparing) 'preparing',
+        if (_recovering) 'recovering',
+        if (_blockedByPriorOrder) 'blocked_by_prior_order',
+        if (purchase?.isAggregate != true) 'aggregate_context_missing',
+        if (_aggregatePrice == null) 'aggregate_price_missing',
+        if (_error != null) 'checkout_error',
+        if (_processing) 'processing',
+      ],
+    };
+  }
+
+  void _logCheckoutState(String event) {
+    _diagnostics.log(event, _checkoutStateFields());
+  }
+
+  void _logBuildStateIfChanged() {
+    final signature = [
+      _loading,
+      _preparing,
+      _processing,
+      _recovering,
+      _blockedByPriorOrder,
+      _prices.keys.join(','),
+      _aggregatePrice?.productId,
+      _error,
+      _readyForPurchase,
+    ].join('|');
+    if (_lastBuildDiagnosticSignature == signature) return;
+    _lastBuildDiagnosticSignature = signature;
+    _logCheckoutState(
+      _aggregatePrice == null && !_loading
+          ? 'BUILD_PRICE_UNAVAILABLE'
+          : 'BUILD_STATE_CHANGED',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    _logBuildStateIfChanged();
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {

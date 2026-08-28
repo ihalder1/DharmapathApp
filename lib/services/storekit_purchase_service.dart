@@ -38,6 +38,15 @@ final class StoreKitTransaction {
     this.transactionId,
     this.appAccountToken,
     this.purchaseDetails,
+    this.runtimeTypeName,
+    this.transactionDate,
+    this.pendingCompletePurchase = false,
+    this.verificationSource,
+    this.serverVerificationDataPresent = false,
+    this.localVerificationDataPresent = false,
+    this.errorCode,
+    this.errorMessage,
+    this.errorDetails,
   });
 
   final String productId;
@@ -45,6 +54,15 @@ final class StoreKitTransaction {
   final String? transactionId;
   final String? appAccountToken;
   final PurchaseDetails? purchaseDetails;
+  final String? runtimeTypeName;
+  final String? transactionDate;
+  final bool pendingCompletePurchase;
+  final String? verificationSource;
+  final bool serverVerificationDataPresent;
+  final bool localVerificationDataPresent;
+  final String? errorCode;
+  final String? errorMessage;
+  final Object? errorDetails;
 
   bool get purchased =>
       status == PurchaseStatus.purchased || status == PurchaseStatus.restored;
@@ -81,17 +99,41 @@ final class StoreKitPurchaseService {
         .where((item) => item.isNotEmpty)
         .toSet();
     if (ids.isEmpty) {
+      diagnostics?.log('STOREKIT_PRODUCT_QUERY_SKIPPED', {
+        'reason': 'no_product_ids',
+      });
       return const {};
     }
+    final stopwatch = Stopwatch()..start();
+    diagnostics?.log('STOREKIT_PRODUCT_QUERY_START', {
+      'requestedProductIds': ids.toList(),
+    });
     final response = await _iap.queryProductDetails(ids);
     diagnostics?.log('STOREKIT_QUERY_RESULT', {
       'platform': 'ios',
-      'queriedProductIds': ids.toList(),
+      'requestedProductIds': ids.toList(),
+      'durationMs': stopwatch.elapsedMilliseconds,
+      'returnedCount': response.productDetails.length,
       'foundProductIds': response.productDetails
           .map((item) => item.id)
           .toList(),
       'notFoundIDs': response.notFoundIDs,
       'hasError': response.error != null,
+      'errorCode': response.error?.code,
+      'errorMessage': response.error?.message,
+      'products': response.productDetails
+          .map(
+            (item) => {
+              'id': item.id,
+              'title': item.title,
+              'description': item.description,
+              'price': item.price,
+              'rawPrice': item.rawPrice,
+              'currencyCode': item.currencyCode,
+              'currencySymbol': item.currencySymbol,
+            },
+          )
+          .toList(),
     });
     if (response.error != null) {
       throw StateError('storekit_product_query_failed');
@@ -154,6 +196,17 @@ final class StoreKitPurchaseService {
                 : null,
             status: item.status,
             purchaseDetails: item,
+            runtimeTypeName: item.runtimeType.toString(),
+            transactionDate: item.transactionDate,
+            pendingCompletePurchase: item.pendingCompletePurchase,
+            verificationSource: item.verificationData.source,
+            serverVerificationDataPresent:
+                item.verificationData.serverVerificationData.isNotEmpty,
+            localVerificationDataPresent:
+                item.verificationData.localVerificationData.isNotEmpty,
+            errorCode: item.error?.code,
+            errorMessage: item.error?.message,
+            errorDetails: item.error?.details,
           ),
         )
         .toList(growable: false);

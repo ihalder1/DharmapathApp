@@ -1,16 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-
-const bool playBillingDiagnostics = bool.fromEnvironment(
-  'PLAY_BILLING_DIAGNOSTICS',
-);
-
-void playBillingLog(String message) {
-  if (kDebugMode || playBillingDiagnostics) {
-    debugPrint('PLAY_BILLING_DEBUG $message');
-  }
-}
+void playBillingLog(String message) {}
 
 String sanitizePlayBillingDiagnostic(Object? value) {
   var sanitized = value?.toString() ?? 'null';

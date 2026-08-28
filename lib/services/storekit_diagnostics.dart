@@ -1,12 +1,40 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+
 import '../models/ios_purchase.dart';
 
 /// Compatibility boundary for StoreKit call sites. Production diagnostics
 /// are intentionally disabled; sanitization helpers remain for safe errors.
 final class StoreKitDiagnostics {
-  StoreKitDiagnostics();
+  StoreKitDiagnostics({this.checkoutInstance});
+
+  final String? checkoutInstance;
 
   void log(String event, [Map<String, Object?> fields = const {}]) {
-    // Intentionally disabled for production security builds.
+    if (!kDebugMode) return;
+    final sessionBoundary =
+        event == 'NEW_APPLE_CHECKOUT_SESSION' ||
+        event == 'CHECKOUT_SESSION_END';
+    if (sessionBoundary) {
+      debugPrint(
+        '[IOS_IAP_DIAG] ============================================================',
+      );
+    }
+    final category = _categoryFor(event);
+    final safeFields = <String, Object?>{
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+      if (checkoutInstance != null) 'instance': checkoutInstance,
+      ...fields.map((key, value) => MapEntry(key, _sanitizeValue(key, value))),
+    };
+    debugPrint(
+      '[IOS_IAP_DIAG][$category] event=$event ${jsonEncode(safeFields)}',
+    );
+    if (sessionBoundary) {
+      debugPrint(
+        '[IOS_IAP_DIAG] ============================================================',
+      );
+    }
   }
 
   void logProductLookup({
@@ -58,6 +86,16 @@ final class StoreKitDiagnostics {
     'linkTokenPresent': linkTokenPresent,
     'linkTokenCanonicalUuid': linkTokenValid,
     'storeProducts': storeProducts,
+  });
+
+  void logPrepareHttpResponse({
+    required int httpStatus,
+    required String responseBody,
+    required int durationMs,
+  }) => log('BACKEND_PREPARE_HTTP_RESPONSE', {
+    'httpStatus': httpStatus,
+    'durationMs': durationMs,
+    'responseBody': _sanitizeResponseBody(responseBody),
   });
 
   void logMapping({
@@ -150,7 +188,10 @@ final class StoreKitDiagnostics {
   void logVerifyHttpResponse({
     required int httpStatus,
     required String responseBody,
-  }) {}
+  }) => log('BACKEND_VERIFY_HTTP_RESPONSE', {
+    'httpStatus': httpStatus,
+    'responseBody': _sanitizeResponseBody(responseBody),
+  });
 
   void logError({
     required String stage,
@@ -198,5 +239,65 @@ final class StoreKitDiagnostics {
       '[REDACTED_JWT]',
     );
     return value.length <= 240 ? value : '${value.substring(0, 240)}…';
+  }
+
+  static Object? _sanitizeValue(String key, Object? value) {
+    final normalized = key.toLowerCase();
+    if (normalized.contains('verificationdata') ||
+        normalized.contains('receipt') ||
+        normalized.contains('jws') ||
+        normalized == 'token' ||
+        normalized.contains('accesstoken') ||
+        normalized.contains('authorization')) {
+      return value == null ? null : '<redacted>';
+    }
+    if (normalized.contains('linktoken') ||
+        normalized.contains('appaccounttoken')) {
+      return redactIdentifier(value?.toString());
+    }
+    if (value is Map) {
+      return value.map(
+        (key, item) =>
+            MapEntry(key.toString(), _sanitizeValue(key.toString(), item)),
+      );
+    }
+    if (value is Iterable) {
+      return value.map((item) => _sanitizeValue(key, item)).toList();
+    }
+    if (value is String) return _sanitizeError(value);
+    return value;
+  }
+
+  static String _sanitizeResponseBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      return jsonEncode(_sanitizeValue('response', decoded));
+    } catch (_) {
+      return _sanitizeError(body);
+    }
+  }
+
+  static String _categoryFor(String event) {
+    if (event.contains('QUERY') || event.contains('PRICE')) {
+      return 'PRODUCT_QUERY';
+    }
+    if (event.contains('STREAM') || event.contains('UPDATE')) {
+      return 'PURCHASE_STREAM';
+    }
+    if (event.contains('LIFECYCLE')) return 'LIFECYCLE';
+    if (event.contains('CONTEXT') || event.contains('PERSIST')) {
+      return 'CONTEXT';
+    }
+    if (event.contains('RECONCIL')) return 'RECONCILE';
+    if (event.contains('BACKEND') ||
+        event.contains('PREPARE') ||
+        event.contains('VERIFY')) {
+      return 'BACKEND';
+    }
+    if (event.contains('STATE') || event.contains('CANCEL')) return 'STATE';
+    if (event.contains('PURCHASE') || event.contains('STOREKIT')) {
+      return 'PURCHASE';
+    }
+    return 'CHECKOUT';
   }
 }

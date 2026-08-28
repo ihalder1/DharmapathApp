@@ -239,6 +239,7 @@ class PaymentService {
         AndroidPaymentDiagnostic(
           operation: 'order_lookup',
           stage: 'http_failure',
+          orderId: orderId,
           httpStatus: response.statusCode,
           safeCode: safeError.code,
           safeMessage: safeError.message,
@@ -254,6 +255,7 @@ class PaymentService {
       AndroidPaymentDiagnostic(
         operation: 'order_lookup',
         stage: 'parsed',
+        orderId: orderId,
         httpStatus: response.statusCode,
         backendStatus: verification.status,
         accepted: verification.accepted,
@@ -286,6 +288,15 @@ class PaymentService {
     StoreKitDiagnostics? diagnostics,
   }) async {
     diagnostics?.logPrepareRequest(currency: currency, products: products);
+    final stopwatch = Stopwatch()..start();
+    diagnostics?.log('BACKEND_PREPARE_STARTED', {
+      'httpMethod': 'POST',
+      'endpointPath': ApiConfig.prepareAndroidPurchaseEndpoint,
+      'platform': 'ios',
+      'currency': currency,
+      'products': iosCartQuantityDiagnostics(products),
+      'totalUnits': iosCartTotalUnits(products),
+    });
     final response = await AuthenticatedHttp.paymentPost(
       Uri.parse(
         '${ApiConfig.paymentBaseUrl}${ApiConfig.prepareAndroidPurchaseEndpoint}',
@@ -293,6 +304,11 @@ class PaymentService {
       body: jsonEncode(
         buildIosPreparePayload(currency: currency, products: products),
       ),
+    );
+    diagnostics?.logPrepareHttpResponse(
+      httpStatus: response.statusCode,
+      responseBody: response.body,
+      durationMs: stopwatch.elapsedMilliseconds,
     );
     if (response.statusCode != 200 && response.statusCode != 201) {
       diagnostics?.logPrepareResponse(
@@ -337,6 +353,15 @@ class PaymentService {
       storeProductId: storeProductId,
       transactionId: transactionId,
     );
+    final stopwatch = Stopwatch()..start();
+    diagnostics?.log('BACKEND_VERIFY_REQUEST', {
+      'httpMethod': 'POST',
+      'endpointPath': ApiConfig.verifyAndroidPurchaseEndpoint,
+      'platform': 'ios',
+      'orderId': StoreKitDiagnostics.redactIdentifier(orderId),
+      'storeProductId': storeProductId,
+      'transactionId': StoreKitDiagnostics.redactIdentifier(transactionId),
+    });
     final response = await AuthenticatedHttp.paymentPost(
       Uri.parse(
         '${ApiConfig.paymentBaseUrl}${ApiConfig.verifyAndroidPurchaseEndpoint}',
@@ -353,6 +378,10 @@ class PaymentService {
       httpStatus: response.statusCode,
       responseBody: response.body,
     );
+    diagnostics?.log('BACKEND_VERIFY_DURATION', {
+      'durationMs': stopwatch.elapsedMilliseconds,
+      'httpStatus': response.statusCode,
+    });
     if (response.statusCode != 200 && response.statusCode != 201) {
       diagnostics?.logVerify(
         event: 'BACKEND_VERIFY_FAILED',

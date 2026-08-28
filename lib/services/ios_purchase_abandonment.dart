@@ -75,6 +75,19 @@ final class IosPurchaseAbandonment {
       matchingUnfinishedTransaction: matching,
     );
     _diagnostics?.log('IOS_PREPARED_CONTEXT_ABANDON_CHECK', {
+      'reason': reason,
+      'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+      'state': context.state,
+      'productIds': context.units.map((item) => item.storeProductId).toList(),
+      'linkTokenSuffix': StoreKitDiagnostics.redactIdentifier(
+        context.linkToken,
+      ),
+      'unfinishedTransactionCount': unfinished.length,
+      'unfinishedTransactionIds': unfinished
+          .map(
+            (item) => StoreKitDiagnostics.redactIdentifier(item.transactionId),
+          )
+          .toList(),
       'transactionPresent': transactionPresent,
       'backendAccepted': backendAccepted,
       'matchingUnfinishedTransaction': matching,

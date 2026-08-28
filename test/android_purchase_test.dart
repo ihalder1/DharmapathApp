@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,10 +5,29 @@ import 'package:colab_app_ui/models/android_purchase.dart';
 import 'package:colab_app_ui/models/ios_purchase.dart';
 import 'package:colab_app_ui/models/mantra.dart';
 import 'package:colab_app_ui/services/cart_quantity_policy.dart';
+import 'package:colab_app_ui/services/android_purchase_context_store.dart';
 import 'package:colab_app_ui/services/location_pricing_service.dart';
 import 'package:colab_app_ui/services/mantra_service.dart';
 import 'package:colab_app_ui/services/play_billing_service.dart';
 import 'package:colab_app_ui/services/play_billing_diagnostics.dart';
+import 'package:colab_app_ui/services/secure_session_storage.dart';
+
+final class _MemorySecureStore implements SecureKeyValueStore {
+  final Map<String, String> values = {};
+
+  @override
+  Future<void> delete(String key) async {
+    values.remove(key);
+  }
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async {
+    values[key] = value;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -25,13 +43,14 @@ void main() {
   AndroidPurchaseContext purchaseContext(
     List<String> productIds, {
     String state = 'prepared',
+    Set<String> verifiedStoreProductIds = const {},
   }) => AndroidPurchaseContext(
     orderId: 'ORDER-1',
     linkToken: 'LINK-1',
     products: productIds
         .map((id) => PreparedStoreProduct(storeProductId: id, quantity: 1))
         .toList(),
-    verifiedStoreProductIds: const {},
+    verifiedStoreProductIds: verifiedStoreProductIds,
     currentIndex: 0,
     state: state,
     createdAt: DateTime.utc(2026),
@@ -240,8 +259,12 @@ void main() {
     expect(stored.matchesCart(visible), isTrue);
   });
 
-  PlayPurchase playPurchase(List<String> ids, {int state = 1}) => PlayPurchase(
-    purchaseToken: 'TOKEN',
+  PlayPurchase playPurchase(
+    List<String> ids, {
+    int state = 1,
+    String purchaseToken = 'TOKEN',
+  }) => PlayPurchase(
+    purchaseToken: purchaseToken,
     products: ids,
     purchaseState: state,
     quantity: 1,
@@ -382,6 +405,103 @@ void main() {
     expect(purchaseProductsMatch(active, playPurchase(['devi'])), isTrue);
   });
 
+  test('prepared order cancelled without Play purchase allows retry', () {
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'opening_play'),
+      outstandingPurchases: const [],
+    );
+
+    expect(decision.shouldAbandon, isTrue);
+  });
+
+  test('backend pending without Play purchase does not block indefinitely', () {
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'prepared'),
+      outstandingPurchases: const [],
+    );
+
+    expect(decision.action, AndroidRecoveryAction.abandonUnownedPreparedOrder);
+  });
+
+  test('genuine Play PENDING purchase remains recoverable', () {
+    final purchase = playPurchase(['devi'], state: 2);
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'pending'),
+      outstandingPurchases: [purchase],
+    );
+
+    expect(decision.action, AndroidRecoveryAction.reconcilePendingPurchase);
+    expect(decision.matchingPurchase, same(purchase));
+  });
+
+  test('Play PURCHASED with pending verification remains recoverable', () {
+    final purchase = playPurchase(['devi']);
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'opening_play'),
+      outstandingPurchases: [purchase],
+    );
+
+    expect(decision.action, AndroidRecoveryAction.reconcilePurchasedPurchase);
+    expect(decision.matchingPurchase, same(purchase));
+  });
+
+  test('verified pending-consumption context is never abandoned', () {
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(
+        ['devi'],
+        state: 'verified_pending_consumption',
+        verifiedStoreProductIds: const {'devi'},
+      ),
+      outstandingPurchases: const [],
+    );
+
+    expect(decision.action, AndroidRecoveryAction.retainVerifiedContext);
+  });
+
+  test('reinstall-equivalent cleared local context stays cleared', () async {
+    final secureStore = _MemorySecureStore();
+    final store = AndroidPurchaseContextStore(secureStore: secureStore);
+    await store.save(purchaseContext(['devi'], state: 'opening_play'));
+
+    await store.clear();
+
+    expect(await store.load(), isNull);
+  });
+
+  test('multiple cancel and retry decisions remain immediately eligible', () {
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final decision = decideAndroidRecovery(
+        context: purchaseContext(['devi'], state: 'opening_play'),
+        outstandingPurchases: const [],
+      );
+      expect(decision.shouldAbandon, isTrue, reason: 'attempt $attempt');
+    }
+  });
+
+  test('successful purchase after cancellation remains reconciled', () {
+    final cancelled = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'opening_play'),
+      outstandingPurchases: const [],
+    );
+    final purchased = playPurchase(['devi']);
+    final retry = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'opening_play'),
+      outstandingPurchases: [purchased],
+    );
+
+    expect(cancelled.shouldAbandon, isTrue);
+    expect(retry.action, AndroidRecoveryAction.reconcilePurchasedPurchase);
+  });
+
+  test('successful consumed repurchase remains eligible', () {
+    final decision = decideAndroidRecovery(
+      context: purchaseContext(['devi'], state: 'prepared'),
+      outstandingPurchases: const [],
+    );
+
+    expect(decision.shouldAbandon, isTrue);
+  });
+
   test('selective completion does not clear unrelated current cart', () async {
     final brahma = mantra('F-BRAHMA-001', 'song_f_brahma_001', 'Brahma');
     final devi = mantra('F-DEVI-001', 'song_f_devi_001', 'Devi');
@@ -501,7 +621,7 @@ void main() {
     expect(disconnected.alreadyConsumed, isFalse);
   });
 
-  test('billing diagnostic sanitizer redacts purchase secrets', () {
+  test('billing error sanitizer redacts purchase secrets', () {
     final sanitized = sanitizePlayBillingDiagnostic(
       'purchaseToken=secret-1 linkToken:secret-2 '
       'email=user@example.com ordinary=kept',
