@@ -230,18 +230,10 @@ void main() {
     },
   );
 
-  test('regional tax price labels follow country pricing tiers', () {
+  test('tax price label is the same for every user', () {
     expect(
-      LocationPricingService.taxPriceLabel(PricingRegion.india),
-      '95 INR + GST',
-    );
-    expect(
-      LocationPricingService.taxPriceLabel(PricingRegion.southAsia),
-      '1 USD + VAT/GST',
-    );
-    expect(
-      LocationPricingService.taxPriceLabel(PricingRegion.other),
-      '2 USD + VAT/GST',
+      LocationPricingService.taxPriceLabel,
+      'The price includes local VAT/GST',
     );
   });
 

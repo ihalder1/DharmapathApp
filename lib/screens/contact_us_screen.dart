@@ -4,7 +4,7 @@ import '../constants/app_colors.dart';
 class ContactUsScreen extends StatelessWidget {
   const ContactUsScreen({super.key});
 
-  static const String _dummyEmail = 'support@dharmapath.com';
+  static const String _supportEmail = 'support@ids-ai.net';
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +42,7 @@ class ContactUsScreen extends StatelessWidget {
                 context,
                 icon: Icons.email_outlined,
                 label: 'Email',
-                value: _dummyEmail,
+                value: _supportEmail,
                 onTap: () {},
               ),
             ],

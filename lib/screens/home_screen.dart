@@ -618,9 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return _playProductPrices[productId]?.formattedPrice ?? 'Price unavailable';
   }
 
-  String get _regionalTaxPriceLabel => LocationPricingService.taxPriceLabel(
-    LocationPricingService.cachedRegion ?? PricingRegion.other,
-  );
+  String get _regionalTaxPriceLabel => LocationPricingService.taxPriceLabel;
 
   String _formatGooglePlayMicros(int amountMicros, String currencyCode) {
     return NumberFormat.currency(
@@ -3812,23 +3810,30 @@ class _HomeScreenState extends State<HomeScreen> {
                                               ),
                                               Tooltip(
                                                 message: 'Create your Mantra',
-                                                child: IconButton(
+                                                child: TextButton(
                                                   onPressed: () {
                                                     _showCreateMantraDialog(
                                                       recording,
                                                     );
                                                   },
-                                                  icon: const Text(
-                                                    'ॐ',
+                                                  style: TextButton.styleFrom(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                    minimumSize: const Size(
+                                                      0,
+                                                      36,
+                                                    ),
+                                                  ),
+                                                  child: const Text(
+                                                    'Generate',
                                                     style: TextStyle(
-                                                      fontSize: 18,
+                                                      fontSize: 13,
                                                       color: AppColors
                                                           .primarySaffron,
                                                     ),
                                                   ),
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
                                                 ),
                                               ),
                                             ],
@@ -3960,14 +3965,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             Tooltip(
                               message: 'Create your Mantra',
-                              child: IconButton(
+                              child: TextButton(
                                 onPressed: () {
                                   _showCreateMantraDialog(recording);
                                 },
-                                icon: const Text(
-                                  'ॐ',
+                                child: const Text(
+                                  'Generate',
                                   style: TextStyle(
-                                    fontSize: 28,
+                                    fontSize: 14,
                                     color: AppColors.primarySaffron,
                                   ),
                                 ),
@@ -4835,10 +4840,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             }
                           }
 
-                          // If payment was successful, update mantras and go to Select Mantra screen
+                          // After payment, continue to voice recording.
                           if (paymentSuccess == true && mounted) {
                             setState(() {
-                              _currentStep = 0; // Go to Select Mantra screen
+                              _currentStep = 2;
+                              _isRecordingsExpanded = false;
+                              _isMyMantrasExpanded = false;
                             });
                             await _loadMantras(syncCatalog: false);
                             await _loadUnreadNotificationCount();
@@ -5317,25 +5324,24 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       if (success) {
+        if (!mounted) return;
+        setState(() {
+          _currentStep = 3;
+          _isRecordingsExpanded = false;
+          _isMyMantrasExpanded = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your mantra generation request has been submitted and it may take 5 minutes to 24 hours depending on the request traffic.',
+            ),
+          ),
+        );
+        await _loadInferredSongs();
         await _loadMantras(syncCatalog: false);
         await NotificationService.refresh();
         if (mounted) {
           _loadUnreadNotificationCount();
-          await showDialog<void>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              title: const Text('Request Submitted'),
-              content: const Text(
-                'Your mantra generation request has been submitted and it may take 5 minutes to 24 hours depending on the request traffic.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
         }
       } else {
         if (mounted) {

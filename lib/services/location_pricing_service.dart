@@ -40,14 +40,8 @@ class LocationPricingService {
     return region == PricingRegion.india ? 'INR' : 'USD';
   }
 
-  /// Tax pricing guidance shown alongside the mantra catalog.
-  static String taxPriceLabel(PricingRegion region) {
-    return switch (region) {
-      PricingRegion.india => '95 INR + GST',
-      PricingRegion.southAsia => '1 USD + VAT/GST',
-      PricingRegion.other => '2 USD + VAT/GST',
-    };
-  }
+  /// Tax guidance shown alongside the mantra catalog for every user.
+  static const String taxPriceLabel = 'The price includes local VAT/GST';
 
   static double parsePrice(dynamic value) {
     if (value is num) return value.toDouble();
