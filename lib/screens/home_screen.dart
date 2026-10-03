@@ -125,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final VoiceRecordingService _voiceService = VoiceRecordingService();
   String _selectedLanguage = 'English';
   bool _isRecording = false;
+  bool _isStoppingRecording = false;
   bool _isPlayingRecording = false;
   String? _currentlyPlayingPath; // Track which file is currently playing
   String? _currentRecordingPath;
@@ -967,20 +968,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _stopRecording() async {
+    if (!_isRecording || _isStoppingRecording) return;
+    setState(() {
+      _isStoppingRecording = true;
+    });
     _recordingTimer?.cancel();
     _recordingTimer = null;
-    final path = await _voiceService.stopRecording();
-    if (path != null) {
+    try {
+      final path = await _voiceService.stopRecording();
+      if (!mounted) return;
       setState(() {
         _isRecording = false;
         _currentRecordingPath = path;
         _recordingSeconds = 0;
       });
-    } else {
-      setState(() {
-        _isRecording = false;
-        _recordingSeconds = 0;
-      });
+      if (path != null) {
+        await _showSaveDialog();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStoppingRecording = false;
+        });
+      }
     }
   }
 
@@ -3612,7 +3622,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               onPressed: _stopRecording,
                               isPrimary: true,
                               isRecording: true,
-                              enabled: true,
+                              enabled: !_isStoppingRecording,
                             ),
                           ],
                         )
@@ -3639,34 +3649,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           enabled: _hasPurchasedMantras(),
                         ),
 
-                      // Preview / Save (only show if recording exists)
-                      if (_currentRecordingPath != null) ...[
-                        const SizedBox(width: 16),
-                        _buildRecordingButton(
-                          icon:
-                              (_isPlayingRecording &&
-                                  _currentlyPlayingPath ==
-                                      _currentRecordingPath)
-                              ? Icons.pause
-                              : Icons.play_arrow,
-                          onPressed: () =>
-                              _playRecording(_currentRecordingPath!),
-                          isPrimary: false,
-                          label:
-                              (_isPlayingRecording &&
-                                  _currentlyPlayingPath ==
-                                      _currentRecordingPath)
-                              ? 'Pause'
-                              : 'Play',
-                        ),
-                        const SizedBox(width: 12),
-                        _buildRecordingButton(
-                          icon: Icons.save,
-                          onPressed: _showSaveDialog,
-                          isPrimary: false,
-                          label: 'Save',
-                        ),
-                      ],
                     ],
                   ),
 
