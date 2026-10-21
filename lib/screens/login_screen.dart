@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../constants/app_colors.dart';
@@ -81,30 +82,39 @@ class _LoginScreenState extends State<LoginScreen>
                 opacity: _fadeAnimation,
                 child: SlideTransition(
                   position: _slideAnimation,
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // App Logo and Title
-                        _buildHeader(),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // App Logo and Title
+                              _buildHeader(),
 
-                        const SizedBox(height: 60),
+                              const SizedBox(height: 60),
 
-                        // Login Options
-                        _buildLoginOptions(),
+                              // Login Options
+                              _buildLoginOptions(),
 
-                        const SizedBox(height: 40),
+                              const SizedBox(height: 40),
 
-                        // Error Message
-                        if (_errorMessage != null) _buildErrorMessage(),
+                              // Error Message
+                              if (_errorMessage != null) _buildErrorMessage(),
 
-                        const SizedBox(height: 20),
+                              const SizedBox(height: 20),
 
-                        // Loading Indicator
-                        if (_isLoading) _buildLoadingIndicator(),
-                      ],
+                              // Loading Indicator
+                              if (_isLoading) _buildLoadingIndicator(),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -192,6 +202,16 @@ class _LoginScreenState extends State<LoginScreen>
           AppColors.white,
           () => _handleFacebookSignIn(),
         ),
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) ...[
+          const SizedBox(height: 16),
+          _buildSocialButton(
+            'Continue with Apple',
+            Icons.apple,
+            Colors.black,
+            Colors.white,
+            _handleAppleSignIn,
+          ),
+        ],
       ],
     );
   }
@@ -285,12 +305,44 @@ class _LoginScreenState extends State<LoginScreen>
     }, facebookAuthDiagnostics: true);
   }
 
+  Future<void> _handleAppleSignIn() async {
+    if (!mounted || _isLoading) return;
+    final auth = context.read<AuthService>();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      // Let the native sheet finish; only the backend exchange has a timeout.
+      // An outer timeout could unlock buttons while authorization is still open.
+      final success = await auth.signInWithApple();
+      if (!success && mounted) {
+        setState(() {
+          _errorMessage = 'Unable to sign in with Apple. Please try again.';
+        });
+      }
+      // AuthWrapper owns navigation after the authenticated session is saved.
+    } on AppleSignInCancelled {
+      // User cancellation is not an authentication error.
+    } on AppleSignInException catch (error) {
+      if (mounted) setState(() => _errorMessage = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Unable to sign in with Apple. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _performSignIn(
     Future<bool> Function() signInFunction, {
     bool googleAuthDiagnostics = false,
     bool facebookAuthDiagnostics = false,
   }) async {
-    if (!mounted) return;
+    if (!mounted || _isLoading) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;

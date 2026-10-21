@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../constants/api_config.dart';
@@ -27,6 +31,24 @@ Map<String, dynamic>? decodeJwtPayload(String jwt) {
   } catch (_) {
     return null;
   }
+}
+
+/// Cancellation is distinct from failure so the login UI can remain quiet.
+class AppleSignInCancelled implements Exception {
+  const AppleSignInCancelled();
+
+  @override
+  String toString() => 'Apple sign-in cancelled';
+}
+
+/// Only application-controlled messages may cross the Apple login UI boundary.
+class AppleSignInException implements Exception {
+  const AppleSignInException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class AuthService extends ChangeNotifier {
@@ -54,6 +76,7 @@ class AuthService extends ChangeNotifier {
   String? _refreshToken;
   DateTime? _tokenExpiry;
   final SecureSessionStorage _secureSessionStorage;
+  bool _appleSignInInProgress = false;
   Future<bool>? _refreshInFlight;
   bool _lastRefreshWasAuthRejection = false;
 
@@ -614,43 +637,224 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // Apple Sign In (placeholder - will be implemented when Apple SDK is added)
+  // Apple credentials establish a backend session; they are never app tokens.
   Future<bool> signInWithApple() async {
-    try {
-      // TODO: Implement Apple Sign In
-      // This is a placeholder for now
-      await Future.delayed(const Duration(seconds: 1));
-
-      _currentUser = User(
-        id: 'apple_user_123',
-        name: 'Apple User',
-        email: 'user@apple.com',
-        photoUrl: null,
-        provider: 'apple',
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) {
+      throw const AppleSignInException(
+        'Apple sign-in is available on iOS only.',
       );
-
-      // Mock backend call
-      final success = await _sendTokenToBackend(
-        'apple_access_token',
-        'apple_identity_token',
-        'apple',
-      );
-
-      if (success) {
-        await _saveSession();
-        if (_currentUser != null && _currentUser!.id.isNotEmpty) {
-          FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
-        }
-        notifyListeners();
-        return true;
-      } else {
-        _currentUser = null;
-        return false;
-      }
-    } catch (e) {
-      _currentUser = null;
-      return false;
     }
+    if (_appleSignInInProgress) {
+      throw const AppleSignInException('Apple sign-in is already in progress.');
+    }
+    if (isLoggedIn) return false;
+
+    _appleSignInInProgress = true;
+    try {
+      // 32 independent secure random bytes provide 256 bits of nonce entropy.
+      // Keep the raw value only for this exchange; Apple receives its hash.
+      final random = Random.secure();
+      final rawNonce = base64UrlEncode(
+        List<int>.generate(32, (_) => random.nextInt(256)),
+      ).replaceAll('=', '');
+      final nonceHash = sha256.convert(utf8.encode(rawNonce)).toString();
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: nonceHash,
+      );
+      final identityToken = credential.identityToken;
+      if (identityToken == null ||
+          identityToken.trim().isEmpty ||
+          credential.authorizationCode.trim().isEmpty) {
+        throw const AppleSignInException(
+          'Apple sign-in could not be verified. Please try again.',
+        );
+      }
+
+      await _sendAppleTokenToBackend(
+        identityToken: identityToken,
+        authorizationCode: credential.authorizationCode,
+        rawNonce: rawNonce,
+        givenName: credential.givenName,
+        familyName: credential.familyName,
+      );
+      FirebaseMessagingService.registerDeviceAfterLogin(_currentUser!.id);
+      notifyListeners();
+      return true;
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) {
+        throw const AppleSignInCancelled();
+      }
+      throw const AppleSignInException(
+        'Apple authorization failed. Please try again.',
+      );
+    } on AppleSignInException {
+      rethrow;
+    } on TimeoutException {
+      throw const AppleSignInException(
+        'Sign-in timed out. Check your connection and try again.',
+      );
+    } on http.ClientException {
+      throw const AppleSignInException(
+        'Unable to connect. Check your connection and try again.',
+      );
+    } catch (_) {
+      // Never surface native/backend exception details or credentials.
+      throw const AppleSignInException(
+        'Unable to sign in with Apple. Please try again.',
+      );
+    } finally {
+      _appleSignInInProgress = false;
+    }
+  }
+
+  Future<void> _sendAppleTokenToBackend({
+    required String identityToken,
+    required String authorizationCode,
+    required String rawNonce,
+    String? givenName,
+    String? familyName,
+  }) async {
+    final deviceInfo = await DeviceInfo.getDeviceInfoMap();
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.appleSignInEndpoint}',
+    );
+    final headers = ApiConfig.getHeaders(accessToken: identityToken);
+    final body = json.encode({
+      'authorizationCode': authorizationCode,
+      'rawNonce': rawNonce,
+      'user': {'givenName': givenName, 'familyName': familyName},
+      'deviceInfo': {
+        'platform': 'ios',
+        'deviceId': deviceInfo['deviceId'],
+        'appVersion': deviceInfo['appVersion'],
+      },
+    });
+    final response = await http
+        .post(url, headers: headers, body: body)
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      final message = switch (response.statusCode) {
+        400 || 401 => 'Apple sign-in could not be verified. Please try again.',
+        409 =>
+          'Unable to sign in with this Apple account. Please contact support.',
+        >= 500 => 'Sign-in is temporarily unavailable. Please try again later.',
+        _ => 'Unable to sign in with Apple. Please try again.',
+      };
+      throw AppleSignInException(message);
+    }
+
+    // Follow the Google response conventions, but validate every required
+    // session value before changing state. Never fall back to Apple user data.
+    const invalidSession = AppleSignInException(
+      'Unable to complete sign-in. Please try again.',
+    );
+    final dynamic decoded;
+    try {
+      decoded = json.decode(response.body);
+    } on FormatException {
+      throw invalidSession;
+    }
+    if (decoded is! Map<String, dynamic>) throw invalidSession;
+    final Map<String, dynamic> tokens;
+    if (decoded.containsKey('tokens')) {
+      if (decoded['tokens'] is! Map<String, dynamic>) throw invalidSession;
+      tokens = decoded['tokens'] as Map<String, dynamic>;
+    } else {
+      tokens = decoded;
+    }
+    final access =
+        tokens['accessToken'] ??
+        tokens['access_token'] ??
+        tokens['token'] ??
+        tokens['authToken'];
+    final refresh = tokens['refreshToken'] ?? tokens['refresh_token'];
+    final userData = decoded['user'];
+    if (access is! String ||
+        access.trim().isEmpty ||
+        refresh is! String ||
+        refresh.trim().isEmpty ||
+        userData is! Map<String, dynamic>) {
+      throw invalidSession;
+    }
+    final userId = userData['userId'] ?? userData['user_id'] ?? userData['id'];
+    final name = userData['name'];
+    final email = userData['email'];
+    final photoUrl = userData['photoUrl'] ?? userData['photo_url'];
+    if (userId is! String ||
+        userId.trim().isEmpty ||
+        (name != null && name is! String) ||
+        (email != null && email is! String) ||
+        (photoUrl != null && photoUrl is! String)) {
+      throw invalidSession;
+    }
+
+    final DateTime expiry;
+    final expiresIn = tokens['expiresIn'] ?? tokens['expires_in'];
+    if (expiresIn != null) {
+      final seconds = int.tryParse(expiresIn.toString());
+      if (seconds == null || seconds <= 0) throw invalidSession;
+      expiry = DateTime.now().add(Duration(seconds: seconds));
+    } else if (tokens['expiry'] != null) {
+      final parsed = DateTime.tryParse(tokens['expiry'].toString());
+      if (parsed == null || !parsed.isAfter(DateTime.now())) {
+        throw invalidSession;
+      }
+      expiry = parsed;
+    } else {
+      // Same fallback as the existing Google response parser.
+      expiry = DateTime.now().add(const Duration(days: 30));
+    }
+
+    final user = User(
+      id: userId,
+      name: name as String? ?? '',
+      email: email as String? ?? '',
+      photoUrl: photoUrl as String?,
+      provider: 'apple',
+    );
+    try {
+      await _persistSession(
+        user: user,
+        accessToken: access,
+        refreshToken: refresh,
+        expiry: expiry,
+      );
+    } catch (_) {
+      // A partial secure-storage write must not restore a failed login.
+      try {
+        await _secureSessionStorage.clearSessionSecrets();
+      } catch (_) {
+        // Still remove the user metadata needed to restore a session.
+      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        for (final key in [
+          'user_id',
+          'user_name',
+          'user_email',
+          'user_photo_url',
+          'user_provider',
+          'token_expiry',
+        ]) {
+          await prefs.remove(key);
+        }
+      } catch (_) {
+        // Keep the runtime unauthenticated even if local storage is unavailable.
+      }
+      throw const AppleSignInException(
+        'Unable to save your session. Please try again.',
+      );
+    }
+    // Publish the session only after secure persistence has completed.
+    _accessToken = access;
+    _refreshToken = refresh;
+    _tokenExpiry = expiry;
+    _currentUser = user;
   }
 
   // Send token to backend
@@ -1050,31 +1254,39 @@ class AuthService extends ChangeNotifier {
   }
 
   // Save session to local storage
-  Future<void> _saveSession() async {
-    if (_refreshToken == null || _refreshToken!.isEmpty) {}
-    if (_accessToken == null || _accessToken!.isEmpty) {
+  Future<void> _saveSession() => _persistSession(
+    user: _currentUser,
+    accessToken: _accessToken,
+    refreshToken: _refreshToken,
+    expiry: _tokenExpiry,
+  );
+
+  Future<void> _persistSession({
+    required User? user,
+    required String? accessToken,
+    required String? refreshToken,
+    required DateTime? expiry,
+  }) async {
+    if (accessToken == null || accessToken.isEmpty) {
       throw StateError(
         'Cannot persist an authenticated session without a token',
       );
     }
 
-    await _secureSessionStorage.saveAccessToken(_accessToken!);
-    if (_refreshToken != null && _refreshToken!.isNotEmpty) {
-      await _secureSessionStorage.saveRefreshToken(_refreshToken!);
+    await _secureSessionStorage.saveAccessToken(accessToken);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      await _secureSessionStorage.saveRefreshToken(refreshToken);
     } else {
       await _secureSessionStorage.deleteRefreshToken();
     }
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', _currentUser?.id ?? '');
-    await prefs.setString('user_name', _currentUser?.name ?? '');
-    await prefs.setString('user_email', _currentUser?.email ?? '');
-    await prefs.setString('user_photo_url', _currentUser?.photoUrl ?? '');
-    await prefs.setString('user_provider', _currentUser?.provider ?? '');
-    await prefs.setString(
-      'token_expiry',
-      _tokenExpiry?.toIso8601String() ?? '',
-    );
+    await prefs.setString('user_id', user?.id ?? '');
+    await prefs.setString('user_name', user?.name ?? '');
+    await prefs.setString('user_email', user?.email ?? '');
+    await prefs.setString('user_photo_url', user?.photoUrl ?? '');
+    await prefs.setString('user_provider', user?.provider ?? '');
+    await prefs.setString('token_expiry', expiry?.toIso8601String() ?? '');
     await SecureSessionStorage.removeLegacyTokenKeys(prefs);
   }
 
@@ -1136,9 +1348,11 @@ class AuthService extends ChangeNotifier {
         } catch (e) {}
       }
 
-      try {
-        await _googleSignIn.signOut();
-      } catch (_) {}
+      if (_currentUser?.provider != 'apple') {
+        try {
+          await _googleSignIn.signOut();
+        } catch (_) {}
+      }
     } catch (e) {
     } finally {
       _currentUser = null;
@@ -1157,7 +1371,9 @@ class AuthService extends ChangeNotifier {
   /// application account. This intentionally does not call `/auth/logout`.
   Future<void> clearLocalSessionAfterAccountDeletion() async {
     try {
-      await _googleSignIn.signOut();
+      if (_currentUser?.provider != 'apple') {
+        await _googleSignIn.signOut();
+      }
     } catch (_) {
       // Local credential cleanup must continue if provider sign-out fails.
     } finally {

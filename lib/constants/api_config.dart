@@ -11,6 +11,7 @@ class ApiConfig {
   // Auth endpoints
   static const String googleSignInEndpoint = '/auth/google-signin';
   static const String facebookSignInEndpoint = '/auth/facebook-signin';
+  static const String appleSignInEndpoint = '/auth/apple-signin';
   static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndpoint = '/auth/profile';
   static const String notificationsEndpoint = '/auth/profile/notifications';
