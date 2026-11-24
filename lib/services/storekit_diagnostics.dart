@@ -7,12 +7,17 @@ import '../models/ios_purchase.dart';
 /// Compatibility boundary for StoreKit call sites. Production diagnostics
 /// are intentionally disabled; sanitization helpers remain for safe errors.
 final class StoreKitDiagnostics {
+  static const bool _releaseDiagnosticsEnabled = bool.fromEnvironment(
+    'STOREKIT_DIAGNOSTICS',
+    defaultValue: false,
+  );
+
   StoreKitDiagnostics({this.checkoutInstance});
 
   final String? checkoutInstance;
 
   void log(String event, [Map<String, Object?> fields = const {}]) {
-    if (!kDebugMode) return;
+    if (!kDebugMode && !_releaseDiagnosticsEnabled) return;
     final sessionBoundary =
         event == 'NEW_APPLE_CHECKOUT_SESSION' ||
         event == 'CHECKOUT_SESSION_END';

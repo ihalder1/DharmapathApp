@@ -3,15 +3,21 @@ import Flutter
 import AVFoundation
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
-    
-    let controller: FlutterViewController = window?.rootViewController as! FlutterViewController
-    let audioChannel = FlutterMethodChannel(name: "app.channel.audio", binaryMessenger: controller.binaryMessenger)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let audioChannel = FlutterMethodChannel(
+      name: "app.channel.audio",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
 
     audioChannel.setMethodCallHandler { (call, result) in
       switch call.method {
@@ -67,6 +73,5 @@ import AVFoundation
       }
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }

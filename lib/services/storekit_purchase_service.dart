@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:in_app_purchase_storekit/store_kit_2_wrappers.dart';
+import 'package:flutter/services.dart';
 
+import '../models/ios_purchase.dart';
 import 'storekit_diagnostics.dart';
 
 final class StoreKitProductPrice {
@@ -36,7 +39,10 @@ final class StoreKitTransaction {
     required this.productId,
     required this.status,
     this.transactionId,
+    this.originalTransactionId,
     this.appAccountToken,
+    this.environment,
+    this.signedTransactionData,
     this.purchaseDetails,
     this.runtimeTypeName,
     this.transactionDate,
@@ -52,7 +58,10 @@ final class StoreKitTransaction {
   final String productId;
   final PurchaseStatus status;
   final String? transactionId;
+  final String? originalTransactionId;
   final String? appAccountToken;
+  final String? environment;
+  final String? signedTransactionData;
   final PurchaseDetails? purchaseDetails;
   final String? runtimeTypeName;
   final String? transactionDate;
@@ -68,9 +77,50 @@ final class StoreKitTransaction {
       status == PurchaseStatus.purchased || status == PurchaseStatus.restored;
 }
 
+/// A transaction can resolve a newly launched checkout only when it is not a
+/// previously observed unfinished transaction and matches both product and
+/// the active attempt's appAccountToken.
+bool isActiveCheckoutTransaction({
+  required StoreKitTransaction transaction,
+  required String expectedProductId,
+  required String expectedAppAccountToken,
+  Set<String> previouslyUnfinishedIds = const {},
+}) {
+  final id = transaction.transactionId?.trim();
+  return id != null &&
+      id.isNotEmpty &&
+      !previouslyUnfinishedIds.contains(id) &&
+      transaction.productId == expectedProductId &&
+      appAccountTokensMatch(
+        expectedAppAccountToken,
+        transaction.appAccountToken,
+      );
+}
+
+Map<String, Object?>? _transactionMetadataFromJson(String? json) {
+  if (json == null || json.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map) return null;
+    final storefront = decoded['storefront'];
+    final environment =
+        decoded['environment'] ??
+        (storefront is Map ? storefront['environment'] : null);
+    final originalId =
+        decoded['originalTransactionId'] ?? decoded['originalID'];
+    return {
+      if (environment != null) 'environment': environment.toString(),
+      if (originalId != null) 'originalTransactionId': originalId.toString(),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 /// iOS-only StoreKit boundary. It deliberately has no Android billing imports.
 final class StoreKitPurchaseService {
   StoreKitPurchaseService._() {
+    _diagnosticsChannel.setMethodCallHandler(_handleNativeDiagnostic);
     _subscription = _iap.purchaseStream.listen(
       _handleUpdates,
       onError: _updates.addError,
@@ -78,6 +128,10 @@ final class StoreKitPurchaseService {
   }
 
   static final StoreKitPurchaseService instance = StoreKitPurchaseService._();
+  static const MethodChannel _diagnosticsChannel = MethodChannel(
+    'app.channel.storekit.diagnostics',
+  );
+  final StoreKitDiagnostics _diagnostics = StoreKitDiagnostics();
   final InAppPurchase _iap = InAppPurchase.instance;
   final StreamController<List<StoreKitTransaction>> _updates =
       StreamController<List<StoreKitTransaction>>.broadcast();
@@ -87,6 +141,27 @@ final class StoreKitPurchaseService {
   StreamSubscription<List<PurchaseDetails>>? _subscription;
 
   Stream<List<StoreKitTransaction>> get purchaseUpdates => _updates.stream;
+
+  Future<void> setDiagnosticAttemptId(String? attemptId) async {
+    try {
+      await _diagnosticsChannel.invokeMethod<void>('setCurrentAttemptId', {
+        'attemptId': attemptId,
+      });
+    } catch (error) {
+      _diagnostics.log('STOREKIT_DIAGNOSTIC_BRIDGE_ERROR', {
+        'operation': 'set_attempt_id',
+        'errorType': error.runtimeType.toString(),
+      });
+    }
+  }
+
+  Future<void> _handleNativeDiagnostic(MethodCall call) async {
+    if (call.method != 'transactionSource' || call.arguments is! Map) return;
+    _diagnostics.log(
+      'STOREKIT_NATIVE_TRANSACTION_SOURCE',
+      Map<String, Object?>.from(call.arguments as Map),
+    );
+  }
 
   Future<bool> isAvailable() => _iap.isAvailable();
 
@@ -174,26 +249,44 @@ final class StoreKitPurchaseService {
   Future<List<StoreKitTransaction>> unfinishedTransactions() async {
     final transactions = await SK2Transaction.unfinishedTransactions();
     return transactions
-        .map(
-          (item) => StoreKitTransaction(
+        .map((item) {
+          final metadata = _transactionMetadataFromJson(
+            item.jsonRepresentation,
+          );
+          return StoreKitTransaction(
             productId: item.productId,
             transactionId: item.id,
+            originalTransactionId:
+                metadata?['originalTransactionId']?.toString() ??
+                item.originalId,
             appAccountToken: item.appAccountToken,
+            environment: metadata?['environment']?.toString(),
+            signedTransactionData: item.receiptData,
             status: PurchaseStatus.purchased,
-          ),
-        )
+            transactionDate: item.purchaseDate,
+          );
+        })
         .toList(growable: false);
   }
 
   void _handleUpdates(List<PurchaseDetails> details) {
     final normalized = details
-        .map(
-          (item) => StoreKitTransaction(
+        .map((item) {
+          final metadata = item is SK2PurchaseDetails
+              ? _transactionMetadataFromJson(
+                  item.verificationData.localVerificationData,
+                )
+              : null;
+          return StoreKitTransaction(
             productId: item.productID,
             transactionId: item.purchaseID,
+            originalTransactionId: metadata?['originalTransactionId']
+                ?.toString(),
             appAccountToken: item is SK2PurchaseDetails
                 ? item.appAccountToken
                 : null,
+            environment: metadata?['environment']?.toString(),
+            signedTransactionData: item.verificationData.serverVerificationData,
             status: item.status,
             purchaseDetails: item,
             runtimeTypeName: item.runtimeType.toString(),
@@ -207,8 +300,8 @@ final class StoreKitPurchaseService {
             errorCode: item.error?.code,
             errorMessage: item.error?.message,
             errorDetails: item.error?.details,
-          ),
-        )
+          );
+        })
         .toList(growable: false);
     _updates.add(normalized);
   }

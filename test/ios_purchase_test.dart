@@ -288,6 +288,8 @@ void main() {
 
   test('restart context retains an unverified real transaction', () {
     final saved = context().recordTransaction(index: 0, transactionId: 'tx-a');
+    expect(saved.state, 'transaction_recorded');
+    expect(saved.paid, isFalse);
     final restored = IosPurchaseContext.fromJson(
       saved.toJson(includeLinkToken: false),
       linkToken: saved.linkToken,
@@ -295,6 +297,28 @@ void main() {
     expect(restored.units.first.transactionId, 'tx-a');
     expect(restored.units.first.backendAccepted, isFalse);
   });
+
+  test(
+    'legacy purchased state remains readable but is not considered paid',
+    () {
+      final legacy = IosPurchaseContext.fromJson({
+        ...context().toJson(includeLinkToken: false),
+        'state': 'purchased',
+        'units': [
+          {
+            'storeProductId': 'ios_a',
+            'transactionId': 'tx-legacy',
+            'backendAccepted': false,
+            'storeKitCompleted': false,
+          },
+        ],
+      }, linkToken: context().linkToken);
+
+      expect(legacy.state, 'purchased');
+      expect(legacy.paid, isFalse);
+      expect(legacy.units.single.backendAccepted, isFalse);
+    },
+  );
 
   test('restart with backend already paid remains finalizable', () {
     final paid = context(

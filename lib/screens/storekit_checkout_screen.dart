@@ -90,6 +90,8 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   bool _blockedByPriorOrder = false;
   final _lifetime = IosStoreKitCheckoutLifetime();
   String? _activeAttemptId;
+  String? _processingAttemptId;
+  final Set<String> _preexistingUnfinishedTransactionIds = <String>{};
   String _status = '';
   String? _error;
   late final String _checkoutInstanceId;
@@ -214,45 +216,80 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
   Future<void> _initialize() async {
     _logCheckoutState('PRODUCT_QUERY_INITIALIZE_START');
     try {
-      await _recover();
-      if (!mounted || _blockedByPriorOrder || _cartProducts.isEmpty) return;
-      final available = await _storeKit.isAvailable();
-      _diagnostics.log('STOREKIT_AVAILABILITY', {
-        'platform': 'ios',
-        'available': available,
-      });
-      if (!available) {
-        throw StateError('storekit_unavailable');
-      }
-      final prices = await _storeKit.queryProducts(
-        _cartProducts.map((item) => item.storeProductId),
-        diagnostics: _diagnostics,
-      );
-      for (final item in _cartProducts) {
-        final price = prices[item.storeProductId];
-        _diagnostics.logProductLookup(
-          internalProductId: item.internalProductId,
-          metadataStoreProductId: item.storeProductId,
-          queriedProductId: item.storeProductId,
-          found: price != null,
-          price: price?.formattedPrice,
-          rawPrice: price?.rawPrice,
-          currencyCode: price?.currencyCode,
+      if (_cartProducts.isNotEmpty) {
+        final available = await _storeKit.isAvailable();
+        _diagnostics.log('STOREKIT_AVAILABILITY', {
+          'platform': 'ios',
+          'available': available,
+        });
+        if (!available) throw StateError('storekit_unavailable');
+
+        // Query catalog products before reconciliation so a failing backend
+        // lookup cannot suppress StoreKit prices for this checkout.
+        final prices = await _storeKit.queryProducts(
+          _cartProducts.map((item) => item.storeProductId),
+          diagnostics: _diagnostics,
         );
+        for (final item in _cartProducts) {
+          final price = prices[item.storeProductId];
+          _diagnostics.logProductLookup(
+            internalProductId: item.internalProductId,
+            metadataStoreProductId: item.storeProductId,
+            queriedProductId: item.storeProductId,
+            found: price != null,
+            price: price?.formattedPrice,
+            rawPrice: price?.rawPrice,
+            currencyCode: price?.currencyCode,
+          );
+        }
+        if (!mounted) return;
+        _diagnostics.log('CHECKOUT_PRICES_ASSIGN_BEFORE', {
+          'existingKeys': _prices.keys.toList(),
+          'incomingKeys': prices.keys.toList(),
+        });
+        setState(() {
+          _prices = prices;
+          _loading = false;
+        });
+        _logCheckoutState('CHECKOUT_PRICES_ASSIGN_AFTER');
+
+        // A persisted aggregate SKU may not be among the visible song SKUs.
+        // Look it up separately, without making visible catalog loading depend
+        // on reconciliation or backend availability.
+        try {
+          final savedContext = await _contextStore.load();
+          final pendingProductId = savedContext?.isAggregate == true
+              ? savedContext!.aggregateStoreProductId
+              : null;
+          if (pendingProductId != null) {
+            var pendingPrice = _prices[pendingProductId];
+            if (pendingPrice == null) {
+              final pendingPrices = await _storeKit.queryProducts([
+                pendingProductId,
+              ], diagnostics: _diagnostics);
+              pendingPrice = pendingPrices[pendingProductId];
+              if (pendingPrice != null && mounted) {
+                setState(() => _prices = {..._prices, ...pendingPrices});
+              }
+            }
+            if (pendingPrice != null && mounted) {
+              setState(() => _aggregatePrice = pendingPrice);
+            }
+          }
+        } catch (error) {
+          _diagnostics.logError(
+            stage: 'pending_order_catalogue_lookup',
+            error: error,
+          );
+        }
       }
-      if (!mounted) return;
-      _diagnostics.log('CHECKOUT_PRICES_ASSIGN_BEFORE', {
-        'existingKeys': _prices.keys.toList(),
-        'incomingKeys': prices.keys.toList(),
-      });
-      setState(() => _prices = prices);
-      _logCheckoutState('CHECKOUT_PRICES_ASSIGN_AFTER');
-      await _ensureAggregatePricePrepared();
     } catch (error) {
-      _diagnostics.logError(stage: 'store_initialization', error: error);
+      _diagnostics.logError(
+        stage: 'store_catalogue_initialization',
+        error: error,
+      );
       if (mounted) {
         setState(() {
-          _status = '';
           _error =
               error is FormatException &&
                   error.message == 'ios_aggregate_product_not_found'
@@ -264,6 +301,38 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       if (mounted) setState(() => _loading = false);
       _logCheckoutState('PRODUCT_QUERY_INITIALIZE_END');
     }
+
+    // Recovery can remain blocked or fail remotely without suppressing the
+    // product catalog already loaded above.
+    await _recover();
+    if (!mounted ||
+        _blockedByPriorOrder ||
+        _cartProducts.isEmpty ||
+        _error != null) {
+      return;
+    }
+    try {
+      await _ensureAggregatePricePrepared();
+    } catch (error) {
+      _diagnostics.logError(stage: 'aggregate_price_prepare', error: error);
+      _setError('The Apple checkout price could not be loaded.');
+    }
+  }
+
+  Future<void> _retryVerification() async {
+    if (_recovering || _processing || _purchaseContext == null) return;
+    _diagnostics.log('IOS_PENDING_ORDER_VERIFICATION_RETRY', {
+      'orderId': StoreKitDiagnostics.redactIdentifier(
+        _purchaseContext!.orderId,
+      ),
+      'transactionIds': _purchaseContext!.units
+          .map(
+            (unit) => StoreKitDiagnostics.redactIdentifier(unit.transactionId),
+          )
+          .toList(),
+      'newApplePurchaseStarted': false,
+    });
+    await _recover();
   }
 
   Future<void> _recover() async {
@@ -496,6 +565,66 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
         });
         coordinator.acquire(attemptId: attemptId);
         _activeAttemptId = attemptId;
+        _processingAttemptId = attemptId;
+        await _storeKit.setDiagnosticAttemptId(attemptId);
+        try {
+          final unfinishedBeforePurchase = await _storeKit
+              .unfinishedTransactions();
+          _preexistingUnfinishedTransactionIds
+            ..clear()
+            ..addAll(
+              unfinishedBeforePurchase
+                  .map((item) => item.transactionId?.trim())
+                  .whereType<String>()
+                  .where((id) => id.isNotEmpty),
+            );
+          _diagnostics.log('STOREKIT_UNFINISHED_BEFORE_PURCHASE', {
+            'currentCheckoutAttemptId': attemptId,
+            'orderId': StoreKitDiagnostics.redactIdentifier(checkout.orderId),
+            'expectedAppAccountTokenSuffix':
+                StoreKitDiagnostics.redactIdentifier(checkout.linkToken),
+            'requestedProductId': unit.storeProductId,
+            'orderCorrelationBasis': 'product_id_and_app_account_token',
+            'transactionCount': unfinishedBeforePurchase.length,
+            'transactions': unfinishedBeforePurchase
+                .map((item) {
+                  final productMatches = item.productId == unit.storeProductId;
+                  final tokenMatches = appAccountTokensMatch(
+                    checkout.linkToken,
+                    item.appAccountToken,
+                  );
+                  return {
+                    'eventSource': 'unfinished_transaction_reconciliation',
+                    'transactionId': StoreKitDiagnostics.redactIdentifier(
+                      item.transactionId,
+                    ),
+                    'originalTransactionId':
+                        StoreKitDiagnostics.redactIdentifier(
+                          item.originalTransactionId,
+                        ),
+                    'productId': item.productId,
+                    'transactionDate': item.transactionDate,
+                    'environment': item.environment,
+                    'signedTransactionDataPresent':
+                        item.signedTransactionData?.isNotEmpty == true,
+                    'appAccountTokenSuffix':
+                        StoreKitDiagnostics.redactIdentifier(
+                          item.appAccountToken,
+                        ),
+                    'matchesRequestedProduct': productMatches,
+                    'matchesCurrentAppAccountToken': tokenMatches,
+                    'matchesCurrentOrder': productMatches && tokenMatches,
+                  };
+                })
+                .toList(growable: false),
+          });
+        } catch (error) {
+          _diagnostics.log('STOREKIT_UNFINISHED_SNAPSHOT_FAILED', {
+            'currentCheckoutAttemptId': attemptId,
+            'productId': unit.storeProductId,
+            'errorType': error.runtimeType.toString(),
+          });
+        }
         StoreKitTransaction transaction;
         try {
           _diagnostics.log('IOS_AGGREGATE_PURCHASE_START', {
@@ -582,6 +711,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           checkout = checkout.copyWith(cartFinalized: true);
           await _save(checkout);
           _diagnostics.log('COMPLETE_PURCHASE_BEFORE', {
+            'orderId': StoreKitDiagnostics.redactIdentifier(checkout.orderId),
             'status': transaction.status.name,
             'productId': transaction.productId,
             'transactionId': StoreKitDiagnostics.redactIdentifier(
@@ -591,6 +721,7 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           });
           await _storeKit.complete(transaction);
           _diagnostics.log('COMPLETE_PURCHASE_AFTER', {
+            'orderId': StoreKitDiagnostics.redactIdentifier(checkout.orderId),
             'productId': transaction.productId,
             'transactionId': StoreKitDiagnostics.redactIdentifier(
               transaction.transactionId,
@@ -612,8 +743,13 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           await _finishPaid(checkout);
           return;
         } finally {
-          await coordinator.release(attemptId);
-          _activeAttemptId = null;
+          try {
+            await coordinator.release(attemptId);
+          } finally {
+            await _storeKit.setDiagnosticAttemptId(null);
+            _activeAttemptId = null;
+            _preexistingUnfinishedTransactionIds.clear();
+          }
         }
       }
     } on IosUnresolvedOrderConflict catch (conflict) {
@@ -695,6 +831,12 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       _purchaseCompleter = null;
       _waitingForProductId = null;
       if (mounted) setState(() => _processing = false);
+      _diagnostics.log('PURCHASE_UI_PROCESSING_STATE', {
+        'currentCheckoutAttemptId': _processingAttemptId ?? 'none',
+        'processing': false,
+        'status': _status,
+      });
+      _processingAttemptId = null;
       _logCheckoutState('PURCHASE_ATTEMPT_FINALLY');
       if (_lifetime.disposed) unawaited(_purchaseSubscription?.cancel());
     }
@@ -717,6 +859,9 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     final stopwatch = Stopwatch()..start();
     _diagnostics.log('STOREKIT_PURCHASE_CALL_START', {
       'attemptId': attemptId,
+      'currentCheckoutAttemptId': attemptId,
+      'eventSource': 'direct_purchase_call',
+      'launchedSemantics': 'request_return_value_is_not_sheet_visibility',
       'productId': product.id,
       'purchaseMethod': 'buyConsumable',
       'purchaseParamType': 'PurchaseParam',
@@ -725,6 +870,11 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       ),
     });
     IosStoreKitPurchaseCoordinator.instance.markStoreKitActive(attemptId);
+    _diagnostics.log('PURCHASE_UI_PROCESSING_STATE', {
+      'currentCheckoutAttemptId': attemptId,
+      'processing': true,
+      'status': _status,
+    });
     bool? launched;
     try {
       launched = await _storeKit.buyConsumable(
@@ -734,6 +884,8 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
     } finally {
       _diagnostics.log('STOREKIT_PURCHASE_CALL_RETURN', {
         'attemptId': attemptId,
+        'currentCheckoutAttemptId': attemptId,
+        'eventSource': 'in_app_purchase_api_return',
         'productId': product.id,
         'elapsedMs': stopwatch.elapsedMilliseconds,
         'launched': launched,
@@ -756,13 +908,19 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       );
       _diagnostics.log('STOREKIT_PURCHASE_STREAM_EVENT', {
         'attemptId': _activeAttemptId,
+        'currentCheckoutAttemptId': _activeAttemptId,
+        'eventSource': 'purchase_stream_unattributed',
         'status': transaction.status.name,
         'productId': transaction.productId,
         'transactionId': StoreKitDiagnostics.redactIdentifier(
           transaction.transactionId,
         ),
+        'originalTransactionId': StoreKitDiagnostics.redactIdentifier(
+          transaction.originalTransactionId,
+        ),
         'runtimeType': transaction.runtimeTypeName,
         'transactionDate': transaction.transactionDate,
+        'environment': transaction.environment,
         'pendingCompletePurchase': transaction.pendingCompletePurchase,
         'verificationSource': transaction.verificationSource,
         'serverVerificationDataPresent':
@@ -781,6 +939,37 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           returnedToken: transaction.appAccountToken,
         );
       }
+      final transactionId = transaction.transactionId?.trim();
+      final oldUnfinished =
+          transactionId != null &&
+          _preexistingUnfinishedTransactionIds.contains(transactionId);
+      final tokenMatches =
+          context != null &&
+          appAccountTokensMatch(context.linkToken, transaction.appAccountToken);
+      if (oldUnfinished || !tokenMatches) {
+        _diagnostics.log('STOREKIT_RECOVERY_CANDIDATE_QUARANTINED', {
+          'currentCheckoutAttemptId': _activeAttemptId,
+          'reason': oldUnfinished
+              ? 'unfinished_before_checkout'
+              : 'token_mismatch',
+          'transactionId': StoreKitDiagnostics.redactIdentifier(
+            transaction.transactionId,
+          ),
+          'originalTransactionId': StoreKitDiagnostics.redactIdentifier(
+            transaction.originalTransactionId,
+          ),
+          'productId': transaction.productId,
+          'transactionDate': transaction.transactionDate,
+          'appAccountTokenSuffix': StoreKitDiagnostics.redactIdentifier(
+            transaction.appAccountToken,
+          ),
+          'environment': transaction.environment,
+          'signedTransactionDataPresent':
+              transaction.signedTransactionData?.isNotEmpty == true,
+          'backendVerificationAttempted': false,
+          'transactionFinished': false,
+        });
+      }
     }
     final completer = _purchaseCompleter;
     final expected = _waitingForProductId;
@@ -797,10 +986,12 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
           item.status == PurchaseStatus.canceled ||
           item.status == PurchaseStatus.error;
       if (terminalWithoutTransaction) return item.productId == expected;
-      return id != null &&
-          id.isNotEmpty &&
-          item.productId == expected &&
-          appAccountTokensMatch(context.linkToken, item.appAccountToken) &&
+      return isActiveCheckoutTransaction(
+            transaction: item,
+            expectedProductId: expected,
+            expectedAppAccountToken: context.linkToken,
+            previouslyUnfinishedIds: _preexistingUnfinishedTransactionIds,
+          ) &&
           !persistedTransactionIds.contains(id) &&
           !_handledTransactionIds.contains(id);
     });
@@ -895,7 +1086,14 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
       return;
     }
     await _contextStore.clear();
-    _diagnostics.log('CONTEXT_CLEARED');
+    _diagnostics.log('CONTEXT_CLEARED', {
+      'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+      'transactionIds': context.units
+          .map(
+            (unit) => StoreKitDiagnostics.redactIdentifier(unit.transactionId),
+          )
+          .toList(),
+    });
     _purchaseContext = null;
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -1090,6 +1288,31 @@ class _StoreKitCheckoutScreenState extends State<StoreKitCheckoutScreen>
                               child: Text(
                                 _error!,
                                 style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          if (_blockedByPriorOrder &&
+                              _purchaseContext?.units.any(
+                                    (unit) =>
+                                        unit.transactionId?.trim().isNotEmpty ==
+                                        true,
+                                  ) ==
+                                  true)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: OutlinedButton.icon(
+                                onPressed: _recovering || _processing
+                                    ? null
+                                    : _retryVerification,
+                                icon: _recovering
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.refresh),
+                                label: const Text('Retry Verification'),
                               ),
                             ),
                         ],

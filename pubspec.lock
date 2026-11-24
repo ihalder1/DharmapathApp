@@ -563,10 +563,9 @@ packages:
   in_app_purchase_storekit:
     dependency: "direct main"
     description:
-      name: in_app_purchase_storekit
-      sha256: "1d512809edd9f12ff88fce4596a13a18134e2499013f4d6a8894b04699363c93"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/in_app_purchase_storekit"
+      relative: true
+    source: path
     version: "0.4.8+1"
   intl:
     dependency: "direct main"

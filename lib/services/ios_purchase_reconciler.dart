@@ -22,6 +22,9 @@ typedef IosUnfinishedTransactions =
     Future<List<StoreKitTransaction>> Function();
 typedef IosCompleteTransaction =
     Future<void> Function(StoreKitTransaction transaction);
+typedef IosRefreshCreditsOperation = Future<void> Function();
+typedef IosFinalizeCartOperation =
+    Future<void> Function(List<IosCartProduct> products);
 
 final class IosReconciliationResult {
   const IosReconciliationResult({
@@ -46,6 +49,8 @@ final class IosPurchaseReconciler {
     IosPurchaseVerificationOperation? verifyPurchase,
     IosUnfinishedTransactions? unfinishedTransactions,
     IosCompleteTransaction? completeTransaction,
+    IosRefreshCreditsOperation? refreshCredits,
+    IosFinalizeCartOperation? finalizeCart,
   }) : _contextStore = contextStore ?? IosPurchaseContextStore(),
        _diagnostics = diagnostics,
        _orderLookup =
@@ -69,7 +74,11 @@ final class IosPurchaseReconciler {
                .unfinishedTransactions,
        _completeTransaction =
            completeTransaction ??
-           (storeKit ?? StoreKitPurchaseService.instance).complete;
+           (storeKit ?? StoreKitPurchaseService.instance).complete,
+       _refreshCreditsOperation =
+           refreshCredits ?? MantraService.refreshPurchasedCountsOnlyStrict,
+       _finalizeCartOperation =
+           finalizeCart ?? MantraService.consumeIosCartProducts;
 
   final IosPurchaseContextStorage _contextStore;
   final StoreKitDiagnostics? _diagnostics;
@@ -77,6 +86,8 @@ final class IosPurchaseReconciler {
   final IosPurchaseVerificationOperation _verifyPurchase;
   final IosUnfinishedTransactions _unfinishedTransactions;
   final IosCompleteTransaction _completeTransaction;
+  final IosRefreshCreditsOperation _refreshCreditsOperation;
+  final IosFinalizeCartOperation _finalizeCartOperation;
   static Future<IosReconciliationResult>? _active;
 
   Future<IosReconciliationResult> reconcile() {
@@ -274,7 +285,7 @@ final class IosPurchaseReconciler {
         ),
       });
       if (!context.cartFinalized) {
-        await MantraService.consumeIosCartProducts(context.cartProducts);
+        await _finalizeCartOperation(context.cartProducts);
         context = context.copyWith(cartFinalized: true);
         await _contextStore.save(context);
       }
@@ -284,6 +295,7 @@ final class IosPurchaseReconciler {
           return IosReconciliationResult(context: context);
         }
         _diagnostics?.log('RECONCILIATION_COMPLETE_PURCHASE_BEFORE', {
+          'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
           'status': transaction.status.name,
           'productId': transaction.productId,
           'transactionId': StoreKitDiagnostics.redactIdentifier(
@@ -293,6 +305,7 @@ final class IosPurchaseReconciler {
         });
         await _completeTransaction(transaction);
         _diagnostics?.log('RECONCILIATION_COMPLETE_PURCHASE_AFTER', {
+          'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
           'productId': transaction.productId,
           'transactionId': StoreKitDiagnostics.redactIdentifier(
             transaction.transactionId,
@@ -303,7 +316,9 @@ final class IosPurchaseReconciler {
         _diagnostics?.log('IOS_AGGREGATE_STOREKIT_COMPLETED');
       }
       await _contextStore.clear();
-      _diagnostics?.log('CONTEXT_CLEARED');
+      _diagnostics?.log('CONTEXT_CLEARED', {
+        'orderId': StoreKitDiagnostics.redactIdentifier(context.orderId),
+      });
       _diagnostics?.log('RECONCILIATION_FINISHED', {'result': 'paid'});
       return const IosReconciliationResult(resolved: true, paid: true);
     }
@@ -318,7 +333,7 @@ final class IosPurchaseReconciler {
   Future<void> _refreshCredits() async {
     _diagnostics?.log('CREDIT_REFRESH_STARTED');
     try {
-      await MantraService.refreshPurchasedCountsOnlyStrict();
+      await _refreshCreditsOperation();
       _diagnostics?.log('CREDIT_REFRESH_SUCCEEDED');
     } catch (error) {
       _diagnostics?.log('CREDIT_REFRESH_FAILED', {

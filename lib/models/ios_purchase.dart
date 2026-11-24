@@ -357,7 +357,11 @@ final class IosPurchaseContext {
   }) {
     final updated = List<IosPurchaseUnit>.from(units);
     updated[index] = updated[index].copyWith(transactionId: transactionId);
-    return copyWith(units: updated, currentIndex: index, state: 'purchased');
+    return copyWith(
+      units: updated,
+      currentIndex: index,
+      state: 'transaction_recorded',
+    );
   }
 
   IosPurchaseContext acceptTransaction({

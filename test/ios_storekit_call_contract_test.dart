@@ -1,8 +1,98 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+
+import 'package:colab_app_ui/services/storekit_purchase_service.dart';
 
 void main() {
+  test('old unfinished token-mismatched transaction is isolated', () {
+    const old = StoreKitTransaction(
+      productId: 'aggregate.product',
+      transactionId: 'old-3279',
+      originalTransactionId: 'original-3279',
+      appAccountToken: '00000000-0000-0000-0000-0000000018c9',
+      status: PurchaseStatus.purchased,
+      transactionDate: '2026-11-05',
+      environment: 'Sandbox',
+      signedTransactionData: 'signed-jws',
+    );
+    expect(
+      isActiveCheckoutTransaction(
+        transaction: old,
+        expectedProductId: 'aggregate.product',
+        expectedAppAccountToken: '00000000-0000-0000-0000-000000003688',
+      ),
+      isFalse,
+    );
+    expect(old.transactionId, 'old-3279');
+    expect(old.originalTransactionId, 'original-3279');
+    expect(old.signedTransactionData, 'signed-jws');
+    expect(old.environment, 'Sandbox');
+  });
+
+  test('purchase stream has one application-level listener', () {
+    final source = File(
+      'lib/services/storekit_purchase_service.dart',
+    ).readAsStringSync();
+    expect(
+      RegExp(r'_iap\.purchaseStream\.listen\(').allMatches(source),
+      hasLength(1),
+    );
+    expect(source, contains('static final StoreKitPurchaseService instance'));
+  });
+
+  test('catalogue query completes before pending-order reconciliation', () {
+    final source = File(
+      'lib/screens/storekit_checkout_screen.dart',
+    ).readAsStringSync();
+    final initializeStart = source.indexOf('Future<void> _initialize()');
+    final retryStart = source.indexOf('Future<void> _retryVerification()');
+    final initialize = source.substring(initializeStart, retryStart);
+
+    expect(
+      initialize.indexOf('_storeKit.queryProducts('),
+      greaterThanOrEqualTo(0),
+    );
+    expect(
+      initialize.indexOf('setState(() {\n          _prices = prices;'),
+      greaterThan(0),
+    );
+    expect(
+      initialize.indexOf('_storeKit.queryProducts('),
+      lessThan(initialize.indexOf('await _recover();')),
+    );
+  });
+
+  test(
+    'verification retry reconciles saved context without launching purchase',
+    () {
+      final source = File(
+        'lib/screens/storekit_checkout_screen.dart',
+      ).readAsStringSync();
+      final retryStart = source.indexOf('Future<void> _retryVerification()');
+      final retryEnd = source.indexOf(
+        'List<IosCartProduct> get _displayCartProducts',
+      );
+      final retry = source.substring(retryStart, retryEnd);
+
+      expect(retry, contains('await _recover();'));
+      expect(retry, isNot(contains('buyConsumable(')));
+      expect(retry, isNot(contains('prepareIosPurchase(')));
+      expect(source, contains("Text('Retry Verification')"));
+    },
+  );
+
+  test('native diagnostic events are dispatched on the main queue', () {
+    final source = File(
+      'third_party/in_app_purchase_storekit/darwin/in_app_purchase_storekit/Sources/in_app_purchase_storekit/InAppPurchasePlugin.swift',
+    ).readAsStringSync();
+    final bridgeStart = source.indexOf('final class StoreKitDiagnosticsBridge');
+    final bridge = source.substring(bridgeStart);
+    expect(bridge, contains('DispatchQueue.main.async'));
+    expect(bridge, contains('invokeMethod("transactionSource"'));
+  });
+
   test(
     'iOS consumable call uses the StoreKit-supported autoConsume default',
     () {
